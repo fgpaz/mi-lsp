@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -99,7 +100,13 @@ func (s *Server) maybeRestartUpdated(ctx context.Context, cfg selfupdate.Config)
 	if release == nil {
 		return
 	}
-	defer release()
+	releaseFence := true
+	defer func() {
+		if releaseFence {
+			release()
+			s.signalShutdownRetry()
+		}
+	}()
 	if s.elastic != nil || !s.updateResourcesIdle(time.Now()) {
 		return
 	}
@@ -129,8 +136,10 @@ func (s *Server) maybeRestartUpdated(ctx context.Context, cfg selfupdate.Config)
 				return errors.New("daemon no longer idle")
 			}
 			resume = false
-			s.Shutdown()
-			return nil
+			releaseFence = false
+			shutdownCtx, cancelShutdown := context.WithTimeout(ctx, shutdownCallerGrace)
+			defer cancelShutdown()
+			return s.shutdownWithFence(shutdownCtx, release, true)
 		},
 		Spawn: func(inv updateRestartInvocation) error {
 			cmd := processutil.Command(inv.Executable, inv.Args...)
@@ -144,7 +153,9 @@ func (s *Server) maybeRestartUpdated(ctx context.Context, cfg selfupdate.Config)
 	}
 	// Retry a detached launch after a failed spawn; no foreign process is touched.
 	ops.Recover = ops.Spawn
-	_ = restartUpdatedDaemon(ctx, invocation, ops)
+	if err := restartUpdatedDaemon(ctx, invocation, ops); err != nil {
+		fmt.Fprintf(os.Stderr, "[mi-lsp:update] restart deferred or failed: %v\n", err)
+	}
 }
 
 func updateDaemonEnvironment(env []string) []string {

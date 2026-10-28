@@ -37,7 +37,13 @@ type Server struct {
 	updateGate          *updateAdmissionGate
 	updateRetention     *updateRetention
 	stopped             chan struct{}
-	stopOnce            sync.Once
+	shutdownMu          sync.Mutex
+	shutdownDone        chan struct{}
+	shutdownRetry       chan struct{}
+	shutdownErr         error
+	shutdownFence       func()
+	shutdownFenceHasGate bool
+	shutdownOwnerStarted bool
 	shutdownStarted     atomic.Bool
 	elasticLimitsMu     sync.Mutex
 	coordinatorSizingMu sync.RWMutex
@@ -58,9 +64,9 @@ type Server struct {
 	lastWorkCompletion  time.Time
 	workChanged         chan struct{}
 	workIdle            chan struct{}
-	jobsPausedForIdle   atomic.Bool
 	connectionsMu       sync.Mutex
 	connections         map[net.Conn]struct{}
+	connectionCancels   map[net.Conn]context.CancelFunc
 	connectionsChanged  chan struct{}
 }
 
@@ -120,6 +126,8 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 		inflight:      make(chan struct{}, options.MaxInflight),
 		updateGate:    newUpdateAdmissionGate(),
 		stopped:       make(chan struct{}),
+		shutdownDone:  make(chan struct{}),
+		shutdownRetry: make(chan struct{}, 1),
 		resultCache:   newResultCache(),
 		qSessions:     newQSessionState(),
 		instanceLease: lease,
@@ -130,6 +138,7 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 		workChanged:   make(chan struct{}, 1),
 		workIdle:      make(chan struct{}, 1),
 		connections:        make(map[net.Conn]struct{}),
+		connectionCancels:  make(map[net.Conn]context.CancelFunc),
 		connectionsChanged: make(chan struct{}, 1),
 		state: model.DaemonState{
 			PID:             os.Getpid(),
@@ -285,51 +294,223 @@ func (s *Server) serveWithUpdateSchedule(ctx context.Context, schedule func(cont
 	}
 }
 
+// ErrShutdownIncomplete indicates that the caller's wait expired while the
+// daemon's single shutdown owner continues draining with resources retained.
+var ErrShutdownIncomplete = errors.New("daemon shutdown is still draining")
+
+const (
+	shutdownDrainGrace = 4 * time.Second
+	shutdownCallerGrace = 5 * time.Second
+)
+
+// Shutdown keeps the legacy fire-and-wait shape. The owner continues draining
+// after this bounded caller wait expires; resources are not released early.
 func (s *Server) Shutdown() {
-	s.stopOnce.Do(func() {
-		s.shutdownStarted.Store(true)
-		close(s.stopped)
-		if s.updateRetention != nil {
-			s.updateRetention.stopAndWait()
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownCallerGrace)
+	defer cancel()
+	_ = s.ShutdownContext(ctx)
+}
+
+// ShutdownContext closes admission once and waits only until ctx expires. A
+// deadline reports incomplete draining; the single owner retains the DB, lease,
+// and any acquired fence until all admitted work and cleanup have completed.
+func (s *Server) ShutdownContext(ctx context.Context) error {
+	return s.shutdownWithFence(ctx, nil, false)
+}
+
+// shutdownWithFence transfers a fence already owned by the update scheduler.
+// The caller must not release it after transfer; the shutdown owner releases it
+// only after database and lease cleanup.
+func (s *Server) shutdownWithFence(ctx context.Context, transferredFence func(), fenceHasGate bool) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	s.shutdownMu.Lock()
+	if s.shutdownDone == nil {
+		s.shutdownDone = make(chan struct{})
+	}
+	if s.shutdownRetry == nil {
+		s.shutdownRetry = make(chan struct{}, 1)
+	}
+	if transferredFence != nil {
+		select {
+		case <-s.shutdownDone:
+			priorErr := s.shutdownErr
+			s.shutdownMu.Unlock()
+			transferredFence()
+			return priorErr
+		default:
 		}
-		s.waitForSemanticWork()
-		s.closeIngressConnections()
-		s.waitForIngressHandlers()
-		if s.updateGate != nil && !s.updateBarrierHeld() {
-			for {
-				if _, idle := s.updateGate.TryIdleBarrier(); idle || s.updateBarrierHeld() {
-					break
-				}
-				time.Sleep(100 * time.Millisecond)
-			}
+		if s.shutdownFence == nil {
+			s.shutdownFence = transferredFence
+			s.shutdownFenceHasGate = fenceHasGate
+		} else {
+			// A repeated caller cannot replace or leak a second owned fence.
+			s.shutdownMu.Unlock()
+			transferredFence()
+			s.shutdownMu.Lock()
 		}
-		_ = s.admin.Shutdown()
-		if !s.jobsPausedForIdle.Load() && !s.updateBarrierHeld() {
-			for {
-				resumeJobs, idle := indexer.TryPauseBackgroundJobs()
-				if idle {
-					_ = resumeJobs
-					break
-				}
-				time.Sleep(100 * time.Millisecond)
-			}
+	}
+	s.workMu.Lock()
+	s.shutdownStarted.Store(true)
+	s.workMu.Unlock()
+	if s.stopped != nil {
+		select {
+		case <-s.stopped:
+		default:
+			close(s.stopped)
 		}
-		s.elasticCancel()
-		s.syncRuntimeSnapshots()
-		_ = clearDaemonState()
-		_ = s.telemetry.StopRun(s.state.RunID, time.Now())
+	}
+	if !s.shutdownOwnerStarted {
+		s.shutdownOwnerStarted = true
+		go s.runShutdownOwner()
+	}
+	select {
+	case s.shutdownRetry <- struct{}{}:
+	default:
+	}
+	done := s.shutdownDone
+	s.shutdownMu.Unlock()
+	select {
+	case <-done:
+		s.shutdownMu.Lock()
+		err := s.shutdownErr
+		s.shutdownMu.Unlock()
+		return err
+	default:
+	}
+	select {
+	case <-done:
+		s.shutdownMu.Lock()
+		err := s.shutdownErr
+		s.shutdownMu.Unlock()
+		return err
+	case <-ctx.Done():
+		return fmt.Errorf("%w: %w", ErrShutdownIncomplete, ctx.Err())
+	}
+}
+
+func (s *Server) runShutdownOwner() {
+	if s.listener != nil {
 		_ = s.listener.Close()
-		if s.elastic != nil {
-			s.elasticLimitsMu.Lock()
-			_ = s.elastic.Close()
-			s.elasticLimitsMu.Unlock()
+	}
+	s.closeIdleIngressConnections()
+	var cleanupErr error
+	if s.admin != nil {
+		cleanupErr = errors.Join(cleanupErr, s.admin.Shutdown())
+	}
+	if !s.waitForSemanticWorkFor(shutdownDrainGrace) {
+		s.closeIngressConnections()
+	}
+	for !s.waitForSemanticWork() || !s.waitForIngressHandlers() {
+		<-s.shutdownRetry
+	}
+	if s.updateRetention != nil {
+		s.updateRetention.stopAndWait()
+	}
+
+	fence, fenceHasGate := s.takeShutdownFence()
+	for fence == nil || (s.updateGate != nil && !fenceHasGate) {
+		var releaseGate func()
+		gateReady := fenceHasGate || s.updateGate == nil
+		if !gateReady && s.updateGate != nil {
+			releaseGate, gateReady = s.updateGate.TryIdleBarrier()
 		}
+		if !gateReady && fence != nil {
+			if !s.restoreShutdownFence(fence) {
+				fence()
+			}
+			fence = nil
+		}
+		if gateReady {
+			resumeJobs := fence
+			jobsIdle := resumeJobs != nil
+			if !jobsIdle {
+				resumeJobs, jobsIdle = indexer.TryPauseBackgroundJobs()
+			}
+			if jobsIdle {
+				if fenceHasGate {
+					break
+				}
+				if releaseGate == nil {
+					fence = resumeJobs
+				} else {
+					fence = func() { releaseGate(); resumeJobs() }
+				}
+				fenceHasGate = true
+				break
+			}
+			if releaseGate != nil {
+				releaseGate()
+			}
+		}
+		<-s.shutdownRetry
+		fence, fenceHasGate = s.takeShutdownFence()
+	}
+
+	if s.elasticCancel != nil {
+		s.elasticCancel()
+	}
+	if s.manager != nil {
+		s.syncRuntimeSnapshots()
+	}
+	if s.elastic != nil {
+		s.elasticLimitsMu.Lock()
+		cleanupErr = errors.Join(cleanupErr, s.elastic.Close())
+		s.elasticLimitsMu.Unlock()
+	}
+	if s.manager != nil {
 		s.manager.Shutdown()
-		_ = s.telemetry.Close()
-		if s.instanceLease != nil {
-			_ = s.instanceLease.Close()
+	}
+	cleanupErr = errors.Join(cleanupErr, clearDaemonState())
+	if s.telemetry != nil {
+		cleanupErr = errors.Join(cleanupErr, s.telemetry.StopRun(s.state.RunID, time.Now()))
+	}
+	if s.telemetry != nil {
+		if err := s.telemetry.Close(); err != nil {
+			cleanupErr = errors.Join(cleanupErr, err)
+			s.finishShutdown(cleanupErr)
+			return
 		}
-	})
+	}
+	if s.instanceLease != nil {
+		if err := s.instanceLease.Close(); err != nil {
+			cleanupErr = errors.Join(cleanupErr, err)
+			s.finishShutdown(cleanupErr)
+			return
+		}
+	}
+	if fence != nil {
+		fence()
+	}
+	s.finishShutdown(cleanupErr)
+}
+
+func (s *Server) restoreShutdownFence(fence func()) bool {
+	s.shutdownMu.Lock()
+	defer s.shutdownMu.Unlock()
+	if s.shutdownFence != nil {
+		return false
+	}
+	s.shutdownFence = fence
+	s.shutdownFenceHasGate = false
+	return true
+}
+
+func (s *Server) finishShutdown(err error) {
+	s.shutdownMu.Lock()
+	s.shutdownErr = err
+	close(s.shutdownDone)
+	s.shutdownMu.Unlock()
+}
+
+func (s *Server) takeShutdownFence() (func(), bool) {
+	s.shutdownMu.Lock()
+	defer s.shutdownMu.Unlock()
+	fence, hasGate := s.shutdownFence, s.shutdownFenceHasGate
+	s.shutdownFence = nil
+	s.shutdownFenceHasGate = false
+	return fence, hasGate
 }
 
 func (s *Server) handleConnection(conn net.Conn) {
@@ -374,23 +555,24 @@ func (s *Server) handleConnectionContext(ctx context.Context, conn net.Conn) {
 	if s.isBackpressureLimited(request) {
 		defer s.releaseInflight()
 	}
-	requestCtx := ctx
-	semanticWork := s.tryBeginSemanticWork(request)
-	if isSemanticDaemonOperation(request.Operation) && request.ProtocolVersion == model.ProtocolVersion && !semanticWork {
-		_ = worker.WriteFrame(conn, daemonErrorEnvelope(request, errors.New("daemon is draining"), "daemon"))
-		return
-	}
-	if semanticWork {
+	// Daemon command cancellation stops Serve, not admitted work. The shutdown
+	// owner cancels this request context only after the graceful drain budget.
+	requestCtx, cancelRequest := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancelRequest()
+	semanticEligible := request.ProtocolVersion == model.ProtocolVersion && isSemanticDaemonOperation(request.Operation)
+	if semanticEligible {
+		if !s.beginSemanticConnectionWork(conn, cancelRequest) {
+			_ = worker.WriteFrame(conn, daemonErrorEnvelope(request, errors.New("daemon is draining"), "daemon"))
+			return
+		}
 		defer s.endSemanticWork()
+		defer s.detachConnectionCancel(conn)
 	}
 	if request.Operation == "q" {
-		var cancel context.CancelFunc
-		requestCtx, cancel = context.WithCancel(ctx)
-		defer cancel()
 		go func() {
 			var probe [1]byte
 			if _, readErr := conn.Read(probe[:]); readErr != nil {
-				cancel()
+				cancelRequest()
 			}
 		}()
 	}

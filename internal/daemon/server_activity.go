@@ -18,6 +18,9 @@ func (s *Server) registerIngressConnection(conn net.Conn) bool {
 	if s.connections == nil {
 		s.connections = make(map[net.Conn]struct{})
 	}
+	if s.connectionCancels == nil {
+		s.connectionCancels = make(map[net.Conn]context.CancelFunc)
+	}
 	s.connections[conn] = struct{}{}
 	return true
 }
@@ -25,32 +28,87 @@ func (s *Server) registerIngressConnection(conn net.Conn) bool {
 func (s *Server) unregisterIngressConnection(conn net.Conn) {
 	s.connectionsMu.Lock()
 	delete(s.connections, conn)
+	delete(s.connectionCancels, conn)
 	s.connectionsMu.Unlock()
 	select {
 	case s.connectionsChanged <- struct{}{}:
 	default:
 	}
+	s.signalShutdownRetry()
 }
 
-func (s *Server) waitForIngressHandlers() {
+func (s *Server) waitForIngressHandlers() bool {
 	for {
 		s.connectionsMu.Lock()
 		active := len(s.connections)
 		s.connectionsMu.Unlock()
 		if active == 0 {
-			return
+			return true
+		}
+		if s.connectionsChanged == nil {
+			return false
 		}
 		<-s.connectionsChanged
+	}
+}
+
+func (s *Server) beginSemanticConnectionWork(conn net.Conn, cancel context.CancelFunc) bool {
+	s.workMu.Lock()
+	defer s.workMu.Unlock()
+	if s.shutdownStarted.Load() {
+		return false
+	}
+	s.connectionsMu.Lock()
+	defer s.connectionsMu.Unlock()
+	if s.shutdownStarted.Load() {
+		return false
+	}
+	if s.connectionCancels == nil {
+		s.connectionCancels = make(map[net.Conn]context.CancelFunc)
+	}
+	s.connectionCancels[conn] = cancel
+	s.activeWork++
+	select {
+	case s.workChanged <- struct{}{}:
+	default:
+	}
+	return true
+}
+
+func (s *Server) detachConnectionCancel(conn net.Conn) {
+	s.connectionsMu.Lock()
+	delete(s.connectionCancels, conn)
+	s.connectionsMu.Unlock()
+}
+
+func (s *Server) closeIdleIngressConnections() {
+	s.connectionsMu.Lock()
+	connections := make([]net.Conn, 0, len(s.connections))
+	for conn := range s.connections {
+		if _, semantic := s.connectionCancels[conn]; !semantic {
+			connections = append(connections, conn)
+		}
+	}
+	s.connectionsMu.Unlock()
+	for _, conn := range connections {
+		_ = conn.Close()
 	}
 }
 
 func (s *Server) closeIngressConnections() {
 	s.connectionsMu.Lock()
 	connections := make([]net.Conn, 0, len(s.connections))
+	cancels := make([]context.CancelFunc, 0, len(s.connectionCancels))
 	for conn := range s.connections {
 		connections = append(connections, conn)
 	}
+	for _, cancel := range s.connectionCancels {
+		cancels = append(cancels, cancel)
+	}
 	s.connectionsMu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
 	for _, conn := range connections {
 		_ = conn.Close()
 	}
@@ -63,6 +121,10 @@ func (s *Server) beginSemanticWork() bool {
 		return false
 	}
 	s.activeWork++
+	select {
+	case s.workChanged <- struct{}{}:
+	default:
+	}
 	return true
 }
 
@@ -81,27 +143,55 @@ func (s *Server) endSemanticWork() {
 	case s.workIdle <- struct{}{}:
 	default:
 	}
+	s.signalShutdownRetry()
 }
 
-func (s *Server) waitForSemanticWork() {
+func (s *Server) signalShutdownRetry() {
+	s.shutdownMu.Lock()
+	retry, started := s.shutdownRetry, s.shutdownOwnerStarted
+	s.shutdownMu.Unlock()
+	if started && retry != nil {
+		select {
+		case retry <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func (s *Server) waitForSemanticWorkFor(timeout time.Duration) bool {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	for {
 		s.workMu.Lock()
 		active := s.activeWork
 		s.workMu.Unlock()
 		if active == 0 {
-			return
+			return true
 		}
-		<-s.workIdle
+		if s.workIdle == nil {
+			return false
+		}
+		select {
+		case <-s.workIdle:
+		case <-timer.C:
+			return false
+		}
 	}
 }
 
-func (s *Server) updateBarrierHeld() bool {
-	if s.updateGate == nil {
-		return false
+func (s *Server) waitForSemanticWork() bool {
+	for {
+		s.workMu.Lock()
+		active := s.activeWork
+		s.workMu.Unlock()
+		if active == 0 {
+			return true
+		}
+		if s.workIdle == nil {
+			return false
+		}
+		<-s.workIdle
 	}
-	s.updateGate.mu.Lock()
-	defer s.updateGate.mu.Unlock()
-	return s.updateGate.barrier
 }
 
 func normalizeServerIdleTimeout(timeout time.Duration) time.Duration {
@@ -188,11 +278,19 @@ func (s *Server) expireWhenIdle(ctx context.Context, done <-chan struct{}) {
 			}
 			s.workMu.Lock()
 			remaining = idleTimeout - time.Since(s.lastWorkCompletion)
-			if s.activeWork == 0 && remaining <= 0 && !s.shutdownStarted.Load() {
+			if s.activeWork == 0 && remaining <= 0 {
 				s.shutdownStarted.Store(true)
-				s.jobsPausedForIdle.Store(true)
 				s.workMu.Unlock()
-				s.Shutdown()
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownCallerGrace)
+				_ = s.shutdownWithFence(shutdownCtx, resumeJobs, false)
+				cancel()
+				return
+			}
+			if s.shutdownStarted.Load() {
+				s.workMu.Unlock()
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownCallerGrace)
+				_ = s.shutdownWithFence(shutdownCtx, resumeJobs, false)
+				cancel()
 				return
 			}
 			s.workMu.Unlock()
