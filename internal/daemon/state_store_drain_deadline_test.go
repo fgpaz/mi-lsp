@@ -22,6 +22,7 @@ type drainConnector struct {
 	path string
 	entered chan struct{}
 	release chan struct{}
+	canceled chan struct{}
 	once sync.Once
 }
 func (c *drainConnector) Connect(context.Context) (driver.Conn, error) {
@@ -36,6 +37,7 @@ func (c *drainConn) QueryContext(ctx context.Context, query string, args []drive
 		c.gate.once.Do(func() { close(c.gate.entered) })
 		select {
 		case <-ctx.Done():
+			if c.gate.canceled != nil { close(c.gate.canceled) }
 			<-c.gate.release
 			return nil, ctx.Err()
 		case <-c.gate.release:

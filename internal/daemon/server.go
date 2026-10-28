@@ -406,6 +406,7 @@ func (s *Server) shutdownWithFence(ctx context.Context, transferredFence func(),
 }
 
 func (s *Server) runShutdownOwner() {
+	if s.telemetry != nil { s.telemetry.startDrainDeadline() }
 	if s.listener != nil {
 		_ = s.listener.Close()
 	}
@@ -472,7 +473,7 @@ func (s *Server) runShutdownOwner() {
 		s.elasticCancel()
 	}
 	if s.manager != nil {
-		s.syncRuntimeSnapshots()
+		cleanupErr = errors.Join(cleanupErr, s.syncRuntimeSnapshots())
 	}
 	if s.elastic != nil {
 		s.elasticLimitsMu.Lock()
@@ -488,9 +489,13 @@ func (s *Server) runShutdownOwner() {
 	}
 	if s.telemetry != nil {
 		if err := s.telemetry.Close(); err != nil {
-			cleanupErr = errors.Join(cleanupErr, err)
-			s.finishShutdown(cleanupErr)
-			return
+			// A bounded caller may time out while the driver still owns the DB.
+			// Keep the lease and fence until the close owner actually joins it.
+			if err = s.telemetry.WaitClosed(context.Background()); err != nil {
+				cleanupErr = errors.Join(cleanupErr, err)
+				s.finishShutdown(cleanupErr)
+				return
+			}
 		}
 	}
 	if s.instanceLease != nil {
@@ -791,7 +796,8 @@ func (s *Server) recordAccess(request model.CommandRequest, response model.Envel
 	if s.telemetry == nil {
 		return
 	}
-	seq := s.telemetry.NextSeq(request.Context.SessionID)
+	seq, err := s.telemetry.nextSeqContext(s.telemetry.ownedWriteContext(), request.Context.SessionID)
+	if err != nil { s.telemetry.failWrite(); return }
 	event := model.AccessEvent{
 		OccurredAt:     time.Now(),
 		ClientName:     firstNonEmpty(request.Context.ClientName, "manual-cli"),
@@ -830,11 +836,11 @@ func (s *Server) recordAccess(request model.CommandRequest, response model.Envel
 	_ = s.telemetry.ReplaceRuntimeSnapshots(s.state.RunID, s.manager.Status())
 }
 
-func (s *Server) syncRuntimeSnapshots() {
+func (s *Server) syncRuntimeSnapshots() error {
 	if s.telemetry == nil {
-		return
+		return nil
 	}
-	_ = s.telemetry.ReplaceRuntimeSnapshots(s.state.RunID, s.manager.Status())
+	return s.telemetry.ReplaceRuntimeSnapshots(s.state.RunID, s.manager.Status())
 }
 
 func SpawnBackground(repoRoot string, maxWorkers int, idleTimeout time.Duration) (model.DaemonState, bool, error) {
