@@ -3,8 +3,10 @@ package runtimeinfo
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"path/filepath"
 	"testing"
 	"time"
@@ -22,7 +24,9 @@ func TestFileLeaseCancelBusyAndRelease(t *testing.T) {
 	cancel()
 	busyCtx, busyCancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
 	defer busyCancel()
-	if got, err := AcquireFileLeaseContext(busyCtx, path); err == nil || got != nil { t.Fatal("busy acquisition succeeded") }
+	got, busyErr := AcquireFileLeaseContext(busyCtx, path)
+	if got != nil { _ = got.Release() }
+	if !errors.Is(busyErr, context.DeadlineExceeded) { t.Fatalf("busy acquisition error = %v, want context deadline", busyErr) }
 	if err := first.Release(); err != nil { t.Fatal(err) }
 	if err := first.Release(); err != nil { t.Fatal(err) }
 	second, err := AcquireFileLeaseContext(context.Background(), path)
@@ -41,13 +45,13 @@ func TestFileLeaseChildExitsWithoutRelease(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			lease, err := AcquireFileLeaseContext(ctx, path)
 			cancel()
-			if err != nil { fmt.Fprintln(os.Stdout, "acquire-error"); return }
+			if err != nil { fmt.Fprintln(os.Stdout, "acquire-error"); os.Exit(3) }
 			// Exact readiness line means acquisition has completed; stay alive
 			// holding the lease until the parent closes stdin.
 			fmt.Fprintln(os.Stdout, "FILELEASE-READY")
 			_, _ = bufio.NewReader(os.Stdin).ReadString(0)
-			_ = lease // intentionally no Release: exit releases the OS handle
-			return
+			runtime.KeepAlive(lease)
+			os.Exit(0) // intentionally no Release: process exit releases the handle
 		}
 	}
 	path := filepath.Join(t.TempDir(), "child-guard")
@@ -75,7 +79,8 @@ func TestFileLeaseChildExitsWithoutRelease(t *testing.T) {
 	contenderCtx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
 	contender, err := AcquireFileLeaseContext(contenderCtx, path)
 	cancel()
-	if err == nil { _ = contender.Release(); _ = stdin.Close(); _ = join(); t.Fatal("contender acquired while child remained alive") }
+	if contender != nil { _ = contender.Release() }
+	if !errors.Is(err, context.DeadlineExceeded) { _ = stdin.Close(); _ = join(); t.Fatalf("live-child contender error = %v, want context deadline", err) }
 	if err := stdin.Close(); err != nil { _ = join(); t.Fatal(err) }
 	if err := join(); err != nil { t.Fatalf("controlled child exit: %v", err) }
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
