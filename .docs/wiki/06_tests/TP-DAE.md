@@ -19,6 +19,12 @@ RF-DAE-001, RF-DAE-002, RF-DAE-003, RF-DAE-004, RF-DAE-005. Se conserva el inven
 
 ## Casos
 
+### Mitigación de dueño huérfano — campaña nueva, no cierre global de CPU/WAL
+- **TC-DAE-031**, RF-DAE-003 criterio4: `TestNewServerWithOptionsRejectsUnreachableLiveLegacyOwner`. Perfil y estado propios temporales, PID propio vivo y endpoint no alcanzable; exige error de dueño antes de crear SQLite y preservación del estado. RED observado contra source6ac45b7: el constructor devolvió servidor. GREEN pendiente de implementación/verificación; esta evidencia no prueba otra sesión S4U real.
+- **TC-DAE-032**, RF-DAE-003 criterio4: validar rechazo pre-fork en `SpawnBackgroundWithOptions`, sin confundir error IPC con muerte. Acceso denegado debe conservar liveness indeterminada. Verificación prevista sobre fixtures propios y seams de liveness, sin procesos ajenos ni cambios ACL.
+- **TC-DAE-033**, RF-DAE-003 criterio5: dos constructores del mismo directorio con endpoints diferentes, reserva retenida hasta cierre de DB y liberada en error; limpieza idempotente sin remover reserva ajena. Verificación prevista, no ejecutada aún.
+- La campaña no acredita eliminación de duplicados legacy, raíz del CPU, expiración de servidor, límite de WAL ni adopción por mi-mcp-http. Esos resultados conservan gates propios del bug completo.
+
 ### Cobertura objetivo
 
 - RF-DAE-001

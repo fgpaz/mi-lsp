@@ -68,9 +68,17 @@ sequenceDiagram
     participant UI as Admin UI
 
     U->>CLI: daemon start
-    CLI->>D: health check + lock + bootstrap
-    D->>L: aplica max_workers e idle_timeout
-    D-->>CLI: state + admin_url
+    CLI->>D: health check
+    alt instancia saludable
+        D-->>CLI: reutiliza state existente
+    else dueño vivo o indeterminado no alcanzable
+        D-->>CLI: diagnóstico de dueño/endpoint, sin fork ni DB nueva
+    else ausencia o muerte demostrada
+        CLI->>D: lock de arranque + bootstrap
+        D->>D: reserva de vida antes de listener y daemon.db
+        D->>L: aplica max_workers e idle_timeout
+        D-->>CLI: state + admin_url
+    end
     U->>CLI: nav refs ...
     CLI->>D: request + client metadata
     D-->>CLI: respuesta warm
@@ -88,7 +96,9 @@ La secuencia contractual es el único diagrama de `## Secuencia`, derivado de lo
 
 ### 7. Alternativas y errores
 - **Caso**: Daemon no inicia; **Resultado**: la CLI sigue usable sin el
-- **Caso**: Segundo `daemon start`; **Resultado**: devuelve la instancia ya viva
+- **Caso**: Segundo `daemon start`; **Resultado**: devuelve la instancia ya viva si responde; si el dueño vive o no puede confirmarse muerto pero su endpoint es inaccesible, devuelve diagnóstico y no crea otro daemon.
+- **Caso**: Constructores concurrentes, mismo almacenamiento y endpoints diferentes; **Resultado**: sólo uno conserva la reserva de vida hasta cerrar DB. Los fallos de construcción liberan únicamente su propia reserva; no se reclama por edad un dueño vivo/indeterminado.
+- **Caso**: Binarios antiguos ya duplicados; **Resultado**: la mitigación no los mata ni acredita su drenaje. El supervisor recarga los consumidores actualizados; CPU/idle/WAL requieren evidencia y cierre propios.
 - **Caso**: Límite de runtimes alcanzado; **Resultado**: eviction LRU
 - **Caso**: Runtime idle > timeout; **Resultado**: runtime liberado
 - **Caso**: Presion de requests pesadas > `max_inflight`; **Resultado**: envelope `ok=false` con warning `daemon/backpressure_busy` y retry accionable

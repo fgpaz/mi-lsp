@@ -10,6 +10,8 @@ links:
   code:
   - path: internal/service/app.go
     role: behavior
+  - path: internal/daemon/server.go
+    role: behavior
 ---
 
 ## Propósito
@@ -35,7 +37,7 @@ RF-DAE-003 - Auto-iniciar daemon en la primera consulta semántica
 1. La CLI recibe una consulta semántica (refs, context, etc).
 2. Verifica si daemon esta vivo (health check).
 3. Si daemon vivo, enruta la consulta al daemon.
-4. Si no vivo y sin `--no-auto-daemon`, intenta iniciar daemon en background.
+4. Si el health check falla, no presume que el dueño murió: consulta el estado del mismo directorio de daemon. Un PID vivo o cuya muerte no puede confirmarse impide otro arranque antes de fork, listener y apertura de `daemon.db`; devuelve diagnóstico de dueño/endpoint, sin matar procesos ni cambiar permisos. Si no hay dueño o está demostrablemente muerto y sin `--no-auto-daemon`, intenta iniciar daemon en background bajo exclusión.
 5. Espera hasta `daemon_start_timeout` (default 3s) a que daemon quede saludable.
 6. Enruta la consulta al daemon.
 7. Si timeout o fallo, fallback a direct mode y devuelve warning.
@@ -44,6 +46,9 @@ RF-DAE-003 - Auto-iniciar daemon en la primera consulta semántica
 - `--no-auto-daemon` salta auto-start completamente, intenta direct o falla.
 - Timeout de 3s es configurable pero recomendado para UX.
 - Auto-start no bloquea interactivamente; procede en background.
+- La exclusión de arranque no sustituye la exclusión durante toda la vida del servidor: dos constructores nuevos del mismo directorio de daemon, incluso con endpoints diferentes, no pueden abrir juntos `daemon.db`. La reserva se conserva hasta cerrar la DB y se libera también si falla el constructor.
+- Un error de acceso al proceso, un endpoint inaccesible o un estado ilegible no acreditan muerte. El rechazo conserva el estado ajeno y no anuncia una nueva instancia saludable. Si la operación permite fallback directo, lo informa como degradación, no como daemon iniciado.
+- La mitigación no detiene daemons antiguos ya duplicados ni resuelve por sí sola CPU, idle o WAL. Los binarios antiguos no cooperan con la nueva reserva: la recarga de consumidores/servicio pertenece al supervisor.
 
 ### 11. Decisiones cerradas
 - Supuestos prohibidos:
@@ -94,6 +99,8 @@ CLI `mi-lsp`, con operaciones y selectores detallados en el comportamiento del r
 1. Auto-iniciar daemon en primera consulta semántica: Dado daemon no corriendo Cuando ejecuto "mi-lsp nav refs --symbol MyClass" Entonces auto-inicio daemon en background Y espero hasta 3s a que levante Y enruto la consulta al daemon una vez saludable Y "backend" indica "daemon"
 2. Fallback a direct si auto-start timeout: Dado daemon no corriendo y startup toma > 3s Cuando ejecuto la consulta Entonces timeout en auto-start Y fallback a direct mode Y devuelvo warning indicando degradacion Y "backend" es "direct"
 3. Saltar auto-start con flag: Dado --no-auto-daemon presente Cuando intento semántica query Entonces no intento auto-start Y procedo directo o error
+4. Dueño vivo o indeterminado inaccesible: no se crea otro proceso daemon, listener ni DB; se conserva el estado y se devuelve diagnóstico de dueño, sin señalizar procesos ni ampliar permisos.
+5. Dos constructores del mismo almacenamiento: sólo uno mantiene la reserva de vida; el otro termina de forma acotada, aunque use otro endpoint. Tras cierre de DB o fallo del constructor propio, la reserva propia se libera.
 
 ### 9. Escenarios de aceptación (Gherkin)
 ```gherkin
