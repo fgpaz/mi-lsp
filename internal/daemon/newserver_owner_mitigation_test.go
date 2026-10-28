@@ -2,8 +2,8 @@ package daemon
 
 import (
 	"fmt"
-	"strings"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,8 +43,8 @@ func TestNewServerWithOptionsRejectsUnreachableLiveLegacyOwner(t *testing.T) {
 	t.Setenv("USERNAME", fmt.Sprintf("aorph-owner-mitigation-test-%d", os.Getpid()))
 
 	state := model.DaemonState{
-		PID:      os.Getpid(),
-		Endpoint: "aorph-unreachable-legacy-owner-test-endpoint",
+		PID:       os.Getpid(),
+		Endpoint:  "aorph-unreachable-legacy-owner-test-endpoint",
 		StartedAt: time.Now().Add(-time.Hour),
 	}
 	if err := saveDaemonState(state); err != nil {

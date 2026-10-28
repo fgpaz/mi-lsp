@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
 )
 
 func daemonInstanceLockPath() (string, error) {
@@ -29,8 +28,7 @@ func rejectExistingDaemonOwner() error {
 		return errors.New("daemon owner state has invalid PID; refusing startup")
 	}
 	if processExists(state.PID) {
-		return fmt.Errorf("daemon owner PID %d is live or indeterminate; refusing startup", state.PID)
+		return fmt.Errorf("daemon owner PID %d endpoint %q is live or indeterminate; refusing startup", state.PID, state.Endpoint)
 	}
 	return nil
 }
-
