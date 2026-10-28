@@ -15,9 +15,11 @@ import (
 type lifetimeHeldCaller struct {
 	entered chan context.Context
 	release chan struct{}
+	finished chan struct{}
 }
 
 func (c *lifetimeHeldCaller) Call(ctx context.Context, _ model.WorkspaceRegistration, _ model.WorkerRequest) (model.WorkerResponse, error) {
+	defer close(c.finished)
 	c.entered <- ctx
 	<-c.release // Intentionally ignores cancellation until the test releases the owner.
 	return model.WorkerResponse{Ok: true, Backend: "roslyn"}, nil
@@ -35,7 +37,7 @@ func lifetimeServeFixture(t *testing.T, cliShape bool) (*Server, *lifetimeHeldCa
 	if err != nil {
 		t.Fatalf("construct private server: %v", err)
 	}
-	caller := &lifetimeHeldCaller{entered: make(chan context.Context, 1), release: make(chan struct{})}
+	caller := &lifetimeHeldCaller{entered: make(chan context.Context, 1), release: make(chan struct{}), finished: make(chan struct{})}
 	server.app = service.New(root, caller)
 	ctx, cancel := context.WithCancel(context.Background())
 	serveDone := make(chan error, 1)
@@ -48,8 +50,17 @@ func lifetimeServeFixture(t *testing.T, cliShape bool) (*Server, *lifetimeHeldCa
 		close(serveDone)
 	}()
 	var conn net.Conn
+	var releaseGate func()
+	callerEntered := false
 	t.Cleanup(func() {
 		close(caller.release)
+		if callerEntered {
+			select {
+			case <-caller.finished:
+			case <-time.After(time.Second): t.Error("held caller did not join in cleanup")
+			}
+		}
+		if releaseGate != nil { releaseGate() }
 		if conn != nil { _ = conn.Close() }
 		cancel()
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 8*time.Second)
@@ -75,12 +86,30 @@ func lifetimeServeFixture(t *testing.T, cliShape bool) (*Server, *lifetimeHeldCa
 	if err := worker.WriteFrame(conn, request); err != nil { t.Fatalf("request: %v", err) }
 	select {
 	case requestCtx := <-caller.entered:
+		callerEntered = true
 		cancel()
 		select {
 		case <-requestCtx.Done():
 		case <-time.After(time.Second): t.Fatal("root cancellation did not reach admitted semantic caller")
 		}
 	case <-time.After(4*time.Second): t.Fatal("FIXTURE_INVALID: nav.refs did not enter semantic caller")
+	}
+	// Service budget cancellation can finish the handler before the controlled
+	// caller returns. Hold a real owned update barrier, not a guessed work count,
+	// to establish that the shutdown owner genuinely cannot complete yet.
+	fenceDeadline := time.NewTimer(time.Second)
+	defer fenceDeadline.Stop()
+	retry := time.NewTicker(time.Millisecond)
+	defer retry.Stop()
+	for releaseGate == nil {
+		if release, ok := server.updateGate.TryIdleBarrier(); ok {
+			releaseGate = release
+			break
+		}
+		select {
+		case <-fenceDeadline.C: t.Fatal("FIXTURE_INVALID: could not own shutdown fence after request cancellation")
+		case <-retry.C:
+		}
 	}
 	return server, caller, cancel, serveDone
 }
@@ -92,7 +121,7 @@ func TestServerServeWaitsForOwnedShutdown(t *testing.T) {
 	cancel()
 	if !errors.Is(err, ErrShutdownIncomplete) { t.Fatalf("held shutdown: got %v, want ErrShutdownIncomplete", err) }
 	select {
-	case err := <-serveDone: t.Fatalf("Serve returned while admitted semantic work was held: %v", err)
+	case err := <-serveDone: t.Fatalf("Serve returned while owned shutdown fence was held: %v", err)
 	case <-time.After(200*time.Millisecond):
 	}
 }
@@ -104,7 +133,7 @@ func TestDaemonServeShapeRetainsOwnerPastCallerGrace(t *testing.T) {
 	cancel()
 	if !errors.Is(err, ErrShutdownIncomplete) { t.Fatalf("held shutdown: got %v, want ErrShutdownIncomplete", err) }
 	select {
-	case err := <-serveDone: t.Fatalf("mirrored CLI serve shape returned while semantic work was held: %v", err)
+	case err := <-serveDone: t.Fatalf("mirrored CLI serve shape returned while owned shutdown fence was held: %v", err)
 	case <-time.After(shutdownCallerGrace + 500*time.Millisecond):
 	}
 }
