@@ -1,13 +1,15 @@
 package runtimeinfo
 
 import (
+	"bufio"
 	"context"
 	"fmt"
-	"os/exec"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 )
 
 func TestFileLeaseCancelBusyAndRelease(t *testing.T) {
@@ -32,22 +34,50 @@ func TestFileLeaseCancelBusyAndRelease(t *testing.T) {
 }
 
 func TestFileLeaseChildExitsWithoutRelease(t *testing.T) {
-	path := os.Getenv("MI_FILE_LEASE_CHILD_PATH")
-	if path != "" {
-		lease, err := AcquireFileLeaseContext(context.Background(), path)
-		if err != nil { fmt.Fprintln(os.Stdout, "acquire-error"); os.Exit(3) }
-		// Intentionally leave Release uncalled; process exit must release the
-		// kernel handle. The parent joins this child before reacquiring.
-		_ = lease
-		fmt.Fprintln(os.Stdout, "lease-held")
-		os.Exit(0)
+	const key = "MI_FILE_LEASE_CHILD_PATH="
+	for _, env := range os.Environ() {
+		if len(env) >= len(key) && env[:len(key)] == key {
+			path := env[len(key):]
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			lease, err := AcquireFileLeaseContext(ctx, path)
+			cancel()
+			if err != nil { fmt.Fprintln(os.Stdout, "acquire-error"); return }
+			// Exact readiness line means acquisition has completed; stay alive
+			// holding the lease until the parent closes stdin.
+			fmt.Fprintln(os.Stdout, "FILELEASE-READY")
+			_, _ = bufio.NewReader(os.Stdin).ReadString(0)
+			_ = lease // intentionally no Release: exit releases the OS handle
+			return
+		}
 	}
-	path = filepath.Join(t.TempDir(), "child-guard")
-	cmd := exec.Command(os.Args[0], "-test.run=^TestFileLeaseChildExitsWithoutRelease$")
-	cmd.Env = append(os.Environ(), "MI_FILE_LEASE_CHILD_PATH="+path)
-	output, err := cmd.CombinedOutput() // waits/reaps the actual child process
-	if err != nil { t.Fatalf("controlled child failed: %v (%s)", err, output) }
-	if string(output) == "" { t.Fatal("child produced no ownership handshake") }
+	path := filepath.Join(t.TempDir(), "child-guard")
+	cmd := processutil.Command(os.Args[0], "-test.run=^TestFileLeaseChildExitsWithoutRelease$")
+	cmd.Env = make([]string, 0, len(os.Environ())+1)
+	for _, env := range os.Environ() { if len(env) < len(key) || env[:len(key)] != key { cmd.Env = append(cmd.Env, env) } }
+	cmd.Env = append(cmd.Env, key+path)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil { t.Fatal(err) }
+	stdin, err := cmd.StdinPipe()
+	if err != nil { t.Fatal(err) }
+	if err := cmd.Start(); err != nil { t.Fatal(err) }
+	joined := false
+	join := func() error { if joined { return nil }; joined = true; return cmd.Wait() }
+	t.Cleanup(func() { _ = stdin.Close(); if !joined { _ = join() } })
+	ready := make(chan string, 1)
+	go func() { line, _ := bufio.NewReader(stdout).ReadString('\n'); ready <- line }()
+	select {
+	case line := <-ready:
+		if line != "FILELEASE-READY\n" { _ = stdin.Close(); _ = join(); t.Fatalf("unexpected child handshake %q", line) }
+	case <-time.After(6*time.Second):
+		_ = stdin.Close(); _ = join(); t.Fatal("child readiness deadline")
+	}
+	// Contender must time out while the live child still owns the lease.
+	contenderCtx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
+	contender, err := AcquireFileLeaseContext(contenderCtx, path)
+	cancel()
+	if err == nil { _ = contender.Release(); _ = stdin.Close(); _ = join(); t.Fatal("contender acquired while child remained alive") }
+	if err := stdin.Close(); err != nil { _ = join(); t.Fatal(err) }
+	if err := join(); err != nil { t.Fatalf("controlled child exit: %v", err) }
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	lease, err := AcquireFileLeaseContext(ctx, path)
