@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,7 +23,11 @@ type nativeEvent struct {
 
 func newNativeEventCommand() *cobra.Command {
 	return &cobra.Command{Use: "native-event", Short: "Record one completed native LSP operation from JSON stdin", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		dec := json.NewDecoder(io.LimitReader(cmd.InOrStdin(), 4097))
+		body, err := io.ReadAll(io.LimitReader(cmd.InOrStdin(), 4097))
+		if err != nil || len(body) > 4096 {
+			return errors.New("event exceeds input limit or cannot be read")
+		}
+		dec := json.NewDecoder(bytes.NewReader(body))
 		dec.DisallowUnknownFields()
 		var in nativeEvent
 		if err := dec.Decode(&in); err != nil {
