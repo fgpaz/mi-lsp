@@ -136,6 +136,7 @@ type WALHealth struct {
 }
 
 type TelemetryStore struct {
+	dbPath        string
 	db            *sql.DB
 	writeQueue    chan telemetryWriteRequest
 	done          chan struct{}
@@ -167,6 +168,7 @@ func openTelemetryStore() (*TelemetryStore, error) {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	store := &TelemetryStore{
+		dbPath:      path,
 		db:          db,
 		writeQueue:  make(chan telemetryWriteRequest, 256),
 		done:        make(chan struct{}),
