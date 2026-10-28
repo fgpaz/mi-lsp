@@ -21,6 +21,9 @@ func (s *Server) registerIngressConnection(conn net.Conn) bool {
 	if s.connectionCancels == nil {
 		s.connectionCancels = make(map[net.Conn]context.CancelFunc)
 	}
+	if s.semanticConnections == nil {
+		s.semanticConnections = make(map[net.Conn]struct{})
+	}
 	s.connections[conn] = struct{}{}
 	return true
 }
@@ -29,6 +32,7 @@ func (s *Server) unregisterIngressConnection(conn net.Conn) {
 	s.connectionsMu.Lock()
 	delete(s.connections, conn)
 	delete(s.connectionCancels, conn)
+	delete(s.semanticConnections, conn)
 	s.connectionsMu.Unlock()
 	select {
 	case s.connectionsChanged <- struct{}{}:
@@ -52,7 +56,7 @@ func (s *Server) waitForIngressHandlers() bool {
 	}
 }
 
-func (s *Server) beginSemanticConnectionWork(conn net.Conn, cancel context.CancelFunc) bool {
+func (s *Server) trackConnectionHandler(conn net.Conn, cancel context.CancelFunc, semantic bool) bool {
 	s.workMu.Lock()
 	defer s.workMu.Unlock()
 	if s.shutdownStarted.Load() {
@@ -66,11 +70,17 @@ func (s *Server) beginSemanticConnectionWork(conn net.Conn, cancel context.Cance
 	if s.connectionCancels == nil {
 		s.connectionCancels = make(map[net.Conn]context.CancelFunc)
 	}
+	if s.semanticConnections == nil {
+		s.semanticConnections = make(map[net.Conn]struct{})
+	}
 	s.connectionCancels[conn] = cancel
-	s.activeWork++
-	select {
-	case s.workChanged <- struct{}{}:
-	default:
+	if semantic {
+		s.semanticConnections[conn] = struct{}{}
+		s.activeWork++
+		select {
+		case s.workChanged <- struct{}{}:
+		default:
+		}
 	}
 	return true
 }
@@ -78,18 +88,26 @@ func (s *Server) beginSemanticConnectionWork(conn net.Conn, cancel context.Cance
 func (s *Server) detachConnectionCancel(conn net.Conn) {
 	s.connectionsMu.Lock()
 	delete(s.connectionCancels, conn)
+	delete(s.semanticConnections, conn)
 	s.connectionsMu.Unlock()
 }
 
 func (s *Server) closeIdleIngressConnections() {
 	s.connectionsMu.Lock()
 	connections := make([]net.Conn, 0, len(s.connections))
+	cancels := make([]context.CancelFunc, 0, len(s.connectionCancels))
 	for conn := range s.connections {
-		if _, semantic := s.connectionCancels[conn]; !semantic {
+		if _, semantic := s.semanticConnections[conn]; !semantic {
 			connections = append(connections, conn)
+			if cancel := s.connectionCancels[conn]; cancel != nil {
+				cancels = append(cancels, cancel)
+			}
 		}
 	}
 	s.connectionsMu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
 	for _, conn := range connections {
 		_ = conn.Close()
 	}

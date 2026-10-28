@@ -67,6 +67,7 @@ type Server struct {
 	connectionsMu       sync.Mutex
 	connections         map[net.Conn]struct{}
 	connectionCancels   map[net.Conn]context.CancelFunc
+	semanticConnections map[net.Conn]struct{}
 	connectionsChanged  chan struct{}
 }
 
@@ -139,6 +140,7 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 		workIdle:      make(chan struct{}, 1),
 		connections:        make(map[net.Conn]struct{}),
 		connectionCancels:  make(map[net.Conn]context.CancelFunc),
+		semanticConnections: make(map[net.Conn]struct{}),
 		connectionsChanged: make(chan struct{}, 1),
 		state: model.DaemonState{
 			PID:             os.Getpid(),
@@ -299,8 +301,9 @@ func (s *Server) serveWithUpdateSchedule(ctx context.Context, schedule func(cont
 var ErrShutdownIncomplete = errors.New("daemon shutdown is still draining")
 
 const (
-	shutdownDrainGrace = 4 * time.Second
-	shutdownCallerGrace = 5 * time.Second
+	shutdownDrainGrace         = 4 * time.Second
+	shutdownCallerGrace        = 5 * time.Second
+	shutdownFenceRetryInterval = 250 * time.Millisecond
 )
 
 // Shutdown keeps the legacy fire-and-wait shape. The owner continues draining
@@ -399,9 +402,9 @@ func (s *Server) runShutdownOwner() {
 	if s.admin != nil {
 		cleanupErr = errors.Join(cleanupErr, s.admin.Shutdown())
 	}
-	if !s.waitForSemanticWorkFor(shutdownDrainGrace) {
-		s.closeIngressConnections()
-	}
+	_ = s.waitForSemanticWorkFor(shutdownDrainGrace)
+	// Drain expiry or natural semantic completion both close residual handlers.
+	s.closeIngressConnections()
 	for !s.waitForSemanticWork() || !s.waitForIngressHandlers() {
 		<-s.shutdownRetry
 	}
@@ -409,6 +412,8 @@ func (s *Server) runShutdownOwner() {
 		s.updateRetention.stopAndWait()
 	}
 
+	retryTicker := time.NewTicker(shutdownFenceRetryInterval)
+	defer retryTicker.Stop()
 	fence, fenceHasGate := s.takeShutdownFence()
 	for fence == nil || (s.updateGate != nil && !fenceHasGate) {
 		var releaseGate func()
@@ -444,7 +449,10 @@ func (s *Server) runShutdownOwner() {
 				releaseGate()
 			}
 		}
-		<-s.shutdownRetry
+		select {
+		case <-s.shutdownRetry:
+		case <-retryTicker.C:
+		}
 		fence, fenceHasGate = s.takeShutdownFence()
 	}
 
@@ -555,18 +563,18 @@ func (s *Server) handleConnectionContext(ctx context.Context, conn net.Conn) {
 	if s.isBackpressureLimited(request) {
 		defer s.releaseInflight()
 	}
-	// Daemon command cancellation stops Serve, not admitted work. The shutdown
-	// owner cancels this request context only after the graceful drain budget.
-	requestCtx, cancelRequest := context.WithCancel(context.WithoutCancel(ctx))
+	// Keep the actual service/root context so its deadlines and cancellation
+	// propagate to the handler; peer EOF cancellation remains request-local.
+	requestCtx, cancelRequest := context.WithCancel(ctx)
 	defer cancelRequest()
 	semanticEligible := request.ProtocolVersion == model.ProtocolVersion && isSemanticDaemonOperation(request.Operation)
+	if !s.trackConnectionHandler(conn, cancelRequest, semanticEligible) {
+		_ = conn.Close()
+		return
+	}
+	defer s.detachConnectionCancel(conn)
 	if semanticEligible {
-		if !s.beginSemanticConnectionWork(conn, cancelRequest) {
-			_ = worker.WriteFrame(conn, daemonErrorEnvelope(request, errors.New("daemon is draining"), "daemon"))
-			return
-		}
 		defer s.endSemanticWork()
-		defer s.detachConnectionCancel(conn)
 	}
 	if request.Operation == "q" {
 		go func() {

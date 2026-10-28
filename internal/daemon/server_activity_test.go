@@ -187,14 +187,7 @@ func TestServerShutdownContextRetainsFenceAndLeaseUntilRetry(t *testing.T) {
 	if !ok {
 		t.Fatal("could not create owned contended shutdown fence")
 	}
-	active := server.beginSemanticWork()
-	if !active {
-		t.Fatal("could not start private semantic work")
-	}
 	defer func() {
-		if active {
-			server.endSemanticWork()
-		}
 		releaseGate()
 		server.Shutdown()
 	}()
@@ -213,14 +206,17 @@ func TestServerShutdownContextRetainsFenceAndLeaseUntilRetry(t *testing.T) {
 		t.Fatal("a second private server acquired the lease while shutdown was draining")
 	}
 
-	server.endSemanticWork()
-	active = false
 	releaseGate()
-	ctx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
-	err = server.ShutdownContext(ctx)
-	cancel()
+	select {
+	case <-server.shutdownDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("original shutdown owner did not resume after gate release")
+	}
+	server.shutdownMu.Lock()
+	err = server.shutdownErr
+	server.shutdownMu.Unlock()
 	if err != nil {
-		t.Fatalf("shutdown did not complete after its fence became available: %v", err)
+		t.Fatalf("shutdown cleanup failed after gate release: %v", err)
 	}
 
 	next, err := NewServerWithOptions(t.TempDir(), 1, time.Minute, options)
@@ -233,6 +229,49 @@ func TestServerShutdownContextRetainsFenceAndLeaseUntilRetry(t *testing.T) {
 	cancel()
 	if err != nil {
 		t.Fatalf("sequential private server shutdown: %v", err)
+	}
+}
+
+func TestServerShutdownCancelsTrackedNonsemanticHandlerContext(t *testing.T) {
+	privateHome := t.TempDir()
+	t.Setenv("HOME", privateHome)
+	t.Setenv("USERPROFILE", privateHome)
+	t.Setenv("USERNAME", fmt.Sprintf("aorph-handler-%d", os.Getpid()))
+	options := DefaultStartOptions()
+	options.WatchMode = WatchModeOff
+	server, err := NewServerWithOptions(t.TempDir(), 1, time.Minute, options)
+	if err != nil {
+		t.Fatalf("construct private server: %v", err)
+	}
+	defer server.Shutdown()
+
+	serverConn, peerConn := net.Pipe()
+	defer peerConn.Close()
+	requestCtx, cancelRequest := context.WithCancel(context.Background())
+	defer cancelRequest()
+	if !server.registerIngressConnection(serverConn) {
+		t.Fatal("private handler connection was not registered")
+	}
+	if !server.trackConnectionHandler(serverConn, cancelRequest, false) {
+		t.Fatal("nonsemantic handler context was not tracked")
+	}
+	handlerDone := make(chan struct{})
+	go func() {
+		<-requestCtx.Done()
+		server.unregisterIngressConnection(serverConn)
+		close(handlerDone)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	err = server.ShutdownContext(ctx)
+	cancel()
+	if err != nil {
+		t.Fatalf("shutdown did not join cancelled nonsemantic handler: %v", err)
+	}
+	select {
+	case <-handlerDone:
+	case <-time.After(time.Second):
+		t.Fatal("nonsemantic handler context was not cancelled and joined")
 	}
 }
 
