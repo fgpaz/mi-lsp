@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"fmt"
+	"strings"
 	"os"
 	"testing"
 	"time"
@@ -14,7 +16,7 @@ func TestNewServerWithOptionsRejectsUnreachableLiveLegacyOwner(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	t.Setenv("USERNAME", "aorph-owner-mitigation-test")
+	t.Setenv("USERNAME", fmt.Sprintf("aorph-owner-mitigation-test-%d", os.Getpid()))
 
 	state := model.DaemonState{
 		PID:      os.Getpid(),
@@ -37,8 +39,8 @@ func TestNewServerWithOptionsRejectsUnreachableLiveLegacyOwner(t *testing.T) {
 		server.Shutdown()
 		t.Fatal("constructor returned a server while a live legacy owner was unreachable")
 	}
-	if err == nil {
-		t.Fatal("expected an owner-diagnostic error for the unreachable live legacy daemon")
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "owner") {
+		t.Fatalf("expected an owner-diagnostic error for the unreachable live legacy daemon, got %v", err)
 	}
 	if _, statErr := os.Stat(dbPath); !os.IsNotExist(statErr) {
 		t.Fatalf("constructor touched or created SQLite before rejecting the owner: %v", statErr)
