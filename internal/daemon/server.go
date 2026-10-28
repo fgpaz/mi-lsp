@@ -52,6 +52,16 @@ type Server struct {
 	elasticCtx          context.Context
 	elasticCancel       context.CancelFunc
 	elasticReady        chan struct{}
+	idleTimeout         time.Duration
+	workMu              sync.Mutex
+	activeWork          int
+	lastWorkCompletion  time.Time
+	workChanged         chan struct{}
+	workIdle            chan struct{}
+	jobsPausedForIdle   atomic.Bool
+	connectionsMu       sync.Mutex
+	connections         map[net.Conn]struct{}
+	connectionsChanged  chan struct{}
 }
 
 // generateAdminToken creates a random 32-byte hex token for admin authentication.
@@ -71,6 +81,7 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 	ApplyDaemonMemoryPolicy()
 	options = NormalizeStartOptions(options)
 	maxWorkers = normalizeMaxWorkers(maxWorkers)
+	idleTimeout = normalizeServerIdleTimeout(idleTimeout)
 	leasePath, err := daemonInstanceLockPath()
 	if err != nil {
 		return nil, err
@@ -99,6 +110,7 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 	}
 	listener = newUpdateListener(listener, listenDaemon)
 	manager := NewManagerWithOptions(repoRoot, maxWorkers, idleTimeout, options)
+	manager.SetTelemetryStore(telemetry)
 	elasticCtx, elasticCancel := context.WithCancel(context.Background())
 	server := &Server{
 		listener:      listener,
@@ -114,6 +126,11 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 		elasticCtx:    elasticCtx,
 		elasticCancel: elasticCancel,
 		elasticReady:  make(chan struct{}),
+		idleTimeout:   idleTimeout,
+		workChanged:   make(chan struct{}, 1),
+		workIdle:      make(chan struct{}, 1),
+		connections:        make(map[net.Conn]struct{}),
+		connectionsChanged: make(chan struct{}, 1),
 		state: model.DaemonState{
 			PID:             os.Getpid(),
 			Endpoint:        defaultEndpoint(),
@@ -230,6 +247,12 @@ func (s *Server) Serve(ctx context.Context) error {
 }
 
 func (s *Server) serveWithUpdateSchedule(ctx context.Context, schedule func(context.Context)) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	idleDone := make(chan struct{})
+	go s.expireWhenIdle(ctx, idleDone)
+	defer close(idleDone)
 	updateCtx, cancelUpdate := context.WithCancel(ctx)
 	updateDone := make(chan struct{})
 	go func() {
@@ -269,12 +292,33 @@ func (s *Server) Shutdown() {
 		if s.updateRetention != nil {
 			s.updateRetention.stopAndWait()
 		}
+		s.waitForSemanticWork()
+		s.closeIngressConnections()
+		s.waitForIngressHandlers()
+		if s.updateGate != nil && !s.updateBarrierHeld() {
+			for {
+				if _, idle := s.updateGate.TryIdleBarrier(); idle || s.updateBarrierHeld() {
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+		_ = s.admin.Shutdown()
+		if !s.jobsPausedForIdle.Load() && !s.updateBarrierHeld() {
+			for {
+				resumeJobs, idle := indexer.TryPauseBackgroundJobs()
+				if idle {
+					_ = resumeJobs
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
 		s.elasticCancel()
 		s.syncRuntimeSnapshots()
 		_ = clearDaemonState()
 		_ = s.telemetry.StopRun(s.state.RunID, time.Now())
 		_ = s.listener.Close()
-		_ = s.admin.Shutdown()
 		if s.elastic != nil {
 			s.elasticLimitsMu.Lock()
 			_ = s.elastic.Close()
@@ -293,6 +337,11 @@ func (s *Server) handleConnection(conn net.Conn) {
 }
 
 func (s *Server) handleConnectionContext(ctx context.Context, conn net.Conn) {
+	if !s.registerIngressConnection(conn) {
+		_ = conn.Close()
+		return
+	}
+	defer s.unregisterIngressConnection(conn)
 	if s.updateGate != nil {
 		finish, ok := s.updateGate.Begin("accepted-connection")
 		if !ok {
@@ -311,6 +360,10 @@ func (s *Server) handleConnectionContext(ctx context.Context, conn net.Conn) {
 		_ = worker.WriteFrame(conn, daemonErrorEnvelope(request, err, "transport"))
 		return
 	}
+	if s.shutdownStarted.Load() {
+		_ = conn.Close()
+		return
+	}
 	started := time.Now()
 	if s.isBackpressureLimited(request) && !s.tryAcquireInflight() {
 		response := s.backpressureEnvelope(request)
@@ -322,6 +375,14 @@ func (s *Server) handleConnectionContext(ctx context.Context, conn net.Conn) {
 		defer s.releaseInflight()
 	}
 	requestCtx := ctx
+	semanticWork := s.tryBeginSemanticWork(request)
+	if isSemanticDaemonOperation(request.Operation) && request.ProtocolVersion == model.ProtocolVersion && !semanticWork {
+		_ = worker.WriteFrame(conn, daemonErrorEnvelope(request, errors.New("daemon is draining"), "daemon"))
+		return
+	}
+	if semanticWork {
+		defer s.endSemanticWork()
+	}
 	if request.Operation == "q" {
 		var cancel context.CancelFunc
 		requestCtx, cancel = context.WithCancel(ctx)
