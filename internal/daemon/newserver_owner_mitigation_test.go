@@ -12,6 +12,30 @@ import (
 
 // A legacy daemon state whose owner is demonstrably alive but whose endpoint
 // cannot be reached must fail closed before this process binds or opens SQLite.
+func TestNewServerWithOptionsRejectsUnreadableLegacyOwner(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("USERNAME", fmt.Sprintf("aorph-owner-malformed-test-%d", os.Getpid()))
+	path, err := daemonStatePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewServerWithOptions(t.TempDir(), 1, time.Minute, DefaultStartOptions()); err == nil || !strings.Contains(strings.ToLower(err.Error()), "owner state") {
+		t.Fatalf("expected fail-closed owner state error, got %v", err)
+	}
+	dbPath, err := daemonDatabasePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dbPath); !os.IsNotExist(err) {
+		t.Fatalf("database created despite malformed owner state: %v", err)
+	}
+}
+
 func TestNewServerWithOptionsRejectsUnreachableLiveLegacyOwner(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
