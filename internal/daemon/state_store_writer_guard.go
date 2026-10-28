@@ -57,6 +57,13 @@ func (s *TelemetryStore) withTelemetryWriterLeaseContext(ctx context.Context, fn
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("resolve telemetry database file: %w", err)
 	} else {
+		entry, lstatErr := os.Lstat(absolute)
+		if lstatErr == nil && entry.Mode()&os.ModeSymlink != 0 {
+			return errors.New("telemetry database path is a dangling symlink")
+		}
+		if lstatErr != nil && !errors.Is(lstatErr, os.ErrNotExist) {
+			return fmt.Errorf("inspect telemetry database path: %w", lstatErr)
+		}
 		parent, parentErr := filepath.EvalSymlinks(filepath.Dir(absolute))
 		if parentErr != nil {
 			return fmt.Errorf("resolve telemetry database parent: %w", parentErr)

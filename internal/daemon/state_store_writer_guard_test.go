@@ -156,6 +156,40 @@ func TestTelemetryWriterGuardDatabaseSymlinkAliasSharesGuard(t *testing.T) {
 	if count != 2 { t.Fatalf("rows through aliased DB = %d, want 2", count) }
 }
 
+func TestTelemetryWriterGuardAllowsMissingRegularDatabasePath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "future.db")
+	store := openWriterGuardTestStore(t, path, path)
+	if err := store.withTelemetryWriterLeaseContext(context.Background(), func(context.Context) error { return nil }); err != nil {
+		t.Fatalf("missing regular DB path rejected: %v", err)
+	}
+	if _, err := os.Stat(path + ".writer.guard"); err != nil {
+		t.Fatalf("writer guard not created for future DB path: %v", err)
+	}
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("callback-less path unexpectedly created DB: stat error=%v", err)
+	}
+}
+
+func TestTelemetryWriterGuardRejectsDanglingDatabaseSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "not-created.db")
+	alias := filepath.Join(dir, "dangling.db")
+	if err := os.Symlink(target, alias); err != nil {
+		t.Skipf("filesystem does not permit symlink fixture: %v", err)
+	}
+	store := openWriterGuardTestStore(t, alias, alias)
+	called := false
+	err := store.withTelemetryWriterLeaseContext(context.Background(), func(context.Context) error { called = true; return nil })
+	if err == nil || called {
+		t.Fatalf("dangling DB symlink accepted: err=%v callback=%v", err, called)
+	}
+	for _, path := range []string{alias + ".writer.guard", target, target + ".writer.guard"} {
+		if _, statErr := os.Lstat(path); !errors.Is(statErr, os.ErrNotExist) {
+			t.Errorf("unexpected path created for rejected dangling alias %q: stat error=%v", path, statErr)
+		}
+	}
+}
+
 func TestTelemetryWriterGuardRejectsInMemoryURIAndAmbiguousWhitespace(t *testing.T) {
 	cases := []struct { name, dsn, path string }{
 		{name: "explicit memory", dsn: ":memory:", path: ":memory:"},
