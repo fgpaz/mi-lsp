@@ -19,25 +19,35 @@ import (
 // SQLite latency or a physical WAL size cap. Cancellation is observed, but the
 // driver call retains ownership until the test explicitly releases it.
 type drainConnector struct {
-	path string
-	entered chan struct{}
-	release chan struct{}
+	path     string
+	entered  chan struct{}
+	release  chan struct{}
 	canceled chan struct{}
-	once sync.Once
+	once     sync.Once
 }
+
 func (c *drainConnector) Connect(context.Context) (driver.Conn, error) {
 	conn, err := (&sqlite.Driver{}).Open(c.path)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return &drainConn{Conn: conn, gate: c}, nil
 }
 func (c *drainConnector) Driver() driver.Driver { return &sqlite.Driver{} }
-type drainConn struct { driver.Conn; gate *drainConnector }
+
+type drainConn struct {
+	driver.Conn
+	gate *drainConnector
+}
+
 func (c *drainConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	if strings.Contains(query, "SELECT COALESCE(MAX(seq)") {
 		c.gate.once.Do(func() { close(c.gate.entered) })
 		select {
 		case <-ctx.Done():
-			if c.gate.canceled != nil { close(c.gate.canceled) }
+			if c.gate.canceled != nil {
+				close(c.gate.canceled)
+			}
 			<-c.gate.release
 			return nil, ctx.Err()
 		case <-c.gate.release:
@@ -55,8 +65,12 @@ func TestCloseBoundsInflightPersistence(t *testing.T) {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	s := &TelemetryStore{db: db, writeQueue: make(chan telemetryWriteRequest, 8), done: make(chan struct{}), walMaxBytes: telemetryWALMaxBytes}
-	if err := s.configureConnection(); err != nil { t.Fatal(err) }
-	if err := s.initSchema(); err != nil { t.Fatal(err) }
+	if err := s.configureConnection(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.initSchema(); err != nil {
+		t.Fatal(err)
+	}
 	s.wg.Add(1)
 	go s.asyncWriteWorker()
 	var closeResult chan error
@@ -68,13 +82,18 @@ func TestCloseBoundsInflightPersistence(t *testing.T) {
 		}
 		<-closeResult
 		s.wg.Wait()
-		if err := s.WaitClosed(context.Background()); err != nil { t.Errorf("cleanup close owner: %v", err) }
+		if err := s.WaitClosed(context.Background()); err != nil {
+			t.Errorf("cleanup close owner: %v", err)
+		}
 		_ = db.Close()
 	}()
-	if err := s.RecordAccess(0, model.AccessEvent{SessionID: "gate", Operation: "inflight", OccurredAt: time.Now()}); err != nil { t.Fatal(err) }
+	if err := s.RecordAccess(0, model.AccessEvent{SessionID: "gate", Operation: "inflight", OccurredAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
 	select {
 	case <-gate.entered:
-	case <-time.After(time.Second): t.Fatal("persistence did not enter the sequence query")
+	case <-time.After(time.Second):
+		t.Fatal("persistence did not enter the sequence query")
 	}
 	closeResult = make(chan error, 1)
 	go func() { closeResult <- s.Close() }()
@@ -82,7 +101,9 @@ func TestCloseBoundsInflightPersistence(t *testing.T) {
 	case err := <-closeResult:
 		// Preserve the result for cleanup's genuine join.
 		closeResult <- err
-		if err == nil { t.Error("Close reported complete while a driver call still owns the database") }
+		if err == nil {
+			t.Error("Close reported complete while a driver call still owns the database")
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
 		if err := db.PingContext(ctx); !errors.Is(err, context.DeadlineExceeded) {

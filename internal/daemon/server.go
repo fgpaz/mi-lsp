@@ -26,49 +26,49 @@ import (
 )
 
 type Server struct {
-	listener            net.Listener
-	app                 *service.App
-	manager             *Manager
-	telemetry           *TelemetryStore
-	admin               *AdminServer
-	state               model.DaemonState
-	options             StartOptions
-	inflight            chan struct{}
-	updateGate          *updateAdmissionGate
-	updateRetention     *updateRetention
-	stopped             chan struct{}
-	shutdownMu          sync.Mutex
-	shutdownDone        chan struct{}
-	shutdownRetry       chan struct{}
-	shutdownErr         error
-	shutdownFence       func()
+	listener             net.Listener
+	app                  *service.App
+	manager              *Manager
+	telemetry            *TelemetryStore
+	admin                *AdminServer
+	state                model.DaemonState
+	options              StartOptions
+	inflight             chan struct{}
+	updateGate           *updateAdmissionGate
+	updateRetention      *updateRetention
+	stopped              chan struct{}
+	shutdownMu           sync.Mutex
+	shutdownDone         chan struct{}
+	shutdownRetry        chan struct{}
+	shutdownErr          error
+	shutdownFence        func()
 	shutdownFenceHasGate bool
 	shutdownOwnerStarted bool
-	shutdownStarted     atomic.Bool
-	elasticLimitsMu     sync.Mutex
-	coordinatorSizingMu sync.RWMutex
-	coordinatorSource   elasticdaemon.CoordinatorSource
-	coordinatorSizing   model.CoordinatorSizingStatus
-	resultCache         *resultCache
-	qSessions           *service.SessionState
-	instanceLease       *startLock
-	elastic             *elasticdaemon.Server
-	elasticNode         string
-	coordinatorCount    int
-	elasticCtx          context.Context
-	elasticCancel       context.CancelFunc
-	elasticReady        chan struct{}
-	idleTimeout         time.Duration
-	workMu              sync.Mutex
-	activeWork          int
-	lastWorkCompletion  time.Time
-	workChanged         chan struct{}
-	workIdle            chan struct{}
-	connectionsMu       sync.Mutex
-	connections         map[net.Conn]struct{}
-	connectionCancels   map[net.Conn]context.CancelFunc
-	semanticConnections map[net.Conn]struct{}
-	connectionsChanged  chan struct{}
+	shutdownStarted      atomic.Bool
+	elasticLimitsMu      sync.Mutex
+	coordinatorSizingMu  sync.RWMutex
+	coordinatorSource    elasticdaemon.CoordinatorSource
+	coordinatorSizing    model.CoordinatorSizingStatus
+	resultCache          *resultCache
+	qSessions            *service.SessionState
+	instanceLease        *startLock
+	elastic              *elasticdaemon.Server
+	elasticNode          string
+	coordinatorCount     int
+	elasticCtx           context.Context
+	elasticCancel        context.CancelFunc
+	elasticReady         chan struct{}
+	idleTimeout          time.Duration
+	workMu               sync.Mutex
+	activeWork           int
+	lastWorkCompletion   time.Time
+	workChanged          chan struct{}
+	workIdle             chan struct{}
+	connectionsMu        sync.Mutex
+	connections          map[net.Conn]struct{}
+	connectionCancels    map[net.Conn]context.CancelFunc
+	semanticConnections  map[net.Conn]struct{}
+	connectionsChanged   chan struct{}
 }
 
 // generateAdminToken creates a random 32-byte hex token for admin authentication.
@@ -120,28 +120,28 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 	manager.SetTelemetryStore(telemetry)
 	elasticCtx, elasticCancel := context.WithCancel(context.Background())
 	server := &Server{
-		listener:      listener,
-		manager:       manager,
-		telemetry:     telemetry,
-		options:       options,
-		inflight:      make(chan struct{}, options.MaxInflight),
-		updateGate:    newUpdateAdmissionGate(),
-		stopped:       make(chan struct{}),
-		shutdownDone:  make(chan struct{}),
-		shutdownRetry: make(chan struct{}, 1),
-		resultCache:   newResultCache(),
-		qSessions:     newQSessionState(),
-		instanceLease: lease,
-		elasticCtx:    elasticCtx,
-		elasticCancel: elasticCancel,
-		elasticReady:  make(chan struct{}),
-		idleTimeout:   idleTimeout,
-		workChanged:   make(chan struct{}, 1),
-		workIdle:      make(chan struct{}, 1),
-		connections:        make(map[net.Conn]struct{}),
-		connectionCancels:  make(map[net.Conn]context.CancelFunc),
+		listener:            listener,
+		manager:             manager,
+		telemetry:           telemetry,
+		options:             options,
+		inflight:            make(chan struct{}, options.MaxInflight),
+		updateGate:          newUpdateAdmissionGate(),
+		stopped:             make(chan struct{}),
+		shutdownDone:        make(chan struct{}),
+		shutdownRetry:       make(chan struct{}, 1),
+		resultCache:         newResultCache(),
+		qSessions:           newQSessionState(),
+		instanceLease:       lease,
+		elasticCtx:          elasticCtx,
+		elasticCancel:       elasticCancel,
+		elasticReady:        make(chan struct{}),
+		idleTimeout:         idleTimeout,
+		workChanged:         make(chan struct{}, 1),
+		workIdle:            make(chan struct{}, 1),
+		connections:         make(map[net.Conn]struct{}),
+		connectionCancels:   make(map[net.Conn]context.CancelFunc),
 		semanticConnections: make(map[net.Conn]struct{}),
-		connectionsChanged: make(chan struct{}, 1),
+		connectionsChanged:  make(chan struct{}, 1),
 		state: model.DaemonState{
 			PID:             os.Getpid(),
 			Endpoint:        defaultEndpoint(),
@@ -406,7 +406,9 @@ func (s *Server) shutdownWithFence(ctx context.Context, transferredFence func(),
 }
 
 func (s *Server) runShutdownOwner() {
-	if s.telemetry != nil { s.telemetry.startDrainDeadline() }
+	if s.telemetry != nil {
+		s.telemetry.startDrainDeadline()
+	}
 	if s.listener != nil {
 		_ = s.listener.Close()
 	}
@@ -797,7 +799,10 @@ func (s *Server) recordAccess(request model.CommandRequest, response model.Envel
 		return
 	}
 	seq, err := s.telemetry.nextSeqContext(s.telemetry.ownedWriteContext(), request.Context.SessionID)
-	if err != nil { s.telemetry.failWrite(); return }
+	if err != nil {
+		s.telemetry.failWrite()
+		return
+	}
 	event := model.AccessEvent{
 		OccurredAt:     time.Now(),
 		ClientName:     firstNonEmpty(request.Context.ClientName, "manual-cli"),

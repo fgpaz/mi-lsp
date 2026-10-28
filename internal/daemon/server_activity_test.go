@@ -43,9 +43,9 @@ func TestServerIdleExpiryIgnoresStatusProbeAndOpenConnection(t *testing.T) {
 	probeCtx, cancelProbes := context.WithCancel(ctx)
 	probeDone := make(chan struct{})
 	type probeResult struct {
-		at time.Time
+		at              time.Time
 		stage, category string
-		duration time.Duration
+		duration        time.Duration
 	}
 	probeResults := make(chan probeResult, 256)
 	go func() {

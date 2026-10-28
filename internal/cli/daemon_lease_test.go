@@ -163,7 +163,9 @@ func TestRootDaemonLeasePreRunIsReadonly(t *testing.T) {
 	started := false
 	setUpdateAutomaticStartForTest(root, "0.16.2", func() error { started = true; return nil })
 	capture, err := os.CreateTemp(t.TempDir(), "root-lease-output-")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer capture.Close()
 	oldStdout := os.Stdout
 	os.Stdout = capture
@@ -171,12 +173,24 @@ func TestRootDaemonLeasePreRunIsReadonly(t *testing.T) {
 	root.SetArgs([]string{"daemon", "lease", "--format", "json", "--max-chars", "1"})
 	root.SetOut(capture)
 	root.SetErr(io.Discard)
-	if err := root.Execute(); err != nil { t.Fatalf("root lease command failed: %v", err) }
+	if err := root.Execute(); err != nil {
+		t.Fatalf("root lease command failed: %v", err)
+	}
 	os.Stdout = oldStdout
-	if started { t.Fatal("root pre-run started the automatic updater for lease query") }
-	if _, err := os.Stat(filepath.Join(home, ".mi-lsp")); !os.IsNotExist(err) { t.Fatalf("root lease pre-run created runtime state: %v", err) }
-	if _, err := capture.Seek(0, 0); err != nil { t.Fatal(err) }
+	if started {
+		t.Fatal("root pre-run started the automatic updater for lease query")
+	}
+	if _, err := os.Stat(filepath.Join(home, ".mi-lsp")); !os.IsNotExist(err) {
+		t.Fatalf("root lease pre-run created runtime state: %v", err)
+	}
+	if _, err := capture.Seek(0, 0); err != nil {
+		t.Fatal(err)
+	}
 	body, err := io.ReadAll(capture)
-	if err != nil { t.Fatal(err) }
-	if !json.Valid(body) { t.Fatalf("root lease JSON was truncated by tiny output budget: %q", body) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !json.Valid(body) {
+		t.Fatalf("root lease JSON was truncated by tiny output budget: %q", body)
+	}
 }

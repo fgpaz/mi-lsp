@@ -27,9 +27,9 @@ const (
 	telemetryWALMaxBytes         = int64(16 << 20)
 	telemetryMaxEventBytes       = 1 << 20
 	telemetryCheckpointInterval  = time.Minute
-	telemetryCloseDrainTimeout  = 2 * time.Second
-	telemetryCheckpointTimeout  = 250 * time.Millisecond
-	telemetryCheckpointBusyWait = 25 * time.Millisecond
+	telemetryCloseDrainTimeout   = 2 * time.Second
+	telemetryCheckpointTimeout   = 250 * time.Millisecond
+	telemetryCheckpointBusyWait  = 25 * time.Millisecond
 )
 
 func daemonRootDir() (string, error) {
@@ -117,42 +117,42 @@ type telemetryWriteRequest struct {
 }
 
 var (
-	errTelemetryWALLimit = errors.New("telemetry WAL limit reached")
+	errTelemetryWALLimit       = errors.New("telemetry WAL limit reached")
 	errTelemetryCheckpointBusy = errors.New("wal_checkpoint busy")
 )
 
 type WALHealth struct {
-	WALBytes             int64  `json:"wal_bytes"`
-	WALBytesKnown        bool   `json:"wal_bytes_known"`
-	WALMaxBytes          int64  `json:"wal_max_bytes"`
-	CheckpointBusy       bool   `json:"checkpoint_busy"`
-	LastFailure          string `json:"last_failure,omitempty"`
-	LastWriteFailure     string `json:"last_write_failure,omitempty"`
-	CheckpointFailure    string `json:"checkpoint_failure,omitempty"`
-	WALSizeFailure       string `json:"wal_size_failure,omitempty"`
-	RejectedWrites       uint64 `json:"rejected_writes"`
-	FailedWrites         uint64 `json:"failed_writes"`
-	Closed               bool   `json:"closed"`
+	WALBytes          int64  `json:"wal_bytes"`
+	WALBytesKnown     bool   `json:"wal_bytes_known"`
+	WALMaxBytes       int64  `json:"wal_max_bytes"`
+	CheckpointBusy    bool   `json:"checkpoint_busy"`
+	LastFailure       string `json:"last_failure,omitempty"`
+	LastWriteFailure  string `json:"last_write_failure,omitempty"`
+	CheckpointFailure string `json:"checkpoint_failure,omitempty"`
+	WALSizeFailure    string `json:"wal_size_failure,omitempty"`
+	RejectedWrites    uint64 `json:"rejected_writes"`
+	FailedWrites      uint64 `json:"failed_writes"`
+	Closed            bool   `json:"closed"`
 }
 
 type TelemetryStore struct {
-	db *sql.DB
-	writeQueue chan telemetryWriteRequest
-	done       chan struct{}
-	wg         sync.WaitGroup
-	admissionMu sync.Mutex
-	stateMu sync.RWMutex
-	closed bool
-	health WALHealth
-	walMaxBytes int64
-	ownerOnce sync.Once
-	writeCtx context.Context
-	cancelWrites context.CancelFunc
-	closeOnce sync.Once
-	drainOnce sync.Once
-	drainTimer *time.Timer
+	db            *sql.DB
+	writeQueue    chan telemetryWriteRequest
+	done          chan struct{}
+	wg            sync.WaitGroup
+	admissionMu   sync.Mutex
+	stateMu       sync.RWMutex
+	closed        bool
+	health        WALHealth
+	walMaxBytes   int64
+	ownerOnce     sync.Once
+	writeCtx      context.Context
+	cancelWrites  context.CancelFunc
+	closeOnce     sync.Once
+	drainOnce     sync.Once
+	drainTimer    *time.Timer
 	closeComplete chan struct{}
-	closeErr error
+	closeErr      error
 }
 
 func openTelemetryStore() (*TelemetryStore, error) {
@@ -167,9 +167,9 @@ func openTelemetryStore() (*TelemetryStore, error) {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	store := &TelemetryStore{
-		db:         db,
-		writeQueue: make(chan telemetryWriteRequest, 256),
-		done:       make(chan struct{}),
+		db:          db,
+		writeQueue:  make(chan telemetryWriteRequest, 256),
+		done:        make(chan struct{}),
 		walMaxBytes: telemetryWALMaxBytes,
 	}
 	if err := store.configureConnection(); err != nil {
@@ -215,7 +215,9 @@ func retryTelemetrySQLiteContext(ctx context.Context, fn func() error) error {
 	var err error
 	delay := telemetrySQLiteRetryDelay
 	for attempt := 0; attempt < telemetrySQLiteRetryAttempts; attempt++ {
-		if err = ctx.Err(); err != nil { return err }
+		if err = ctx.Err(); err != nil {
+			return err
+		}
 		err = fn()
 		if !isTelemetrySQLiteLocked(err) {
 			return err
@@ -225,7 +227,9 @@ func retryTelemetrySQLiteContext(ctx context.Context, fn func() error) error {
 		}
 		timer := time.NewTimer(delay)
 		select {
-		case <-ctx.Done(): timer.Stop(); return ctx.Err()
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
 		case <-timer.C:
 		}
 		delay *= 2
@@ -336,7 +340,14 @@ func (s *TelemetryStore) asyncWriteWorker() {
 				case req := <-s.writeQueue:
 					s.persistQueued(req)
 				case <-s.ownedWriteContext().Done():
-					for { select { case <-s.writeQueue: s.failWrite(); default: return } }
+					for {
+						select {
+						case <-s.writeQueue:
+							s.failWrite()
+						default:
+							return
+						}
+					}
 				default:
 					return
 				}
@@ -344,7 +355,9 @@ func (s *TelemetryStore) asyncWriteWorker() {
 		case req := <-s.writeQueue:
 			s.persistQueued(req)
 		case <-ticker.C:
-			if len(s.writeQueue) == 0 { _ = s.Checkpoint() }
+			if len(s.writeQueue) == 0 {
+				_ = s.Checkpoint()
+			}
 		}
 	}
 }
@@ -352,12 +365,17 @@ func (s *TelemetryStore) asyncWriteWorker() {
 func (s *TelemetryStore) persistQueued(req telemetryWriteRequest) {
 	s.admissionMu.Lock()
 	defer s.admissionMu.Unlock()
-	if err := s.ownedWriteContext().Err(); err != nil { s.failWrite(); return }
+	if err := s.ownedWriteContext().Err(); err != nil {
+		s.failWrite()
+		return
+	}
 	if err := s.admitWAL(); err != nil {
 		s.failWriteReason(walAdmissionReason(err))
 		return
 	}
-	if err := s.recordAccessDirectInternal(req.runID, req.event, req.isDirect); err != nil { s.failWrite() }
+	if err := s.recordAccessDirectInternal(req.runID, req.event, req.isDirect); err != nil {
+		s.failWrite()
+	}
 }
 
 // recordAccessDirectInternal handles the actual database write (called from async worker).
@@ -366,7 +384,9 @@ func (s *TelemetryStore) recordAccessDirectInternal(runID int64, event model.Acc
 	if event.Seq == 0 {
 		var err error
 		event.Seq, err = s.nextSeqContext(ctx, event.SessionID)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 	}
 	normalized := telemetry.NormalizeAccessEvent(event)
 	warningsJSON := "[]"
@@ -432,7 +452,9 @@ func (s *TelemetryStore) recordAccessDirectInternal(runID int64, event model.Acc
 }
 
 func (s *TelemetryStore) Checkpoint() error {
-	if s == nil || s.db == nil { return nil }
+	if s == nil || s.db == nil {
+		return nil
+	}
 	ctx, cancel := context.WithTimeout(s.ownedWriteContext(), telemetryCheckpointTimeout)
 	defer cancel()
 	conn, err := s.db.Conn(ctx)
@@ -493,43 +515,67 @@ func (s *TelemetryStore) Checkpoint() error {
 }
 
 func (s *TelemetryStore) setFailure(code string, busy bool) {
-	s.stateMu.Lock(); defer s.stateMu.Unlock()
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	s.health.CheckpointFailure = code
 	s.health.CheckpointBusy = busy
 	s.health.LastFailure = s.health.LastWriteFailure
-	if s.health.LastFailure == "" { s.health.LastFailure = code }
+	if s.health.LastFailure == "" {
+		s.health.LastFailure = code
+	}
 }
 
 func (s *TelemetryStore) walSize() (int64, error) {
 	ctx, cancel := context.WithTimeout(s.ownedWriteContext(), 250*time.Millisecond)
 	defer cancel()
 	var path string
-	if err := s.db.QueryRowContext(ctx, "PRAGMA database_list").Scan(new(int), new(string), &path); err != nil { return 0, err }
+	if err := s.db.QueryRowContext(ctx, "PRAGMA database_list").Scan(new(int), new(string), &path); err != nil {
+		return 0, err
+	}
 	info, err := os.Stat(path + "-wal")
-	if errors.Is(err, os.ErrNotExist) { return 0, nil }
-	if err != nil { return 0, err }
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
 	return info.Size(), nil
 }
 
 func (s *TelemetryStore) admitWAL() error {
 	maxBytes := s.walMaxBytes
-	if maxBytes <= 0 { maxBytes = telemetryWALMaxBytes }
+	if maxBytes <= 0 {
+		maxBytes = telemetryWALMaxBytes
+	}
 	size, err := s.walSize()
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	// Reserve bounded headroom for admitted-but-not-yet-written queue entries.
 	reserved := int64(len(s.writeQueue)+1) * 64 * 1024
 	if size+reserved >= maxBytes {
-		if err := s.Checkpoint(); err != nil { return err }
+		if err := s.Checkpoint(); err != nil {
+			return err
+		}
 		size, err = s.walSize()
-		if err != nil { return err }
-		if size+reserved >= maxBytes { return errTelemetryWALLimit }
+		if err != nil {
+			return err
+		}
+		if size+reserved >= maxBytes {
+			return errTelemetryWALLimit
+		}
 	}
 	return nil
 }
 
 func (s *TelemetryStore) WALHealth() WALHealth {
-	if s == nil { return WALHealth{Closed:true} }
-	s.stateMu.RLock(); h := s.health; h.Closed = s.closed; s.stateMu.RUnlock()
+	if s == nil {
+		return WALHealth{Closed: true}
+	}
+	s.stateMu.RLock()
+	h := s.health
+	h.Closed = s.closed
+	s.stateMu.RUnlock()
 	h.WALBytes = 0
 	h.WALBytesKnown = false
 	if !h.Closed {
@@ -542,15 +588,20 @@ func (s *TelemetryStore) WALHealth() WALHealth {
 		if err == nil && !h.Closed {
 			h.WALBytes = size
 			h.WALBytesKnown = true
-			s.health.WALBytes = size; s.health.WALBytesKnown = true
+			s.health.WALBytes = size
+			s.health.WALBytesKnown = true
 		} else if !h.Closed {
 			h.WALSizeFailure = "wal_size_unavailable"
-			if h.LastFailure == "" { h.LastFailure = h.WALSizeFailure }
+			if h.LastFailure == "" {
+				h.LastFailure = h.WALSizeFailure
+			}
 		}
 		s.stateMu.Unlock()
 	}
 	h.WALMaxBytes = s.walMaxBytes
-	if h.WALMaxBytes <= 0 { h.WALMaxBytes = telemetryWALMaxBytes }
+	if h.WALMaxBytes <= 0 {
+		h.WALMaxBytes = telemetryWALMaxBytes
+	}
 	return h
 }
 
@@ -564,7 +615,9 @@ func (s *TelemetryStore) ownedWriteContext() context.Context {
 
 // startDrainDeadline is shared by shutdown and Close; it does not close the DB.
 func (s *TelemetryStore) startDrainDeadline() {
-	if s == nil || s.db == nil { return }
+	if s == nil || s.db == nil {
+		return
+	}
 	s.ownedWriteContext()
 	s.drainOnce.Do(func() {
 		s.drainTimer = time.AfterFunc(telemetryCloseDrainTimeout, s.cancelWrites)
@@ -573,16 +626,24 @@ func (s *TelemetryStore) startDrainDeadline() {
 
 // Close bounds the caller, not the physical driver or database lifetime.
 func (s *TelemetryStore) Close() error {
-	if s == nil || s.db == nil { return nil }
+	if s == nil || s.db == nil {
+		return nil
+	}
 	s.startDrainDeadline()
 	s.closeOnce.Do(func() {
-		s.stateMu.Lock(); s.closed = true; s.stateMu.Unlock()
+		s.stateMu.Lock()
+		s.closed = true
+		s.stateMu.Unlock()
 		go func() {
 			// Barrier: no admitted direct operation or late enqueue survives this point.
 			s.admissionMu.Lock()
-			if s.done != nil { close(s.done) }
+			if s.done != nil {
+				close(s.done)
+			}
 			s.admissionMu.Unlock()
-			if s.done != nil { s.wg.Wait() }
+			if s.done != nil {
+				s.wg.Wait()
+			}
 			s.closeErr = s.db.Close()
 			s.drainTimer.Stop()
 			s.cancelWrites()
@@ -596,11 +657,15 @@ func (s *TelemetryStore) Close() error {
 
 // WaitClosed joins the owner, including the actual driver call and DB.Close.
 func (s *TelemetryStore) WaitClosed(ctx context.Context) error {
-	if s == nil || s.db == nil { return nil }
+	if s == nil || s.db == nil {
+		return nil
+	}
 	s.ownedWriteContext()
 	select {
-	case <-s.closeComplete: return s.closeErr
-	case <-ctx.Done(): return fmt.Errorf("telemetry close incomplete: %w", ctx.Err())
+	case <-s.closeComplete:
+		return s.closeErr
+	case <-ctx.Done():
+		return fmt.Errorf("telemetry close incomplete: %w", ctx.Err())
 	}
 }
 
@@ -823,23 +888,54 @@ func (s *TelemetryStore) nextSeqContext(ctx context.Context, sessionID string) (
 }
 
 func (s *TelemetryStore) RecordAccessDirect(event model.AccessEvent) error {
-	if s == nil { return errors.New("telemetry store unavailable") }
-	s.admissionMu.Lock(); defer s.admissionMu.Unlock()
-	s.stateMu.RLock(); closed := s.closed; s.stateMu.RUnlock()
-	if closed { s.reject("closed"); return errors.New("telemetry store closed") }
-	if err := checkTelemetryEventSize(event); err != nil { s.reject("event_too_large"); return err }
-	if err := s.admitWAL(); err != nil { s.reject(walAdmissionReason(err)); return err }
-	if err := s.recordAccessDirectInternal(0, event, true); err != nil { s.failWrite(); return err }
+	if s == nil {
+		return errors.New("telemetry store unavailable")
+	}
+	s.admissionMu.Lock()
+	defer s.admissionMu.Unlock()
+	s.stateMu.RLock()
+	closed := s.closed
+	s.stateMu.RUnlock()
+	if closed {
+		s.reject("closed")
+		return errors.New("telemetry store closed")
+	}
+	if err := checkTelemetryEventSize(event); err != nil {
+		s.reject("event_too_large")
+		return err
+	}
+	if err := s.admitWAL(); err != nil {
+		s.reject(walAdmissionReason(err))
+		return err
+	}
+	if err := s.recordAccessDirectInternal(0, event, true); err != nil {
+		s.failWrite()
+		return err
+	}
 	return nil
 }
 
 func (s *TelemetryStore) RecordAccess(runID int64, event model.AccessEvent) error {
-	if s == nil { return errors.New("telemetry store unavailable") }
-	s.admissionMu.Lock(); defer s.admissionMu.Unlock()
-	s.stateMu.RLock(); closed := s.closed; s.stateMu.RUnlock()
-	if closed { s.reject("closed"); return errors.New("telemetry store closed") }
-	if err := checkTelemetryEventSize(event); err != nil { s.reject("event_too_large"); return err }
-	if err := s.admitWAL(); err != nil { s.reject(walAdmissionReason(err)); return err }
+	if s == nil {
+		return errors.New("telemetry store unavailable")
+	}
+	s.admissionMu.Lock()
+	defer s.admissionMu.Unlock()
+	s.stateMu.RLock()
+	closed := s.closed
+	s.stateMu.RUnlock()
+	if closed {
+		s.reject("closed")
+		return errors.New("telemetry store closed")
+	}
+	if err := checkTelemetryEventSize(event); err != nil {
+		s.reject("event_too_large")
+		return err
+	}
+	if err := s.admitWAL(); err != nil {
+		s.reject(walAdmissionReason(err))
+		return err
+	}
 	select {
 	case s.writeQueue <- telemetryWriteRequest{runID: runID, event: event, isDirect: false}:
 		return nil
@@ -853,7 +949,9 @@ func (s *TelemetryStore) RecordAccess(runID int64, event model.AccessEvent) erro
 // actual SQLite driver code (or the checkpoint sentinel) establishes BUSY.
 func isTelemetrySQLiteBusyCode(err error) bool {
 	var sqliteErr *sqlite.Error
-	if !errors.As(err, &sqliteErr) { return false }
+	if !errors.As(err, &sqliteErr) {
+		return false
+	}
 	code := sqliteErr.Code() & 0xff
 	return code == 5 || code == 6 // SQLITE_BUSY / SQLITE_LOCKED, including extended codes.
 }
@@ -875,19 +973,29 @@ func walAdmissionReason(err error) string {
 
 func checkTelemetryEventSize(event model.AccessEvent) error {
 	body, err := json.Marshal(event)
-	if err != nil { return fmt.Errorf("encode telemetry event: %w", err) }
-	if len(body) > telemetryMaxEventBytes { return errors.New("telemetry event exceeds 1 MiB admission limit") }
+	if err != nil {
+		return fmt.Errorf("encode telemetry event: %w", err)
+	}
+	if len(body) > telemetryMaxEventBytes {
+		return errors.New("telemetry event exceeds 1 MiB admission limit")
+	}
 	return nil
 }
 
 func (s *TelemetryStore) reject(code string) {
-	s.stateMu.Lock(); defer s.stateMu.Unlock()
-	s.health.RejectedWrites++; s.health.LastWriteFailure = code; s.health.LastFailure = code
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	s.health.RejectedWrites++
+	s.health.LastWriteFailure = code
+	s.health.LastFailure = code
 }
 func (s *TelemetryStore) failWrite() { s.failWriteReason("write_error") }
 func (s *TelemetryStore) failWriteReason(code string) {
-	s.stateMu.Lock(); defer s.stateMu.Unlock()
-	s.health.FailedWrites++; s.health.LastWriteFailure = code; s.health.LastFailure = code
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	s.health.FailedWrites++
+	s.health.LastWriteFailure = code
+	s.health.LastFailure = code
 }
 
 func (s *TelemetryStore) RecentAccesses(limit int) ([]model.AccessEvent, error) {

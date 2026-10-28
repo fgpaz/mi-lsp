@@ -11,8 +11,8 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/service"
 	"github.com/fgpaz/mi-lsp/internal/store"
-	"github.com/fgpaz/mi-lsp/internal/workspace"
 	"github.com/fgpaz/mi-lsp/internal/worker"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 type aorphCPUCaller struct {
@@ -50,8 +50,8 @@ func aorphCPUPrivateWorkspace(t *testing.T) (string, string) {
 		t.Fatal(err)
 	}
 	project := model.ProjectFile{
-		Project: model.ProjectBlock{Name: alias, Languages: []string{"csharp"}, Kind: model.WorkspaceKindSingle, DefaultRepo: "main"},
-		Repos:   []model.WorkspaceRepo{{ID: "main", Name: "main", Root: ".", Languages: []string{"csharp"}, DefaultEntrypoint: "main-project"}},
+		Project:     model.ProjectBlock{Name: alias, Languages: []string{"csharp"}, Kind: model.WorkspaceKindSingle, DefaultRepo: "main"},
+		Repos:       []model.WorkspaceRepo{{ID: "main", Name: "main", Root: ".", Languages: []string{"csharp"}, DefaultEntrypoint: "main-project"}},
 		Entrypoints: []model.WorkspaceEntrypoint{{ID: "main-project", RepoID: "main", Path: "A.csproj", Kind: model.EntrypointKindProject, Default: true}},
 	}
 	if err := workspace.SaveProjectFile(root, project); err != nil {
