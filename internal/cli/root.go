@@ -307,7 +307,7 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 			route = "direct"
 		}
 	}
-	if err == nil && envelope.Ok && operation == "nav.multi-read" && !opts.NoAutoRegister {
+	if err == nil && envelope.Ok && strings.HasPrefix(operation, "nav.") && !opts.NoAutoRegister {
 		if warning := scheduleLightRegistration(opts.Workspace, opts.CallerCWD); warning != "" {
 			envelope.Warnings = append(envelope.Warnings, warning)
 		}
