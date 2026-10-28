@@ -66,7 +66,7 @@ func (f *mutationWALFixture) attempt(t *testing.T, label string, op func() error
 	h := f.s.WALHealth()
 	err := op()
 	after := f.size(t)
-	if err == nil { t.Errorf("%s admitted above threshold: WAL before=%d after=%d limit=%d rejected before=%d after=%d", label, before, after, f.s.walMaxBytes, h.RejectedWrites, f.s.WALHealth().RejectedWrites) }
+	if err == nil || after != before { t.Errorf("%s above threshold: err=%v WAL before=%d after=%d limit=%d rejected before=%d after=%d", label, err, before, after, f.s.walMaxBytes, h.RejectedWrites, f.s.WALHealth().RejectedWrites) }
 }
 
 func (f *mutationWALFixture) recover(t *testing.T) {
@@ -96,12 +96,25 @@ func TestWALRunMetadataRespectsAdmissionThreshold(t *testing.T) {
 	if _, err := f.s.StartRun(model.DaemonState{PID: 200, StartedAt: time.Unix(30, 0)}); err != nil { t.Fatalf("recovery: %v", err) }
 }
 
-func TestWALRetentionRespectsAdmissionThreshold(t *testing.T) {
+func TestWALPurgeEventsRespectsAdmissionThreshold(t *testing.T) {
 	f := newMutationWALFixture(t)
 	cutoff := time.Unix(100, 0)
 	f.attempt(t, "purge events", func() error { _, err := f.s.PurgeOldEvents(cutoff); return err })
-	f.attempt(t, "purge runs", func() error { _, err := f.s.PurgeOldRuns(cutoff); return err })
-	f.attempt(t, "purge and vacuum", func() error { _, _, err := f.s.PurgeAndVacuum(1, 1<<62); return err })
 	f.recover(t)
 	if _, err := f.s.PurgeOldEvents(cutoff); err != nil { t.Fatalf("recovery: %v", err) }
+}
+
+func TestWALPurgeRunsRespectsAdmissionThreshold(t *testing.T) {
+	f := newMutationWALFixture(t)
+	cutoff := time.Unix(100, 0)
+	f.attempt(t, "purge runs", func() error { _, err := f.s.PurgeOldRuns(cutoff); return err })
+	f.recover(t)
+	if _, err := f.s.PurgeOldRuns(cutoff); err != nil { t.Fatalf("recovery: %v", err) }
+}
+
+func TestWALPurgeAndVacuumRespectsAdmissionThreshold(t *testing.T) {
+	f := newMutationWALFixture(t)
+	f.attempt(t, "purge and vacuum", func() error { _, _, err := f.s.PurgeAndVacuum(1, 1); return err })
+	f.recover(t)
+	if _, _, err := f.s.PurgeAndVacuum(1, 1); err != nil { t.Fatalf("recovery: %v", err) }
 }
