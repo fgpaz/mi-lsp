@@ -124,7 +124,7 @@ flowchart LR
 
 - **Módulo**: CLI; **Responsabilidad**: Parseo de comandos, flags globales, selectors semánticos y shortcut `init`. Autoridad única de navegacion.
 - **Módulo**: Self-update runtime; **Responsabilidad**: Un único motor para CLI/daemon y todos los consumidores, con caché/lock en home, estado por ejecutable, checksum y promoción/readback/rollback. No instala workers durante consultas; el reciclado del daemon requiere barrera idle real. Ver [[TECH-RUNTIME-UPDATE]] y [[FL-UPD-001]].
-- **Módulo**: Puerta MCP; **Responsabilidad**: Retirada (2026-10-15). `mi-lsp mcp` ya no existe; `mi-mcp` invoca el CLI por llamada de herramienta. Ver [[TECH-MCP-ADAPTER]].
+- **Módulo**: Puerta MCP; **Responsabilidad**: Retirada (2026-10-15). `mi-lsp mcp` ya no existe; `mi-mcp` invoca el CLI por llamada de herramienta. Contrato vigente: [[RF-QRY-023]].
 - **Módulo**: Daemon global Go; **Responsabilidad**: Routing, health, telemetry, governance UI y sharing entre clientes
 - **Módulo**: Governance UI; **Responsabilidad**: Consola workspace-first con visibilidad de `kind`, repos y entrypoints
 - **Módulo**: Core Go; **Responsabilidad**: Discovery de workspace, indexación repo-local, routing semántico, truncación, `nav wiki`, `nav ask`, `nav pack` y service exploration
@@ -241,9 +241,9 @@ Las lecturas de texto `nav.search`, `nav.find` y `nav.multi-read` se ejecutan di
 - DECISIONS
 - 1. La puerta stdio `mi-lsp mcp` fue eliminada por decisión del operador. `mi-mcp` ejecuta el CLI `mi-lsp` por cada llamada de herramienta y sandinas-mcp pasa por mi-mcp. La CLI es la única autoridad de navegación.
 - 2. Las integraciones del repositorio no agregan caches, índices, workers en segundo plano ni estado propio. El trabajo pesado queda en el daemon compartido.
-- 3. El presupuesto de 20 MB de RSS por sesion MCP deja de aplicar con la puerta retirada; su medición histórica queda en TECH-MCP-ADAPTER.
+- 3. El presupuesto de 20 MB de RSS por sesion MCP deja de aplicar con la puerta retirada; su medición histórica se conserva en el archivo de la puerta retirada, inventariado en [retiros](00_retirements.md).
 
-Detalle e histórico: [[TECH-MCP-ADAPTER]].
+Contrato actual de consumo CLI/proveedor: [[RF-QRY-023]]. El [inventario de retiros](00_retirements.md) conserva fecha y ubicación de la puerta archivada; no es una dependencia de comportamiento vigente.
 
 ### Memoria del daemon
 
