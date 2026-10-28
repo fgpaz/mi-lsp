@@ -6,6 +6,7 @@ SHOW or newly visible window is inconclusive/failing, even if unrelated.
 """
 import ctypes as c
 from ctypes import wintypes as w
+import json
 import os
 import threading
 import time
@@ -36,15 +37,22 @@ class Observer:
         self.ready = threading.Event(); self.stop = threading.Event(); self.done = threading.Event()
         self.failure = None; self.shows = []; self.new_visible = set(); self.baseline = set()
         self.hidden_create = False; self.hidden = None
+        self.started_at = None; self.ended_at = None
         self.thread = threading.Thread(target=self._run, name='host-window-observer')
 
     def _snapshot(self):
         found = set()
         @ENUM
         def visit(hwnd, _):
-            if u.IsWindowVisible(hwnd): found.add(int(hwnd))
-            return True
-        if not u.EnumWindows(visit, 0): raise c.WinError(c.get_last_error())
+            try:
+                if u.IsWindowVisible(hwnd): found.add(int(hwnd))
+                return True
+            except BaseException as exc:
+                self.failure = 'EnumWindows callback: ' + type(exc).__name__
+                return False
+        if not u.EnumWindows(visit, 0):
+            if self.failure: raise RuntimeError(self.failure)
+            raise c.WinError(c.get_last_error())
         return found
 
     def start(self):
@@ -65,16 +73,24 @@ class Observer:
         hook = None; hwnd = None; msg = MSG(); created = []
         @EVENT
         def on_event(_hook, event, window, obj, child, _thread, _when):
-            if obj != 0 or child != 0: return
-            if event == 0x8000: created.append(int(window or 0))
-            elif event == 0x8002: self.shows.append(int(window or 0))
+            try:
+                if obj != 0 or child != 0: return
+                if event == 0x8000: created.append(int(window or 0))
+                elif event == 0x8002: self.shows.append(int(window or 0))
+            except BaseException as exc:
+                self.failure = 'WinEvent callback: ' + type(exc).__name__
         def pump():
             while u.PeekMessageW(c.byref(msg), None, 0, 0, 1):
                 u.TranslateMessage(c.byref(msg)); u.DispatchMessageW(c.byref(msg))
+                if self.failure: raise RuntimeError(self.failure)
             self.new_visible.update(self._snapshot() - self.baseline)
+        def wait_message():
+            if u.MsgWaitForMultipleObjects(0,None,False,20,0x04ff) == 0xffffffff:
+                raise c.WinError(c.get_last_error())
         try:
             hook = u.SetWinEventHook(0x8000,0x8002,None,on_event,0,0,0)
             if not hook: raise c.WinError(c.get_last_error())
+            self.started_at = time.monotonic()
             self.baseline = self._snapshot()
             if not self.baseline: raise RuntimeError('no pre-existing visible window; calibration inconclusive')
             hwnd = u.CreateWindowExW(0,'STATIC','',0,0,0,1,1,None,None,k.GetModuleHandleW(None),None)
@@ -82,20 +98,29 @@ class Observer:
             self.hidden = int(hwnd)
             deadline = time.monotonic()+5
             while self.hidden not in created and time.monotonic()<deadline:
-                pump(); u.MsgWaitForMultipleObjects(0,None,False,20,0x04ff)
+                pump(); wait_message()
             self.hidden_create = self.hidden in created
             if not self.hidden_create: raise RuntimeError('hidden CREATE callback not delivered')
             self.ready.set()
             while not self.stop.is_set():
-                pump(); u.MsgWaitForMultipleObjects(0,None,False,20,0x04ff)
+                pump(); wait_message()
             # Final drain barrier keeps the hook and snapshots active for one second.
             deadline = time.monotonic()+1
             while time.monotonic()<deadline:
-                pump(); u.MsgWaitForMultipleObjects(0,None,False,20,0x04ff)
+                pump(); wait_message()
             pump()
         except BaseException as exc:
             self.failure = '%s: %s' % (type(exc).__name__, exc)
         finally:
             if hwnd and not u.DestroyWindow(hwnd) and not self.failure: self.failure = 'DestroyWindow failed'
             if hook and not u.UnhookWinEvent(hook) and not self.failure: self.failure = 'UnhookWinEvent failed'
+            self.ended_at = time.monotonic()
+            receipt = {'type': 'host_observer_receipt', 'scope': 'global_conservative',
+                       'calibration': 'hidden_CREATE_and_existing_visible_not_positive_SHOW',
+                       'baseline_visible_count': len(self.baseline),
+                       'hidden_create_observed': self.hidden_create,
+                       'global_show_count': len(self.shows), 'new_visible_count': len(self.new_visible),
+                       'start_monotonic': self.started_at, 'end_monotonic': self.ended_at,
+                       'healthy': self.failure is None}
+            print(json.dumps(receipt, sort_keys=True), flush=True)
             self.ready.set(); self.done.set()
