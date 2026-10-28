@@ -474,8 +474,10 @@ func (s *Server) runShutdownOwner() {
 	if s.elasticCancel != nil {
 		s.elasticCancel()
 	}
-	if s.manager != nil {
-		cleanupErr = errors.Join(cleanupErr, s.syncRuntimeSnapshots())
+	if s.manager != nil && s.telemetry != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), telemetryCloseDrainTimeout)
+		cleanupErr = errors.Join(cleanupErr, s.telemetry.replaceRuntimeSnapshotsContext(ctx, s.state.RunID, s.manager.Status()))
+		cancel()
 	}
 	if s.elastic != nil {
 		s.elasticLimitsMu.Lock()
@@ -487,7 +489,9 @@ func (s *Server) runShutdownOwner() {
 	}
 	cleanupErr = errors.Join(cleanupErr, clearDaemonState())
 	if s.telemetry != nil {
-		cleanupErr = errors.Join(cleanupErr, s.telemetry.StopRun(s.state.RunID, time.Now()))
+		ctx, cancel := context.WithTimeout(context.Background(), telemetryCloseDrainTimeout)
+		cleanupErr = errors.Join(cleanupErr, s.telemetry.stopRunContext(ctx, s.state.RunID, time.Now()))
+		cancel()
 	}
 	if s.telemetry != nil {
 		if err := s.telemetry.Close(); err != nil {

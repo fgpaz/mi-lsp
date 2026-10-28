@@ -815,18 +815,25 @@ func (s *TelemetryStore) StartRun(state model.DaemonState) (int64, error) {
 }
 
 func (s *TelemetryStore) StopRun(runID int64, stoppedAt time.Time) error {
+	return s.stopRunContext(s.ownedWriteContext(), runID, stoppedAt)
+}
+
+func (s *TelemetryStore) stopRunContext(ctx context.Context, runID int64, stoppedAt time.Time) error {
 	if runID == 0 {
 		return nil
 	}
-	_, err := s.db.ExecContext(s.ownedWriteContext(), `UPDATE daemon_runs SET stopped_at = ? WHERE id = ?`, stoppedAt.Unix(), runID)
+	_, err := s.db.ExecContext(ctx, `UPDATE daemon_runs SET stopped_at = ? WHERE id = ?`, stoppedAt.Unix(), runID)
 	return err
 }
 
 func (s *TelemetryStore) ReplaceRuntimeSnapshots(runID int64, statuses []model.WorkerStatus) error {
+	return s.replaceRuntimeSnapshotsContext(s.ownedWriteContext(), runID, statuses)
+}
+
+func (s *TelemetryStore) replaceRuntimeSnapshotsContext(ctx context.Context, runID int64, statuses []model.WorkerStatus) error {
 	if runID == 0 {
 		return nil
 	}
-	ctx := s.ownedWriteContext()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
