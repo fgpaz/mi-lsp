@@ -2,6 +2,8 @@ package runtimeinfo
 
 import (
 	"context"
+	"fmt"
+	"os/exec"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,6 +29,30 @@ func TestFileLeaseCancelBusyAndRelease(t *testing.T) {
 	info, err := os.Lstat(path)
 	if err != nil { t.Fatal(err) }
 	if !info.Mode().IsRegular() { t.Fatal("guard is not regular") }
+}
+
+func TestFileLeaseChildExitsWithoutRelease(t *testing.T) {
+	path := os.Getenv("MI_FILE_LEASE_CHILD_PATH")
+	if path != "" {
+		lease, err := AcquireFileLeaseContext(context.Background(), path)
+		if err != nil { fmt.Fprintln(os.Stdout, "acquire-error"); os.Exit(3) }
+		// Intentionally leave Release uncalled; process exit must release the
+		// kernel handle. The parent joins this child before reacquiring.
+		_ = lease
+		fmt.Fprintln(os.Stdout, "lease-held")
+		os.Exit(0)
+	}
+	path = filepath.Join(t.TempDir(), "child-guard")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestFileLeaseChildExitsWithoutRelease$")
+	cmd.Env = append(os.Environ(), "MI_FILE_LEASE_CHILD_PATH="+path)
+	output, err := cmd.CombinedOutput() // waits/reaps the actual child process
+	if err != nil { t.Fatalf("controlled child failed: %v (%s)", err, output) }
+	if string(output) == "" { t.Fatal("child produced no ownership handshake") }
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	lease, err := AcquireFileLeaseContext(ctx, path)
+	if err != nil { t.Fatalf("child exit did not release OS handle: %v", err) }
+	if err := lease.Release(); err != nil { t.Fatal(err) }
 }
 
 func TestFileLeaseRejectsRelativeAndSymlink(t *testing.T) {

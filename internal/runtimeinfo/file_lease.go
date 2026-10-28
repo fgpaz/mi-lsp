@@ -37,7 +37,7 @@ func AcquireFileLeaseContext(ctx context.Context, absoluteGuardPath string) (*Fi
 	if err == nil && (!before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0) {
 		return nil, errors.New("file lease guard is not a regular file")
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	f, err := openFileLeaseGuard(path)
 	if err != nil { return nil, fmt.Errorf("open file lease guard: %w", err) }
 	fail := func(e error) (*FileLease, error) { _ = f.Close(); return nil, e }
 	opened, err := f.Stat()
@@ -51,6 +51,14 @@ func AcquireFileLeaseContext(ctx context.Context, absoluteGuardPath string) (*Fi
 		if err := ctx.Err(); err != nil { return fail(err) }
 		err = lockFile(f)
 		if err == nil {
+			// The pathname may have been replaced while we were waiting on the
+			// OS lock. Verify the lock's handle still names the persistent guard.
+			opened, statErr := f.Stat()
+			current, pathErr := os.Lstat(path)
+			if statErr != nil || pathErr != nil || !current.Mode().IsRegular() || !os.SameFile(opened, current) {
+				_ = unlockFile(f)
+				return fail(errors.New("file lease guard identity changed after lock"))
+			}
 			if e := ctx.Err(); e != nil { _ = unlockFile(f); return fail(e) }
 			return &FileLease{file:f}, nil
 		}
