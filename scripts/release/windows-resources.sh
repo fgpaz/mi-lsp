@@ -10,4 +10,9 @@ IFS=.
 set -- $version
 IFS=$old_ifs
 [ "$#" -eq 3 ] || { echo 'expected major.minor.patch for PE version' >&2; exit 1; }
-make windows-resources WINDOWS_FILE_VERSION="$1.$2.$3.0"
+file_version="$1.$2.$3.0"
+for cmd in mi-lsp mi-lsp-host; do
+  go run github.com/tc-hib/go-winres@v0.3.3 make \
+    --in "cmd/$cmd/winres.json" --out "cmd/$cmd/rsrc" \
+    --arch amd64,arm64 --file-version "$file_version" --product-version "$file_version"
+done
