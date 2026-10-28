@@ -42,7 +42,7 @@ func TestSystemStatusTelemetryWAL(t *testing.T) {
 	before := store.db.Stats()
 	wal := status()
 	after := store.db.Stats()
-	if wal["wal_bytes_known"] != true || wal["closed"] != false || wal["admission_threshold_bytes"] != telemetryWALMaxBytes || wal["rejected_writes"] != uint64(1) || wal["failed_writes"] != uint64(0) || wal["last_failure"] != "event_too_large" || wal["checkpoint_busy"] != false {
+	if wal["wal_bytes_known"] != true || wal["closed"] != false || wal["admission_threshold_bytes"] != telemetryWALMaxBytes || wal["rejected_writes"] != uint64(1) || wal["failed_writes"] != uint64(0) || wal["last_failure"] != "event_too_large" || wal["last_write_failure"] != "event_too_large" || wal["checkpoint_failure"] != "" || wal["wal_size_failure"] != "" || wal["checkpoint_busy"] != false {
 		t.Fatalf("unexpected WAL health: %#v", wal)
 	}
 	if before.OpenConnections != after.OpenConnections { t.Fatalf("status changed open connections: %v -> %v", before, after) }
@@ -52,7 +52,9 @@ func TestSystemStatusTelemetryWAL(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	health := store.WALHealth()
 	if err := conn.Close(); err != nil { t.Fatal(err) }
-	if health.WALBytesKnown || health.LastFailure != "wal_size_unavailable" { t.Fatalf("failed refresh reported known bytes: %+v", health) }
+	if health.WALBytesKnown || health.LastFailure != "event_too_large" || health.LastWriteFailure != "event_too_large" || health.WALSizeFailure != "wal_size_unavailable" || health.RejectedWrites != 1 || health.FailedWrites != 0 { t.Fatalf("failed refresh must report unknown bytes without masking write history: %+v", health) }
+	recovered := store.WALHealth()
+	if !recovered.WALBytesKnown || recovered.WALSizeFailure != "" || recovered.LastFailure != "event_too_large" || recovered.LastWriteFailure != "event_too_large" { t.Fatalf("recovered refresh must clear measurement failure, not write history: %+v", recovered) }
 
 	if err := store.Close(); err != nil { t.Fatal(err) }
 	wal = status()

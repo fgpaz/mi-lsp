@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/telemetry"
@@ -779,6 +779,15 @@ func (s *TelemetryStore) RecordAccess(runID int64, event model.AccessEvent) erro
 	}
 }
 
+// Metadata PathError text may contain sqlite_busy in the filename; only an
+// actual SQLite driver code (or the checkpoint sentinel) establishes BUSY.
+func isTelemetrySQLiteBusyCode(err error) bool {
+	var sqliteErr *sqlite.Error
+	if !errors.As(err, &sqliteErr) { return false }
+	code := sqliteErr.Code() & 0xff
+	return code == 5 || code == 6 // SQLITE_BUSY / SQLITE_LOCKED, including extended codes.
+}
+
 func walAdmissionReason(err error) string {
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
@@ -787,7 +796,7 @@ func walAdmissionReason(err error) string {
 		return "canceled"
 	case errors.Is(err, errTelemetryWALLimit):
 		return "wal_limit"
-	case errors.Is(err, errTelemetryCheckpointBusy), isTelemetrySQLiteLocked(err):
+	case errors.Is(err, errTelemetryCheckpointBusy), isTelemetrySQLiteBusyCode(err):
 		return "busy"
 	default:
 		return "wal_admission_error"
