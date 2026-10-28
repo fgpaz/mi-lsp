@@ -13,6 +13,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 - Dos assets host PE GUI y checksum en la misma release, manteniendo CLI CUI y seis bundles existentes.
 - Anclas `<DOC-ID>#<ANCLA>` en la wiki: `P<n>` bajo `Secuencia` en FL, `E<n>` bajo `Errores` en RF y `UXD-NN`/`UXQ-NN` en UXM (`ux_module`), declaradas como prefijo de H3 con ` · `. `validate-contract` resuelve cada cita contra el H3 declarado, expone `anchor_refs` con archivo y línea de destino, y avisa `anchor_missing` o `anchor_duplicate` sin bloquear. Documentos sin anclas siguen válidos y citas a documentos no indexados siguen silenciosas.
 
+### Corregido
+
+- `kind: module_map` (nombre canónico de WIKI-CONTRACT-v1 para UXM) se valida y normaliza como `ux_module`, así que sus anclas `UXD`/`UXQ` ya no se ignoran ni aparecen como kind desconocido. Los alias `uxm`, `uj` y `journey` también se normalizan.
+
 ## [0.16.0] - 2026-10-27
 
 ### Añadido

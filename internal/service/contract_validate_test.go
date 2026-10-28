@@ -338,7 +338,7 @@ x
 	uxmContent := `---
 wiki_contract: WIKI-CONTRACT-v1
 id: UXM-ANC-01
-kind: ux_module
+kind: module_map
 status: active
 title: "Module"
 links:
@@ -416,8 +416,14 @@ Sin anclas declaradas.
 		}
 	}
 
-	// Anchor diagnostics are the only anchor_* warnings; the plain doc without anchors adds none.
 	full := compileWikiContractValidationWithIndexRecords(root, allRecords, allRecords, nil)
+	// The module_map UXM is a valid ux_module: the full run must not report its kind as unknown.
+	for _, warning := range full.ContractWarnings {
+		if strings.Contains(warning, "unknown kind") {
+			t.Fatalf("module_map must validate as ux_module, got %q", warning)
+		}
+	}
+	// Anchor diagnostics are the only anchor_* warnings; the plain doc without anchors adds none.
 	var anchorWarnings []string
 	for _, warning := range full.ContractWarnings {
 		if strings.HasPrefix(warning, "anchor_") {

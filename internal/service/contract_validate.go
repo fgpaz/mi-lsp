@@ -464,6 +464,15 @@ func firstYAMLHeaderBlock(content string) string {
 	return blocks[0]
 }
 
+// wikiContractCanonicalKind maps the kind spelling used by WIKI-CONTRACT-v1 onto the name this
+// package validates. UXM documents declare module_map, which is the ux_module kind.
+func wikiContractCanonicalKind(kind string) string {
+	if kind == "module_map" {
+		return docgraph.WikiKindUXModule
+	}
+	return kind
+}
+
 func validateWikiContractHeader(docLabel string, header *wikiContractHeader, rawKeys map[string]struct{}, gov *docgraph.WikiContractGovernance) []string {
 	var warnings []string
 	if header.ID == "" && header.Kind != "governance" && header.Kind != "scope" {
@@ -471,7 +480,7 @@ func validateWikiContractHeader(docLabel string, header *wikiContractHeader, raw
 	}
 	if header.Kind == "" {
 		warnings = append(warnings, docLabel+": missing kind")
-	} else if _, ok := wikiContractKinds[header.Kind]; !ok {
+	} else if _, ok := wikiContractKinds[wikiContractCanonicalKind(header.Kind)]; !ok {
 		warnings = append(warnings, docLabel+": unknown kind "+header.Kind)
 	}
 	if header.Status == "" {
@@ -498,7 +507,7 @@ func validateWikiContractHeader(docLabel string, header *wikiContractHeader, raw
 
 func validateWikiContractRequiredLinks(docLabel string, header *wikiContractHeader, gov *docgraph.WikiContractGovernance) []string {
 	var warnings []string
-	kind := header.Kind
+	kind := wikiContractCanonicalKind(header.Kind)
 	links := header.Links
 	requireLink := func(linkType string) {
 		if !wikiContractLinkNonEmpty(links, linkType) {
