@@ -86,10 +86,21 @@ func NewServer(repoRoot string, maxWorkers int, idleTimeout time.Duration) (*Ser
 	return NewServerWithOptions(repoRoot, maxWorkers, idleTimeout, DefaultStartOptions())
 }
 
-var openTelemetryStoreForServer = openTelemetryStore
-var generateServerAdminToken = generateAdminToken
+type serverConstructionDeps struct {
+	openTelemetryStore func() (*TelemetryStore, error)
+	listen             func() (net.Listener, error)
+	generateAdminToken func() (string, error)
+}
 
 func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Duration, options StartOptions) (*Server, error) {
+	return newServerWithConstructionDeps(repoRoot, maxWorkers, idleTimeout, options, serverConstructionDeps{
+		openTelemetryStore: openTelemetryStore,
+		listen:             listenDaemon,
+		generateAdminToken: generateAdminToken,
+	})
+}
+
+func newServerWithConstructionDeps(repoRoot string, maxWorkers int, idleTimeout time.Duration, options StartOptions, deps serverConstructionDeps) (*Server, error) {
 	if err := checkDaemonStartIntegrity(); err != nil {
 		return nil, err
 	}
@@ -130,21 +141,14 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 	if err := rejectExistingDaemonOwner(); err != nil {
 		return nil, err
 	}
-	listener, err := listenDaemon()
+	telemetry, err := deps.openTelemetryStore()
 	if err != nil {
 		return nil, err
 	}
-	telemetry, err := openTelemetryStoreForServer()
-	if err != nil {
-		_ = listener.Close()
-		return nil, err
-	}
-	listener = newUpdateListener(listener, listenDaemon)
 	manager := NewManagerWithOptions(repoRoot, maxWorkers, idleTimeout, options)
 	manager.SetTelemetryStore(telemetry)
 	elasticCtx, elasticCancel := context.WithCancel(context.Background())
 	server := &Server{
-		listener:            listener,
 		manager:             manager,
 		telemetry:           telemetry,
 		options:             options,
@@ -186,8 +190,17 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 	manager.watcherEndWork = server.endSemanticWork
 	model.CurrentExecutableSnapshot().ApplyToDaemonState(&server.state)
 
+	listener, err := deps.listen()
+	if err != nil {
+		if listener != nil {
+			err = errors.Join(err, listener.Close())
+		}
+		return nil, server.cleanupFailedConstruction(err)
+	}
+	server.listener = newUpdateListener(listener, deps.listen)
+
 	// SEC-02: Generate admin token for authentication
-	adminToken, err := generateServerAdminToken()
+	adminToken, err := deps.generateAdminToken()
 	if err != nil {
 		return nil, server.cleanupFailedConstruction(err)
 	}
@@ -483,39 +496,28 @@ func (s *Server) runShutdownOwner() {
 	if s.manager != nil {
 		s.manager.Shutdown()
 	}
-	cleanupErr = errors.Join(cleanupErr, clearOwnedDaemonState(s.state))
 	if s.telemetry != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), telemetryCloseDrainTimeout)
 		cleanupErr = errors.Join(cleanupErr, s.telemetry.stopRunContext(ctx, s.state.RunID, time.Now()))
 		cancel()
 	}
 	if s.telemetry != nil {
-		if err := s.telemetry.Close(); err != nil {
-			// A bounded caller may time out while the driver still owns the DB.
-			// Keep the lease and fence until the close owner actually joins it.
-			if err = s.telemetry.WaitClosed(context.Background()); err != nil {
-				cleanupErr = errors.Join(cleanupErr, err)
-				s.finishShutdown(cleanupErr)
-				return
-			}
-		}
+		// Close bounds its caller, not physical ownership. Always join the close
+		// owner; even a driver close error is reportable only after it returned.
+		cleanupErr = errors.Join(cleanupErr, s.telemetry.Close())
+		cleanupErr = errors.Join(cleanupErr, s.telemetry.WaitClosed(context.Background()))
 	}
-	if s.instanceLease != nil {
-		if err := s.instanceLease.Close(); err != nil {
-			cleanupErr = errors.Join(cleanupErr, err)
-			s.finishShutdown(cleanupErr)
-			return
-		}
-	}
-	if s.osInstanceLease != nil {
-		if err := s.osInstanceLease.Release(); err != nil {
-			cleanupErr = errors.Join(cleanupErr, err)
-			s.finishShutdown(cleanupErr)
-			return
-		}
-	}
+	cleanupErr = errors.Join(cleanupErr, clearOwnedDaemonState(s.state))
+	// The transferred fence is a physical resource too. Release it only after
+	// all work and the database joined, and before either lifetime lease.
 	if fence != nil {
 		fence()
+	}
+	if s.instanceLease != nil {
+		cleanupErr = errors.Join(cleanupErr, s.instanceLease.Close())
+	}
+	if s.osInstanceLease != nil {
+		cleanupErr = errors.Join(cleanupErr, s.osInstanceLease.Release())
 	}
 	s.finishShutdown(cleanupErr)
 }

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
-	"github.com/fgpaz/mi-lsp/internal/runtimeinfo"
 )
 
 type injectedMetadataError struct{}
@@ -54,12 +53,7 @@ func TestServerShutdownCancelsHeldTelemetryBeforeMetadataAndJoins(t *testing.T) 
 	}
 	store.wg.Add(1)
 	go store.asyncWriteWorker()
-	lifeLeasePath := filepath.Join(home, "instance.life.guard")
-	lifeLease, err := runtimeinfo.AcquireFileLeaseContext(context.Background(), lifeLeasePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := &Server{telemetry: store, state: model.DaemonState{RunID: runID}, instanceLease: lease, osInstanceLease: lifeLease, manager: NewManager(home, 1, time.Minute)}
+	server := &Server{telemetry: store, state: model.DaemonState{RunID: runID}, instanceLease: lease, manager: NewManager(home, 1, time.Minute)}
 	fenceReleased := make(chan struct{})
 	var releaseOnce sync.Once
 	var shutdownStarted bool
@@ -104,13 +98,7 @@ func TestServerShutdownCancelsHeldTelemetryBeforeMetadataAndJoins(t *testing.T) 
 	default:
 	}
 	if _, err := os.Stat(leasePath); err != nil {
-		t.Fatalf("cooperative lease not held: %v", err)
-	}
-	contenderCtx, contenderCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer contenderCancel()
-	if contender, err := runtimeinfo.AcquireFileLeaseContext(contenderCtx, lifeLeasePath); err == nil {
-		_ = contender.Release()
-		t.Fatal("OS lifetime guard admitted a second owner before the database joined")
+		t.Fatalf("lease not held: %v", err)
 	}
 	releaseOnce.Do(func() { close(gate.release) })
 	select {
@@ -130,15 +118,7 @@ func TestServerShutdownCancelsHeldTelemetryBeforeMetadataAndJoins(t *testing.T) 
 		t.Error("fence not released after join")
 	}
 	if _, err := os.Stat(leasePath); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("cooperative lease not cleaned: %v", err)
-	}
-	availableCtx, availableCancel := context.WithTimeout(context.Background(), time.Second)
-	defer availableCancel()
-	contender, err := runtimeinfo.AcquireFileLeaseContext(availableCtx, lifeLeasePath)
-	if err != nil {
-		t.Errorf("OS lifetime guard not released after database join: %v", err)
-	} else {
-		_ = contender.Release()
+		t.Errorf("lease not cleaned: %v", err)
 	}
 }
 
