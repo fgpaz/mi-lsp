@@ -32,6 +32,36 @@ func TestOrphanCheckpointIdleWAL(t *testing.T) {
 	if err := s.Checkpoint(); err != nil { t.Fatalf("idle WAL checkpoint should succeed: %v", err) }
 }
 
+func TestOrphanCheckpointRestoresBusyTimeoutOnSuccess(t *testing.T) {
+	s, db, _ := orphanTelemetryStore(t)
+	if _, err := db.Exec(`PRAGMA busy_timeout=73`); err != nil { t.Fatal(err) }
+	if err := s.Checkpoint(); err != nil { t.Fatalf("idle WAL checkpoint should succeed: %v", err) }
+	var timeout int
+	if err := db.QueryRow(`PRAGMA busy_timeout`).Scan(&timeout); err != nil { t.Fatal(err) }
+	if timeout != 73 { t.Fatalf("checkpoint changed connection busy_timeout: got %d, want 73", timeout) }
+}
+
+func TestOrphanCheckpointRestoresBusyTimeoutWhenBusy(t *testing.T) {
+	s, db, path := orphanTelemetryStore(t)
+	if _, err := db.Exec(`PRAGMA busy_timeout=73`); err != nil { t.Fatal(err) }
+	reader, err := sql.Open("sqlite", path)
+	if err != nil { t.Fatal(err) }
+	defer reader.Close()
+	reader.SetMaxOpenConns(1)
+	tx, err := reader.Begin()
+	if err != nil { t.Fatal(err) }
+	defer tx.Rollback()
+	var count int
+	if err := tx.QueryRow(`SELECT count(*) FROM access_events`).Scan(&count); err != nil { t.Fatal(err) }
+	if _, err := db.Exec(`INSERT INTO access_events(operation, success, occurred_at) VALUES ('orphan-fixture', 1, 3)`); err != nil { t.Fatal(err) }
+	if err := s.Checkpoint(); err == nil || !strings.Contains(strings.ToLower(err.Error()), "busy") {
+		t.Fatalf("checkpoint with pinned reader must report busy, got %v", err)
+	}
+	var timeout int
+	if err := db.QueryRow(`PRAGMA busy_timeout`).Scan(&timeout); err != nil { t.Fatal(err) }
+	if timeout != 73 { t.Fatalf("busy checkpoint changed connection busy_timeout: got %d, want 73", timeout) }
+}
+
 func TestOrphanCheckpointPinnedReaderReportsBusy(t *testing.T) {
 	s, db, path := orphanTelemetryStore(t)
 	reader, err := sql.Open("sqlite", path)

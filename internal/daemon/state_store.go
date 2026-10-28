@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -413,28 +414,49 @@ func (s *TelemetryStore) Checkpoint() error {
 		return fmt.Errorf("wal_checkpoint connection: %w", err)
 	}
 	defer conn.Close()
+	var originalBusyTimeout int
+	if err := conn.QueryRowContext(ctx, "PRAGMA busy_timeout").Scan(&originalBusyTimeout); err != nil {
+		s.setFailure("checkpoint_error", false)
+		return fmt.Errorf("wal_checkpoint read busy_timeout: %w", err)
+	}
 	// Keep the busy-handler wait well below the overall context budget. Otherwise
-	// SQLite's 250ms wait can consume the entire deadline and hide its BUSY result.
+	// SQLite's configured wait can consume the operation deadline and hide BUSY.
 	if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout=%d", telemetryCheckpointBusyWait.Milliseconds())); err != nil {
 		s.setFailure("checkpoint_error", false)
-		return fmt.Errorf("wal_checkpoint busy_timeout: %w", err)
+		return fmt.Errorf("wal_checkpoint set busy_timeout: %w", err)
 	}
-	defer func() {
-		if _, restoreErr := conn.ExecContext(context.Background(), "PRAGMA busy_timeout=250"); restoreErr != nil {
-			s.setFailure("checkpoint_error", false)
-		}
-	}()
+	var checkpointErr error
+	busyResult := false
 	var busy, logFrames, checkpointed int
 	if err := conn.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &logFrames, &checkpointed); err != nil {
-		if isTelemetrySQLiteLocked(err) { s.setFailure("busy", true) } else if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) { s.setFailure("checkpoint_timeout", false) } else { s.setFailure("checkpoint_error", false) }
-		return fmt.Errorf("wal_checkpoint: %w", err)
-	}
-	if busy != 0 {
+		checkpointErr = fmt.Errorf("wal_checkpoint: %w", err)
+		if isTelemetrySQLiteLocked(err) {
+			busyResult = true
+			s.setFailure("busy", true)
+		} else if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			s.setFailure("checkpoint_timeout", false)
+		} else {
+			s.setFailure("checkpoint_error", false)
+		}
+	} else if busy != 0 {
+		busyResult = true
+		checkpointErr = fmt.Errorf("wal_checkpoint busy (log=%d checkpointed=%d)", logFrames, checkpointed)
 		s.setFailure("busy", true)
-		return fmt.Errorf("wal_checkpoint busy (log=%d checkpointed=%d)", logFrames, checkpointed)
+	} else {
+		s.setFailure("", false)
 	}
-	s.setFailure("", false)
-	return nil
+
+	restoreCtx, restoreCancel := context.WithTimeout(context.Background(), telemetryCheckpointBusyWait)
+	_, restoreErr := conn.ExecContext(restoreCtx, fmt.Sprintf("PRAGMA busy_timeout=%d", originalBusyTimeout))
+	restoreCancel()
+	if restoreErr != nil {
+		// database/sql discards this physical connection when Raw returns ErrBadConn;
+		// never let a connection with unknown PRAGMA state back into the pool.
+		discardErr := conn.Raw(func(any) error { return driver.ErrBadConn })
+		s.setFailure("checkpoint_restore_error", busyResult)
+		return errors.Join(checkpointErr, fmt.Errorf("restore busy_timeout=%d: %w", originalBusyTimeout, restoreErr), discardErr)
+	}
+	return checkpointErr
 }
 
 func (s *TelemetryStore) setFailure(code string, busy bool) {
