@@ -576,14 +576,14 @@ func (s *Server) handleConnectionContext(ctx context.Context, conn net.Conn) {
 	if semanticEligible {
 		defer s.endSemanticWork()
 	}
-	if request.Operation == "q" {
-		go func() {
-			var probe [1]byte
-			if _, readErr := conn.Read(probe[:]); readErr != nil {
-				cancelRequest()
-			}
-		}()
-	}
+	// The daemon protocol accepts one request frame per connection. EOF, a
+	// read error, or extra input ends this request without affecting the service.
+	// Closing conn on handler exit unblocks this single bounded read.
+	go func() {
+		var probe [1]byte
+		_, _ = conn.Read(probe[:])
+		cancelRequest()
+	}()
 	var response model.Envelope
 	if s.elastic != nil {
 		response = s.submitElastic(requestCtx, request)
