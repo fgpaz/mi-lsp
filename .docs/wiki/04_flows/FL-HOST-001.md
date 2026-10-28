@@ -8,7 +8,7 @@ title: Ejecución y cancelación por host Windows
 
 ## Precondiciones
 
-El consumidor selecciona un host de la release oficial y arquitectura correctas con SHA y procedencia verificados; hasta publicación y readback permanece BLOCKED. Crea un archivo de control regular, vacío, privado y estable, en directorio propio; el sibling `.result` no existe. El caller mantiene exclusividad y seguridad del directorio sin cambios ACL por el host.
+El consumidor selecciona un host de la release oficial y arquitectura correctas con tag público, SHA, fuente y readback verificados; sin esa evidencia permanece BLOCKED. La admisión del consumidor se decide por separado. Crea un archivo de control regular, vacío, privado y estable, en directorio propio; el sibling `.result` no existe. El caller mantiene exclusividad y seguridad del directorio sin cambios ACL por el host.
 
 ```mermaid
 sequenceDiagram
@@ -36,4 +36,4 @@ sequenceDiagram
     C->>C: esperar cierre host y streams; validar registros y propagar resultado tipado
 ```
 
-Un prefijo de cancelación incompleto queda pendiente. Si job ya está vacío, la observación de vaciado linealiza la finalización; no se transforma root exit en cancelación por un token tardío. Timeout y errores son infraestructura y nunca éxito implícito. Si el host termina sin resultado íntegro o con status no cero, el consumidor falla cerrado. Véase el framing y los límites de [[TECH-WINDOWS-HOST]], requisitos [[RF-HOST-001]] y evidencia pendiente [[TP-HOST-001]].
+Un prefijo de cancelación incompleto queda pendiente. Si job ya está vacío, la observación de vaciado linealiza la finalización; no se transforma root exit en cancelación por un token tardío. Timeout y errores son infraestructura y nunca éxito implícito. Si el host termina sin resultado íntegro o con status no cero, el consumidor falla cerrado. Véase el framing y los límites de [[TECH-WINDOWS-HOST]], requisitos [[RF-HOST-001]] y oráculos [[TP-HOST-001]].

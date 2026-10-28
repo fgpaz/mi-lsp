@@ -8,21 +8,32 @@ links:
   verifies: [RF-HOST-001]
 ---
 
-## Estado y alcance
+## Alcance y evidencia
 
-Plan de [[RF-HOST-001]] y [[TECH-WINDOWS-HOST]]; sólo bindings y escenarios, sin evidencia de ejecución ni PASS. Parent ejecuta una FINAL_VERIFY fresca después de integrar runtime, release y fixtures, con Windows ARM64 nativo y los límites operativos autorizados. Los comandos siguientes son futuros, no ejecutados en BUILDING. Las rutas y disponibilidad de fixtures se confirman tras integración.
+Verifica [[RF-HOST-001]] y [[TECH-WINDOWS-HOST]]. Las fuentes de pruebas son bindings, no evidencia de ejecución ni de conformidad. La aceptación requiere Windows ARM64 nativo, artefactos verificables y evidencia sanitizada de cada oráculo; conservar fallos y limitaciones, no convertir ausencia de evidencia en PASS. La admisión de un consumidor es una decisión separada.
 
-## Contrato y transporte
+## Driver de aceptación y PE
 
-- En Windows, `go test ./internal/winhost` cubre los casos Go integrados; revisar qué costuras se ejercitan realmente y conservar errores propios. No atribuir al test Go medición visual.
-- `py scripts/tests/host-wire.py ABS_HOST_EXE ABS_PYTHON_EXE` usa paths absolutos existentes y comprueba bytes binarios, argv vacío/Unicode/comillas/barras, header y JSON, status host y root DWORD 0, 1, 125, 130, 143 y `0xFEDCBA98`. Comprobar además rechazo de resultado ausente, truncado, malformado o inconsistente, errores de escritura/cierre y colisión con el 125 genuino; si falta costura real, declarar brecha y no simularla.
-- `py scripts/tests/host-job.py ABS_HOST_EXE ABS_PYTHON_EXE` debe contrastarse contra los casos efectivamente implementados: INT/TERM completos y prefijos, control inválido, timeout, result exclusivo, asignación fallida antes de resume, hijo vivo tras root, wait-all, cancelación, hard-close y supervivencia de dummy propio ajeno. Terminar únicamente por handles propios; observación por PID no autoriza matanza por PID. Falta de caso o fallo es evidencia explícita, no PASS.
-- Consumidor Node: verificar `close` y drenaje de streams antes de parsear; rechazar status host no cero y framing inválido; propagar tipo y DWORD sin colisión ni truncamiento. Un test de Node pendiente no equivale a consumidor integrado.
+`scripts/tests/host-acceptance.py` recibe **cuatro** paths absolutos existentes; la firma real incluye ambos assets para el precheck, además del host nativo y Python:
 
-## Ventanas y lifecycle
+```text
+py scripts/tests/host-acceptance.py ABS_HOST ABS_PYTHON ABS_X64_HOST ABS_ARM64_HOST
+```
 
-Inspeccionar PE de host x64 y arm64: subsystem GUI=2; CLI sigue CUI. En ARM64 nativo, observar procesos propios durante carga con WinEvent y EnumWindows, correlacionando PID y generación sólo para observación. `py scripts/tests/host-observer.py ROOT_PID DURATION_SECONDS` es una fuente de observación, no por sí sola un oráculo completo: snapshots pueden perder procesos efímeros. Calibrar lectura contra ventana visible ya existente o fixture oculto; nunca abrir ventana visible de calibración. Sin calibración válida, cobertura temporal y asociación del árbol demostradas, ausencia de eventos no demuestra ausencia de flashes. No abrir ventanas visibles de prueba.
+El driver comprueba cabeceras DOS y PE, PE32+, machine x64 `0x8664` y arm64 `0xaa64`, y subsystem GUI 2 antes de lanzar fixtures. Comprueba además que el host ejecutado tenga una de esas arquitecturas y subsystem GUI. La prueba no demuestra por sí sola que ese host sea el asset público correcto ni que la CLI sea CUI: correlacionar SHA y procedencia y comprobar el PE de CLI por separado. El parser `scripts/tests/host-result.py` se carga y ejercita para transporte no cero, truncamiento, cabeceras/JSON inválidos, inconsistencia, registros extra y root 125 válido; no es un consumidor Node integrado.
 
-## Release y evidencia
+Durante la observación el driver ejecuta `scripts/tests/host-wire.py` y `scripts/tests/host-job.py` con `ABS_HOST ABS_PYTHON`. El primero cubre bytes crudos, argv vacío/Unicode/comillas/barras y root DWORD 0, 1, 125, 130, 143 y `0xFEDCBA98`. El segundo ejercita el ciclo de vida y control; examinar sus casos efectivos y resultados, incluyendo wait-all, cancelación, hard-close y procesos propios ajenos al job. La terminación usa handles propios, no PID. Una falla o caso no cubierto no es PASS.
 
-Después de autorización del parent: construir desde fuente limpia, generar recursos PE para CLI y host, revisar versión de archivo/producto, `go version -m` y revisión exacta para ambas arquitecturas; comprobar `--version --format json` en arquitectura ejecutable. Inspeccionar nueve assets, SHA-256 del checksum oficial y coincidencia de cada host con archivo descargado; incluir dos host sin alterar seis workers. Una release parcial exige inspección, no reintento ciego. Antes de publicación no declarar tags, hashes ni smoke público existentes. Registrar resultados sanitizados, plataforma, comandos, fuente y limitaciones; cualquier evidencia no medida queda NOT_MEASURED/BLOCKED según el gate.
+## Observador global conservador
+
+`scripts/tests/host-observer.py` se importa desde el driver, no se invoca con PID. Instala hook global CREATE..SHOW y compara snapshots de ventanas visibles. Requiere una ventana **ya visible** para calibrar enumeración y crea una ventana STATIC **oculta** para calibrar entrega de CREATE; no crea ventana visible ni genera un SHOW positivo sintético. Esa calibración oculta no demuestra positivamente la entrega de SHOW. El hook y snapshots permanecen activos durante fixtures y una barrera final de drenaje.
+
+Todo evento SHOW global o ventana visible nueva impide PASS, incluso si pertenece a otro proceso; el resultado es conservador y no atribuye causalidad por genealogía. Sin ventana visible preexistente, CREATE oculto observado o cierre correcto, el resultado es inconcluso/fallido. Registrar la limitación de calibración SHOW y la cobertura real; flags o subsystem aislados no demuestran ausencia de flashes. No abrir ventana visible de calibración.
+
+## Costuras Go y consumidor
+
+`go test ./internal/winhost` en Windows incluye `internal/winhost/host_windows_test.go` para framing y fallas write/short/close/layouts y `internal/winhost/assignment_windows_test.go`: el seam `assignOwnedProcess` simula fallo de asignación y comprueba que el root suspendido no ejecute el marcador, el resultado tipado de infraestructura y cleanup. No usar esa prueba como medición visual. El consumidor debe probar por separado espera de `close` y streams, validación de ambos registros, tipo y DWORD, sin truncamiento; las fixtures del productor no demuestran integración ni admisión de Node.
+
+## Provenance y release
+
+Comprobar fuente VCS limpia y revisión, recursos PE y versión de archivo/producto, `go version -m`, y `--version --format json` en arquitectura ejecutable. Para aceptación de distribución, verificar tag público, source, nueve assets (seis CLI/worker, dos host, checksum), inclusión y SHA-256 de ambos host y readback de los assets descargados. Una release parcial requiere inspección, no reintento ciego. Registrar plataforma y evidencias; cada gate sin evidencia queda BLOCKED o NOT_MEASURED según corresponda.
