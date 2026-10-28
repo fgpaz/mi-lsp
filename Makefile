@@ -6,6 +6,7 @@ WINDOWS_RESOURCE_GENERATOR := github.com/tc-hib/go-winres@v0.3.3
 
 windows-resources:
 	go run $(WINDOWS_RESOURCE_GENERATOR) make --in cmd/mi-lsp/winres.json --out cmd/mi-lsp/rsrc --arch amd64,arm64 --file-version "$(WINDOWS_FILE_VERSION)" --product-version "$(WINDOWS_FILE_VERSION)"
+	go run $(WINDOWS_RESOURCE_GENERATOR) make --in cmd/mi-lsp-host/winres.json --out cmd/mi-lsp-host/rsrc --arch amd64,arm64 --file-version "$(WINDOWS_FILE_VERSION)" --product-version "$(WINDOWS_FILE_VERSION)"
 
 build:
 	go build -ldflags="-s -w" -o bin/mi-lsp ./cmd/mi-lsp

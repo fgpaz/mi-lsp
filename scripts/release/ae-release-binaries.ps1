@@ -283,6 +283,7 @@ $result = [ordered]@{
     out_dir = $outDirForReport
     built = @()
     provenance = @()
+    host_provenance = @()
     checksums = @()
     local_install = $null
     wsl_install = $null
@@ -361,6 +362,32 @@ foreach ($rid in $Rids) {
         rid = $rid
         cli = (Resolve-Path $cliPath).Path
         sha256 = $cliSha
+    }
+}
+
+# Host assets are separate from the six CLI/worker RIDs. They come from the
+# official GoReleaser dist, not build-dist's per-RID CLI directories.
+if (-not $Development) {
+    $hostTag = $Tag
+    if ([string]::IsNullOrWhiteSpace($hostTag)) {
+        $hostTag = (& git -C $repoRoot describe --tags --exact-match HEAD 2>$null | Select-Object -First 1)
+    }
+    if ([string]::IsNullOrWhiteSpace($hostTag) -or $hostTag -notmatch '^v([0-9]+\.[0-9]+\.[0-9]+(?:[.-][0-9A-Za-z]+)?)$') {
+        throw 'BLOCKED: host certification requires the exact release tag (-Tag vX.Y.Z).'
+    }
+    $hostVersion = $Matches[1]
+    foreach ($rid in @('win-x64', 'win-arm64')) {
+        $hostPath = Join-Path $OutDir "mi-lsp-host_${hostVersion}_${rid}.exe"
+        if (-not (Test-Path -LiteralPath $hostPath -PathType Leaf)) {
+            throw "BLOCKED: missing host asset '$hostPath'; no CLI fallback."
+        }
+        $metadata = Get-GoVersionMetadata -Path $hostPath -ExpectedRevision $expectedRevision
+        $result.host_provenance += [pscustomobject]@{
+            rid = $rid
+            asset = (Resolve-Path $hostPath).Path
+            sha256 = Get-FileSha256 -Path $hostPath
+            provenance = $metadata
+        }
     }
 }
 
