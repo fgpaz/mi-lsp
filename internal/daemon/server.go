@@ -19,6 +19,7 @@ import (
 	elasticdaemon "github.com/fgpaz/bots-herramientas/mold/daemon"
 	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/runtimeinfo"
 	"github.com/fgpaz/mi-lsp/internal/service"
 	"github.com/fgpaz/mi-lsp/internal/telemetry"
 	"github.com/fgpaz/mi-lsp/internal/worker"
@@ -52,6 +53,7 @@ type Server struct {
 	resultCache          *resultCache
 	qSessions            *service.SessionState
 	instanceLease        *startLock
+	osInstanceLease      *runtimeinfo.FileLease
 	elastic              *elasticdaemon.Server
 	elasticNode          string
 	coordinatorCount     int
@@ -84,7 +86,21 @@ func NewServer(repoRoot string, maxWorkers int, idleTimeout time.Duration) (*Ser
 	return NewServerWithOptions(repoRoot, maxWorkers, idleTimeout, DefaultStartOptions())
 }
 
+type serverConstructionDeps struct {
+	openTelemetryStore func() (*TelemetryStore, error)
+	listen             func() (net.Listener, error)
+	generateAdminToken func() (string, error)
+}
+
 func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Duration, options StartOptions) (*Server, error) {
+	return newServerWithConstructionDeps(repoRoot, maxWorkers, idleTimeout, options, serverConstructionDeps{
+		openTelemetryStore: openTelemetryStore,
+		listen:             listenDaemon,
+		generateAdminToken: generateAdminToken,
+	})
+}
+
+func newServerWithConstructionDeps(repoRoot string, maxWorkers int, idleTimeout time.Duration, options StartOptions, deps serverConstructionDeps) (*Server, error) {
 	if err := checkDaemonStartIntegrity(); err != nil {
 		return nil, err
 	}
@@ -92,6 +108,22 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 	options = NormalizeStartOptions(options)
 	maxWorkers = normalizeMaxWorkers(maxWorkers)
 	idleTimeout = normalizeServerIdleTimeout(idleTimeout)
+	lifeLeasePath, err := daemonInstanceLifeGuardPath()
+	if err != nil {
+		return nil, err
+	}
+	lifeCtx, cancelLife := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	lifeLease, err := runtimeinfo.AcquireFileLeaseContext(lifeCtx, lifeLeasePath)
+	cancelLife()
+	if err != nil {
+		return nil, fmt.Errorf("daemon OS lifetime lease unavailable: %w", err)
+	}
+	lifeLeaseTransferred := false
+	defer func() {
+		if !lifeLeaseTransferred {
+			_ = lifeLease.Release()
+		}
+	}()
 	leasePath, err := daemonInstanceLockPath()
 	if err != nil {
 		return nil, err
@@ -109,21 +141,14 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 	if err := rejectExistingDaemonOwner(); err != nil {
 		return nil, err
 	}
-	listener, err := listenDaemon()
+	telemetry, err := deps.openTelemetryStore()
 	if err != nil {
 		return nil, err
 	}
-	telemetry, err := openTelemetryStore()
-	if err != nil {
-		_ = listener.Close()
-		return nil, err
-	}
-	listener = newUpdateListener(listener, listenDaemon)
 	manager := NewManagerWithOptions(repoRoot, maxWorkers, idleTimeout, options)
 	manager.SetTelemetryStore(telemetry)
 	elasticCtx, elasticCancel := context.WithCancel(context.Background())
 	server := &Server{
-		listener:            listener,
 		manager:             manager,
 		telemetry:           telemetry,
 		options:             options,
@@ -135,6 +160,7 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 		resultCache:         newResultCache(),
 		qSessions:           newQSessionState(),
 		instanceLease:       lease,
+		osInstanceLease:     lifeLease,
 		elasticCtx:          elasticCtx,
 		elasticCancel:       elasticCancel,
 		elasticReady:        make(chan struct{}),
@@ -164,49 +190,37 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 	manager.watcherEndWork = server.endSemanticWork
 	model.CurrentExecutableSnapshot().ApplyToDaemonState(&server.state)
 
-	// SEC-02: Generate admin token for authentication
-	adminToken, err := generateAdminToken()
+	listener, err := deps.listen()
 	if err != nil {
-		_ = listener.Close()
-		_ = telemetry.Close()
-		manager.Shutdown()
-		elasticCancel()
-		return nil, err
+		if listener != nil {
+			err = errors.Join(err, listener.Close())
+		}
+		return nil, server.cleanupFailedConstruction(err)
+	}
+	server.listener = newUpdateListener(listener, deps.listen)
+
+	// SEC-02: Generate admin token for authentication
+	adminToken, err := deps.generateAdminToken()
+	if err != nil {
+		return nil, server.cleanupFailedConstruction(err)
 	}
 	server.state.AdminToken = adminToken
 
 	server.app = service.New(repoRoot, manager)
 	admin, err := newAdminServer(manager, telemetry, server.app, func() model.DaemonState { return server.state }, adminToken, server.updateGate)
 	if err != nil {
-		_ = listener.Close()
-		_ = telemetry.Close()
-		manager.Shutdown()
-		elasticCancel()
-		return nil, err
+		return nil, server.cleanupFailedConstruction(err)
 	}
 	server.admin = admin
 	server.state.AdminURL = admin.URL()
 	if elasticEnabled() {
 		if err := server.startElasticPool(); err != nil {
-			elasticCancel()
-			_ = listener.Close()
-			_ = admin.Shutdown()
-			manager.Shutdown()
-			_ = telemetry.Close()
-			return nil, err
+			return nil, server.cleanupFailedConstruction(err)
 		}
 	}
 	runID, err := telemetry.StartRun(server.state)
 	if err != nil {
-		elasticCancel()
-		_ = listener.Close()
-		_ = admin.Shutdown()
-		if server.elastic != nil {
-			_ = server.elastic.Close()
-		}
-		manager.Shutdown()
-		_ = telemetry.Close()
-		return nil, err
+		return nil, server.cleanupFailedConstruction(err)
 	}
 	server.state.RunID = runID
 
@@ -216,18 +230,10 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 	server.updateRetention = newUpdateRetention(server.updateGate, func() { _, _, _ = telemetry.PurgeAndVacuum(retDays, maxBytes) })
 
 	if err := saveDaemonState(server.state); err != nil {
-		server.updateRetention.stopAndWait()
-		elasticCancel()
-		_ = listener.Close()
-		_ = admin.Shutdown()
-		if server.elastic != nil {
-			_ = server.elastic.Close()
-		}
-		manager.Shutdown()
-		_ = telemetry.Close()
-		return nil, err
+		return nil, server.cleanupFailedConstruction(err)
 	}
 	leaseTransferred = true
+	lifeLeaseTransferred = true
 	close(server.elasticReady)
 
 	if options.WatchMode == WatchModeEager {
@@ -490,32 +496,30 @@ func (s *Server) runShutdownOwner() {
 	if s.manager != nil {
 		s.manager.Shutdown()
 	}
-	cleanupErr = errors.Join(cleanupErr, clearDaemonState())
 	if s.telemetry != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), telemetryCloseDrainTimeout)
 		cleanupErr = errors.Join(cleanupErr, s.telemetry.stopRunContext(ctx, s.state.RunID, time.Now()))
 		cancel()
 	}
 	if s.telemetry != nil {
-		if err := s.telemetry.Close(); err != nil {
-			// A bounded caller may time out while the driver still owns the DB.
-			// Keep the lease and fence until the close owner actually joins it.
-			if err = s.telemetry.WaitClosed(context.Background()); err != nil {
-				cleanupErr = errors.Join(cleanupErr, err)
-				s.finishShutdown(cleanupErr)
-				return
-			}
-		}
+		// Close bounds its caller, not physical ownership. Always join the close
+		// owner; even a driver close error is reportable only after it returned.
+		// Close initiates the physical close but its result is only a bounded
+		// caller wait. The unbounded owner join below is the authoritative result.
+		_ = s.telemetry.Close()
+		cleanupErr = errors.Join(cleanupErr, s.telemetry.WaitClosed(context.Background()))
 	}
-	if s.instanceLease != nil {
-		if err := s.instanceLease.Close(); err != nil {
-			cleanupErr = errors.Join(cleanupErr, err)
-			s.finishShutdown(cleanupErr)
-			return
-		}
-	}
+	cleanupErr = errors.Join(cleanupErr, clearOwnedDaemonState(s.state))
+	// The transferred fence is a physical resource too. Release it only after
+	// all work and the database joined, and before either lifetime lease.
 	if fence != nil {
 		fence()
+	}
+	if s.instanceLease != nil {
+		cleanupErr = errors.Join(cleanupErr, s.instanceLease.Close())
+	}
+	if s.osInstanceLease != nil {
+		cleanupErr = errors.Join(cleanupErr, s.osInstanceLease.Release())
 	}
 	s.finishShutdown(cleanupErr)
 }
