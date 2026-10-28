@@ -146,7 +146,7 @@ func QueryAccessEvents(store *TelemetryStore, query ExportQuery) ([]model.Access
 	}
 
 	sql, args := buildAccessEventsSQL(query, true)
-	rows, err := store.db.Query(sql, args...)
+	rows, err := store.db.QueryContext(store.ownedWriteContext(), sql, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +175,7 @@ func QueryAccessSummary(store *TelemetryStore, query ExportQuery) (ExportSummary
 		query.Limit = 500
 	}
 	sql, args := buildAccessEventsSQL(query, false)
-	rows, err := store.db.Query(sql, args...)
+	rows, err := store.db.QueryContext(store.ownedWriteContext(), sql, args...)
 	if err != nil {
 		return ExportSummary{}, err
 	}

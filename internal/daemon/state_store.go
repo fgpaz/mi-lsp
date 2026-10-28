@@ -141,6 +141,8 @@ type TelemetryStore struct {
 	writeCtx context.Context
 	cancelWrites context.CancelFunc
 	closeOnce sync.Once
+	drainOnce sync.Once
+	drainTimer *time.Timer
 	closeComplete chan struct{}
 	closeErr error
 }
@@ -236,7 +238,7 @@ func isTelemetrySQLiteLocked(err error) bool {
 }
 
 func (s *TelemetryStore) execWithRetry(query string, args ...any) (sql.Result, error) {
-	return s.execWithRetryContext(context.Background(), query, args...)
+	return s.execWithRetryContext(s.ownedWriteContext(), query, args...)
 }
 
 func (s *TelemetryStore) execWithRetryContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
@@ -273,7 +275,7 @@ func (s *TelemetryStore) PurgeAndVacuum(retentionDays int, maxBytes int64) (int,
 
 	// Run VACUUM to reclaim space, bounded by a timeout so it cannot hang the daemon
 	// indefinitely if a reader holds a lock.
-	vctx, vcancel := context.WithTimeout(context.Background(), 30*time.Second)
+	vctx, vcancel := context.WithTimeout(s.ownedWriteContext(), 30*time.Second)
 	_, vacErr := s.db.ExecContext(vctx, "VACUUM")
 	vcancel()
 	if vacErr != nil {
@@ -305,7 +307,7 @@ func (s *TelemetryStore) PurgeOldEvents(olderThan time.Time) (int64, error) {
 }
 
 func (s *TelemetryStore) PurgeOldRuns(olderThan time.Time) (int64, error) {
-	result, err := s.db.Exec(`DELETE FROM daemon_runs WHERE stopped_at IS NOT NULL AND stopped_at < ?`, olderThan.Unix())
+	result, err := s.db.ExecContext(s.ownedWriteContext(), `DELETE FROM daemon_runs WHERE stopped_at IS NOT NULL AND stopped_at < ?`, olderThan.Unix())
 	if err != nil {
 		return 0, err
 	}
@@ -423,7 +425,7 @@ func (s *TelemetryStore) recordAccessDirectInternal(runID int64, event model.Acc
 
 func (s *TelemetryStore) Checkpoint() error {
 	if s == nil || s.db == nil { return nil }
-	ctx, cancel := context.WithTimeout(context.Background(), telemetryCheckpointTimeout)
+	ctx, cancel := context.WithTimeout(s.ownedWriteContext(), telemetryCheckpointTimeout)
 	defer cancel()
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
@@ -489,7 +491,7 @@ func (s *TelemetryStore) setFailure(code string, busy bool) {
 }
 
 func (s *TelemetryStore) walSize() (int64, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	ctx, cancel := context.WithTimeout(s.ownedWriteContext(), 250*time.Millisecond)
 	defer cancel()
 	var path string
 	if err := s.db.QueryRowContext(ctx, "PRAGMA database_list").Scan(new(int), new(string), &path); err != nil { return 0, err }
@@ -544,13 +546,21 @@ func (s *TelemetryStore) ownedWriteContext() context.Context {
 	return s.writeCtx
 }
 
+// startDrainDeadline is shared by shutdown and Close; it does not close the DB.
+func (s *TelemetryStore) startDrainDeadline() {
+	if s == nil || s.db == nil { return }
+	s.ownedWriteContext()
+	s.drainOnce.Do(func() {
+		s.drainTimer = time.AfterFunc(telemetryCloseDrainTimeout, s.cancelWrites)
+	})
+}
+
 // Close bounds the caller, not the physical driver or database lifetime.
 func (s *TelemetryStore) Close() error {
 	if s == nil || s.db == nil { return nil }
-	s.ownedWriteContext()
+	s.startDrainDeadline()
 	s.closeOnce.Do(func() {
 		s.stateMu.Lock(); s.closed = true; s.stateMu.Unlock()
-		timer := time.AfterFunc(telemetryCloseDrainTimeout, s.cancelWrites)
 		go func() {
 			// Barrier: no admitted direct operation or late enqueue survives this point.
 			s.admissionMu.Lock()
@@ -558,7 +568,7 @@ func (s *TelemetryStore) Close() error {
 			s.admissionMu.Unlock()
 			if s.done != nil { s.wg.Wait() }
 			s.closeErr = s.db.Close()
-			timer.Stop()
+			s.drainTimer.Stop()
 			s.cancelWrites()
 			close(s.closeComplete)
 		}()
@@ -708,7 +718,7 @@ func (s *TelemetryStore) initSchema() error {
 }
 
 func (s *TelemetryStore) StartRun(state model.DaemonState) (int64, error) {
-	result, err := s.db.Exec(
+	result, err := s.db.ExecContext(s.ownedWriteContext(),
 		`INSERT INTO daemon_runs(pid, endpoint, admin_url, repo_root, protocol_version, started_at) VALUES (?, ?, ?, ?, ?, ?)`,
 		state.PID,
 		state.Endpoint,
@@ -727,7 +737,7 @@ func (s *TelemetryStore) StopRun(runID int64, stoppedAt time.Time) error {
 	if runID == 0 {
 		return nil
 	}
-	_, err := s.db.Exec(`UPDATE daemon_runs SET stopped_at = ? WHERE id = ?`, stoppedAt.Unix(), runID)
+	_, err := s.db.ExecContext(s.ownedWriteContext(), `UPDATE daemon_runs SET stopped_at = ? WHERE id = ?`, stoppedAt.Unix(), runID)
 	return err
 }
 
@@ -735,22 +745,23 @@ func (s *TelemetryStore) ReplaceRuntimeSnapshots(runID int64, statuses []model.W
 	if runID == 0 {
 		return nil
 	}
-	tx, err := s.db.Begin()
+	ctx := s.ownedWriteContext()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.Exec(`DELETE FROM runtime_snapshots WHERE daemon_run_id = ?`, runID); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM runtime_snapshots WHERE daemon_run_id = ?`, runID); err != nil {
 		return err
 	}
-	stmt, err := tx.Prepare(`INSERT INTO runtime_snapshots(runtime_key, daemon_run_id, workspace_root, workspace_name, repo_name, repo_root, backend_type, entrypoint_id, entrypoint_path, entrypoint_type, pid, memory_bytes, started_at, last_used_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO runtime_snapshots(runtime_key, daemon_run_id, workspace_root, workspace_name, repo_name, repo_root, backend_type, entrypoint_id, entrypoint_path, entrypoint_type, pid, memory_bytes, started_at, last_used_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 	for _, status := range statuses {
-		if _, err := stmt.Exec(
+		if _, err := stmt.ExecContext(ctx,
 			status.RuntimeKey,
 			runID,
 			status.WorkspaceRoot,
@@ -776,7 +787,7 @@ func (s *TelemetryStore) ReplaceRuntimeSnapshots(runID int64, statuses []model.W
 // NextSeq returns the next sequence number for the given session_id.
 // Returns 0 if session_id is empty, 1 for the first event in a session.
 func (s *TelemetryStore) NextSeq(sessionID string) int {
-	seq, _ := s.nextSeqContext(context.Background(), sessionID)
+	seq, _ := s.nextSeqContext(s.ownedWriteContext(), sessionID)
 	return seq
 }
 
@@ -849,9 +860,10 @@ func (s *TelemetryStore) RecentAccesses(limit int) ([]model.AccessEvent, error) 
 		limit = 50
 	}
 	var rows *sql.Rows
-	err := retryTelemetrySQLite(func() error {
+	ctx := s.ownedWriteContext()
+	err := retryTelemetrySQLiteContext(ctx, func() error {
 		var queryErr error
-		rows, queryErr = s.db.Query(
+		rows, queryErr = s.db.QueryContext(ctx,
 			`SELECT id, occurred_at, COALESCE(client_name, ''), COALESCE(session_id, ''), COALESCE(seq, 0), COALESCE(workspace, ''), COALESCE(workspace_input, ''), COALESCE(workspace_root, ''), COALESCE(workspace_alias, ''), COALESCE(repo, ''), operation, COALESCE(backend, ''), COALESCE(route, ''), COALESCE(format, ''), COALESCE(token_budget, 0), COALESCE(max_items, 0), COALESCE(max_chars, 0), COALESCE(compress, 0), success, latency_ms, COALESCE(warnings_json, '[]'), COALESCE(runtime_key, ''), COALESCE(entrypoint_id, ''), COALESCE(error_text, ''), COALESCE(error_kind, ''), COALESCE(error_code, ''), COALESCE(truncated, 0), COALESCE(result_count, 0), COALESCE(warning_count, 0), COALESCE(pattern_mode, ''), COALESCE(routing_outcome, ''), COALESCE(failure_stage, ''), COALESCE(hint_code, ''), COALESCE(truncation_reason, ''), COALESCE(decision_json, ''), COALESCE(bytes_out, 0), COALESCE(harness, ''), COALESCE(q_stages, 0) FROM access_events ORDER BY occurred_at DESC, id DESC LIMIT ?`,
 			limit,
 		)
@@ -898,9 +910,10 @@ type metricsRow struct {
 
 func (s *TelemetryStore) ComputeMetrics(since time.Time) ([]metricsRow, error) {
 	var rows *sql.Rows
-	err := retryTelemetrySQLite(func() error {
+	ctx := s.ownedWriteContext()
+	err := retryTelemetrySQLiteContext(ctx, func() error {
 		var queryErr error
-		rows, queryErr = s.db.Query(
+		rows, queryErr = s.db.QueryContext(ctx,
 			`SELECT operation, COALESCE(NULLIF(workspace_root, ''), NULLIF(workspace, ''), ''), COALESCE(client_name, ''), latency_ms, success, COALESCE(truncated, 0)
 			 FROM access_events
 			 WHERE occurred_at > ?
