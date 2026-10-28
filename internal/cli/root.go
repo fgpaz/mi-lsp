@@ -945,7 +945,7 @@ func (s *rootState) printPreparedEnvelope(envelope model.Envelope, opts model.Qu
 	// Diagnostics budgets are applied to the envelope upstream. Even when the
 	// minimum envelope or pretty JSON exceeds the budget, preserve structured
 	// output and its incompleteness metadata rather than cutting serialized bytes.
-	structuredManagement := strings.EqualFold(format, "json") && (envelope.Backend == "version" || envelope.Backend == "doctor")
+	structuredManagement := strings.EqualFold(format, "json") && (envelope.Backend == "version" || envelope.Backend == "doctor" || envelope.Backend == "daemon-lease")
 	if !structuredManagement && (envelope.ContractVersion != "diagnostics/v1" || strings.EqualFold(format, "text") || strings.EqualFold(format, "agent")) {
 		rendered = output.CapRendered(rendered, opts.MaxChars)
 	}

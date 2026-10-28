@@ -38,7 +38,7 @@ func shouldStartAutomaticUpdate(args []string, version string, child bool) bool 
 	}
 	for _, arg := range args {
 		switch arg {
-		case "update", "doctor", "probe", "repair", "help", "--help", "-h":
+		case "update", "doctor", "probe", "repair", "lease", "help", "--help", "-h":
 			return false
 		}
 	}
