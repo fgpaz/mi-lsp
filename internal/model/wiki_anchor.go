@@ -23,6 +23,15 @@ type WikiAnchorRef struct {
 	Status     string `json:"status"`
 }
 
+// WikiAnchorFocus is the anchor a trace was asked for (`nav wiki trace <DOC-ID>#<ANCLA>`). Path and
+// Line point at the H3 that declares it; Line is zero when the anchor is missing.
+type WikiAnchorFocus struct {
+	Ref    string `json:"ref"`
+	Path   string `json:"path,omitempty"`
+	Line   int    `json:"line,omitempty"`
+	Status string `json:"status"`
+}
+
 // WikiAnchorCitation is one parsed `<DOC-ID>#<ANCLA>` token; Line is 1-based.
 type WikiAnchorCitation struct {
 	DocID  string
