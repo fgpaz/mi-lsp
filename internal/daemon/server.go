@@ -156,6 +156,9 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 			MaxInflight:     options.MaxInflight,
 		},
 	}
+	// Set before the manager can create watchers; closures live with the server.
+	manager.watcherBeginWork = server.beginSemanticWork
+	manager.watcherEndWork = server.endSemanticWork
 	model.CurrentExecutableSnapshot().ApplyToDaemonState(&server.state)
 
 	// SEC-02: Generate admin token for authentication

@@ -244,7 +244,6 @@ func (s *Server) expireWhenIdle(ctx context.Context, done <-chan struct{}) {
 	s.workMu.Unlock()
 	timer := time.NewTimer(idleTimeout)
 	defer timer.Stop()
-	jobsWereBusy := false
 	for {
 		select {
 		case <-ctx.Done():
@@ -281,20 +280,16 @@ func (s *Server) expireWhenIdle(ctx context.Context, done <-chan struct{}) {
 			}
 			resumeJobs, jobsIdle := indexer.TryPauseBackgroundJobs()
 			if !jobsIdle {
-				jobsWereBusy = true
 				timer.Reset(idleTimeout)
 				continue
 			}
-			if jobsWereBusy {
-				resumeJobs()
-				s.workMu.Lock()
-				s.lastWorkCompletion = time.Now()
-				s.workMu.Unlock()
-				jobsWereBusy = false
-				timer.Reset(idleTimeout)
-				continue
-			}
+			// The fence excludes new jobs; re-read completion after acquiring it so
+			// a job that finished between the previous check and pause is included.
+			jobCompletion := indexer.BackgroundJobLastCompletion()
 			s.workMu.Lock()
+			if jobCompletion.After(s.lastWorkCompletion) {
+				s.lastWorkCompletion = jobCompletion
+			}
 			remaining = idleTimeout - time.Since(s.lastWorkCompletion)
 			if s.activeWork == 0 && remaining <= 0 {
 				s.shutdownStarted.Store(true)

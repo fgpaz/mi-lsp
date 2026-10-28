@@ -33,6 +33,7 @@ type jobRegistry struct {
 	mu     sync.RWMutex
 	jobs   map[string]IndexJobState
 	paused bool
+	lastCompletion time.Time
 }
 
 var jobs = &jobRegistry{
@@ -62,6 +63,17 @@ func TryPauseBackgroundJobs() (func(), bool) {
 	registry.paused = true
 	var once sync.Once
 	return func() { once.Do(func() { registry.mu.Lock(); registry.paused = false; registry.mu.Unlock() }) }, true
+}
+
+// BackgroundJobLastCompletion returns the actual latest admitted job completion.
+func BackgroundJobLastCompletion() time.Time {
+	registry := jobs
+	if registry == nil {
+		return time.Time{}
+	}
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+	return registry.lastCompletion
 }
 
 // newJobID generates a unique job ID based on root and current timestamp.
@@ -95,6 +107,7 @@ func (jr *jobRegistry) finish(jobID string, err error) {
 			state.Err = err.Error()
 		}
 		jr.jobs[jobID] = state
+		jr.lastCompletion = time.Now()
 	}
 }
 
