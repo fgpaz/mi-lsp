@@ -18,6 +18,7 @@ import (
 	"modernc.org/sqlite"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/runtimeinfo"
 	"github.com/fgpaz/mi-lsp/internal/telemetry"
 )
 
@@ -142,6 +143,7 @@ type TelemetryStore struct {
 	done          chan struct{}
 	wg            sync.WaitGroup
 	admissionMu   sync.Mutex
+	ownership     chan struct{}
 	stateMu       sync.RWMutex
 	closed        bool
 	health        WALHealth
@@ -161,6 +163,15 @@ func openTelemetryStore() (*TelemetryStore, error) {
 	if err != nil {
 		return nil, err
 	}
+	guardPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	guardLease, err := runtimeinfo.AcquireFileLeaseContext(context.Background(), guardPath+".writer.guard")
+	if err != nil {
+		return nil, fmt.Errorf("acquire telemetry schema lease: %w", err)
+	}
+	defer guardLease.Release()
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
@@ -365,14 +376,8 @@ func (s *TelemetryStore) asyncWriteWorker() {
 }
 
 func (s *TelemetryStore) persistQueued(req telemetryWriteRequest) {
-	s.admissionMu.Lock()
-	defer s.admissionMu.Unlock()
 	if err := s.ownedWriteContext().Err(); err != nil {
 		s.failWrite()
-		return
-	}
-	if err := s.admitWAL(); err != nil {
-		s.failWriteReason(walAdmissionReason(err))
 		return
 	}
 	if err := s.recordAccessDirectInternal(req.runID, req.event, req.isDirect); err != nil {
@@ -382,7 +387,12 @@ func (s *TelemetryStore) persistQueued(req telemetryWriteRequest) {
 
 // recordAccessDirectInternal handles the actual database write (called from async worker).
 func (s *TelemetryStore) recordAccessDirectInternal(runID int64, event model.AccessEvent, isDirect bool) error {
-	ctx := s.ownedWriteContext()
+	return s.withTelemetryMutationContext(s.ownedWriteContext(), func(ctx context.Context) error {
+		return s.recordAccessDirectUnderLease(ctx, runID, event, isDirect)
+	})
+}
+
+func (s *TelemetryStore) recordAccessDirectUnderLease(ctx context.Context, runID int64, event model.AccessEvent, isDirect bool) error {
 	if event.Seq == 0 {
 		var err error
 		event.Seq, err = s.nextSeqContext(ctx, event.SessionID)
@@ -459,6 +469,12 @@ func (s *TelemetryStore) Checkpoint() error {
 	}
 	ctx, cancel := context.WithTimeout(s.ownedWriteContext(), telemetryCheckpointTimeout)
 	defer cancel()
+	return s.withTelemetryOwnershipOnlyContext(ctx, func(ownedCtx context.Context) error {
+		return s.checkpointWithLeaseHeldContext(ownedCtx)
+	})
+}
+
+func (s *TelemetryStore) checkpointWithLeaseHeldContext(ctx context.Context) error {
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
@@ -528,8 +544,12 @@ func (s *TelemetryStore) setFailure(code string, busy bool) {
 }
 
 func (s *TelemetryStore) walSize() (int64, error) {
-	ctx, cancel := context.WithTimeout(s.ownedWriteContext(), 250*time.Millisecond)
+	ctx, cancel := context.WithTimeout(s.ownedWriteContext(), telemetryOwnershipBudget)
 	defer cancel()
+	return s.walSizeWithContext(ctx)
+}
+
+func (s *TelemetryStore) walSizeWithContext(ctx context.Context) (int64, error) {
 	var path string
 	if err := s.db.QueryRowContext(ctx, "PRAGMA database_list").Scan(new(int), new(string), &path); err != nil {
 		return 0, err
@@ -545,6 +565,12 @@ func (s *TelemetryStore) walSize() (int64, error) {
 }
 
 func (s *TelemetryStore) admitWAL() error {
+	return s.withTelemetryOwnershipOnlyContext(s.ownedWriteContext(), func(ctx context.Context) error {
+		return s.admitTelemetryMutationWithLeaseHeldContext(ctx)
+	})
+}
+
+func (s *TelemetryStore) admitWALWithLeaseHeld(ctx context.Context) error {
 	maxBytes := s.walMaxBytes
 	if maxBytes <= 0 {
 		maxBytes = telemetryWALMaxBytes
@@ -556,7 +582,7 @@ func (s *TelemetryStore) admitWAL() error {
 	// Reserve bounded headroom for admitted-but-not-yet-written queue entries.
 	reserved := int64(len(s.writeQueue)+1) * 64 * 1024
 	if size+reserved >= maxBytes {
-		if err := s.Checkpoint(); err != nil {
+		if err := s.checkpointWithLeaseHeldContext(s.ownedWriteContext()); err != nil {
 			return err
 		}
 		size, err = s.walSize()
@@ -646,7 +672,7 @@ func (s *TelemetryStore) Close() error {
 			if s.done != nil {
 				s.wg.Wait()
 			}
-			s.closeErr = s.db.Close()
+			s.closeErr = s.withTelemetryCloseOwnership(func() error { return s.db.Close() })
 			s.drainTimer.Stop()
 			s.cancelWrites()
 			close(s.closeComplete)
@@ -900,8 +926,6 @@ func (s *TelemetryStore) RecordAccessDirect(event model.AccessEvent) error {
 	if s == nil {
 		return errors.New("telemetry store unavailable")
 	}
-	s.admissionMu.Lock()
-	defer s.admissionMu.Unlock()
 	s.stateMu.RLock()
 	closed := s.closed
 	s.stateMu.RUnlock()
@@ -911,10 +935,6 @@ func (s *TelemetryStore) RecordAccessDirect(event model.AccessEvent) error {
 	}
 	if err := checkTelemetryEventSize(event); err != nil {
 		s.reject("event_too_large")
-		return err
-	}
-	if err := s.admitWAL(); err != nil {
-		s.reject(walAdmissionReason(err))
 		return err
 	}
 	if err := s.recordAccessDirectInternal(0, event, true); err != nil {
@@ -939,10 +959,6 @@ func (s *TelemetryStore) RecordAccess(runID int64, event model.AccessEvent) erro
 	}
 	if err := checkTelemetryEventSize(event); err != nil {
 		s.reject("event_too_large")
-		return err
-	}
-	if err := s.admitWAL(); err != nil {
-		s.reject(walAdmissionReason(err))
 		return err
 	}
 	select {
