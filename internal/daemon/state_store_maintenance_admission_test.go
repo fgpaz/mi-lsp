@@ -21,11 +21,7 @@ func TestVacuumPhaseAdmissionAndRecovery(t *testing.T) {
 	db.SetMaxOpenConns(4)
 	db.SetMaxIdleConns(4)
 	s := &TelemetryStore{dbPath: path, db: db, walMaxBytes: telemetryWALMaxBytes}
-	defer func() {
-		if err := db.Close(); err != nil {
-			t.Errorf("close fixture DB: %v", err)
-		}
-	}()
+	defer closeMaintenanceStore(t, s)
 	for _, statement := range []string{
 		"PRAGMA journal_mode=WAL",
 		"CREATE TABLE access_events (occurred_at INTEGER NOT NULL)",
@@ -41,6 +37,13 @@ func TestVacuumPhaseAdmissionAndRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() {
+		if reader != nil {
+			if err := reader.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+				t.Errorf("release pinned reader: %v", err)
+			}
+		}
+	}()
 	var n int
 	if err := reader.QueryRow("SELECT count(*) FROM access_events").Scan(&n); err != nil {
 		t.Fatal(err)
@@ -64,8 +67,9 @@ func TestVacuumPhaseAdmissionAndRecovery(t *testing.T) {
 	err = s.withTelemetryWriteOwnershipContext(ctx, func(ownedCtx context.Context) error {
 		return s.vacuumWithLeaseHeldContext(ownedCtx)
 	})
-	if err == nil {
-		t.Fatal("VACUUM unexpectedly passed admission with a pinned over-threshold WAL")
+	if !errors.Is(err, errTelemetryWALLimit) && !errors.Is(err, errTelemetryCheckpointBusy) &&
+		!errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+		t.Fatalf("VACUUM refusal has no recognized admission cause: %v", err)
 	}
 	after, err := maintenanceWALBytes(path)
 	if err != nil || after != before {
@@ -78,11 +82,14 @@ func TestVacuumPhaseAdmissionAndRecovery(t *testing.T) {
 	if err := reader.Rollback(); err != nil {
 		t.Fatal(err)
 	}
+	reader = nil
+	recoveryCtx, recoveryCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer recoveryCancel()
 	if err := s.Checkpoint(); err != nil {
 		t.Fatalf("checkpoint after releasing pin: %v", err)
 	}
 	s.walMaxBytes = telemetryWALMaxBytes
-	err = s.withTelemetryWriteOwnershipContext(ctx, func(ownedCtx context.Context) error {
+	err = s.withTelemetryWriteOwnershipContext(recoveryCtx, func(ownedCtx context.Context) error {
 		return s.vacuumWithLeaseHeldContext(ownedCtx)
 	})
 	if err != nil {
@@ -98,11 +105,7 @@ func TestPurgeAndVacuumUsesSingleOwnershipWithoutRecursion(t *testing.T) {
 	}
 	db.SetMaxOpenConns(2)
 	s := &TelemetryStore{dbPath: path, db: db, walMaxBytes: telemetryWALMaxBytes}
-	defer func() {
-		if err := db.Close(); err != nil {
-			t.Errorf("close fixture DB: %v", err)
-		}
-	}()
+	defer closeMaintenanceStore(t, s)
 	for _, statement := range []string{
 		"PRAGMA journal_mode=WAL",
 		"CREATE TABLE access_events (occurred_at INTEGER NOT NULL)",
@@ -117,6 +120,18 @@ func TestPurgeAndVacuumUsesSingleOwnershipWithoutRecursion(t *testing.T) {
 	_, vacuumed, err := s.purgeAndVacuumContext(ctx, 1, 1<<62)
 	if err != nil || !vacuumed {
 		t.Fatalf("purge-and-vacuum: vacuumed=%v err=%v", vacuumed, err)
+	}
+}
+
+func closeMaintenanceStore(t *testing.T, store *TelemetryStore) {
+	t.Helper()
+	if err := store.Close(); err != nil {
+		t.Errorf("close telemetry store: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := store.WaitClosed(ctx); err != nil {
+		t.Errorf("join telemetry store close: %v", err)
 	}
 }
 
