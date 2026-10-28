@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -17,7 +18,10 @@ import (
 // only the batch's indexing boundary so its actual entry can be held open.
 func watcherActivityFixture(t *testing.T) (*Server, *FileWatcher, <-chan error) {
 	t.Helper()
-	home, err := os.MkdirTemp("/tmp", "a3-")
+	// Unix sockets need a short path; Windows named pipes do not use sun_path.
+	base := ""
+	if runtime.GOOS != "windows" { base = "/tmp" }
+	home, err := os.MkdirTemp(base, "a3-")
 	if err != nil { t.Fatalf("FIXTURE_INVALID private home: %v", err) }
 	t.Cleanup(func() { _ = os.RemoveAll(home) })
 	for _, key := range []string{"HOME", "USERPROFILE", "TMP", "TMPDIR", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"} { t.Setenv(key, home) }
