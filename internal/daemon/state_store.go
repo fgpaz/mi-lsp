@@ -468,8 +468,10 @@ func (s *TelemetryStore) setFailure(code string, busy bool) {
 }
 
 func (s *TelemetryStore) walSize() (int64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
 	var path string
-	if err := s.db.QueryRow("PRAGMA database_list").Scan(new(int), new(string), &path); err != nil { return 0, err }
+	if err := s.db.QueryRowContext(ctx, "PRAGMA database_list").Scan(new(int), new(string), &path); err != nil { return 0, err }
 	info, err := os.Stat(path + "-wal")
 	if errors.Is(err, os.ErrNotExist) { return 0, nil }
 	if err != nil { return 0, err }
@@ -495,12 +497,18 @@ func (s *TelemetryStore) admitWAL() error {
 func (s *TelemetryStore) WALHealth() WALHealth {
 	if s == nil { return WALHealth{Closed:true} }
 	s.stateMu.RLock(); h := s.health; h.Closed = s.closed; s.stateMu.RUnlock()
+	h.WALBytes = 0
+	h.WALBytesKnown = false
 	if !h.Closed {
-		if size, err := s.walSize(); err == nil {
+		size, err := s.walSize()
+		s.stateMu.Lock()
+		h.Closed = s.closed
+		if err == nil && !h.Closed {
 			h.WALBytes = size
 			h.WALBytesKnown = true
-			s.stateMu.Lock(); s.health.WALBytes = size; s.health.WALBytesKnown = true; s.stateMu.Unlock()
-		} else { h.LastFailure = "wal_size_unavailable" }
+			s.health.WALBytes = size; s.health.WALBytesKnown = true
+		} else if !h.Closed { h.LastFailure = "wal_size_unavailable" }
+		s.stateMu.Unlock()
 	}
 	h.WALMaxBytes = s.walMaxBytes
 	if h.WALMaxBytes <= 0 { h.WALMaxBytes = telemetryWALMaxBytes }

@@ -623,7 +623,10 @@ func (s *Server) handleRequestContext(ctx context.Context, request model.Command
 		if verboseTelemetry {
 			recentAccessCount = 20
 		}
-		accesses, _ := s.telemetry.RecentAccesses(recentAccessCount)
+		var accesses []model.AccessEvent
+		if s.telemetry != nil {
+			accesses, _ = s.telemetry.RecentAccesses(recentAccessCount)
+		}
 		if !verboseTelemetry {
 			// TOK-03: strip the long, repeated absolute-path fields from the compact
 			// recent_accesses view to cut token cost (workspace_root and runtime_key embed
@@ -653,6 +656,7 @@ func (s *Server) handleRequestContext(ctx context.Context, request model.Command
 				"watchers":        s.manager.WatcherStats(),
 				"active_runtimes": s.manager.Status(),
 				"recent_accesses": accesses,
+				"telemetry_wal":   telemetryWALStatus(s.telemetry),
 				"result_cache": map[string]any{
 					"hits":     hits,
 					"misses":   misses,
