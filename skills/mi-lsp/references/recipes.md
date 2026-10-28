@@ -291,6 +291,7 @@ Use the actual wiki subcommands and scopes exposed by the runtime:
 mi-lsp nav wiki pack "understand the routing contract" --workspace <alias> --format toon
 mi-lsp nav wiki pack "indexing docs" --workspace <alias> --rf RF-IDX-001 --format toon
 mi-lsp nav wiki trace RF-QRY-003 --workspace <alias> --format toon
+mi-lsp nav wiki trace FL-AUTH-001#P3 --workspace <alias> --format toon
 mi-lsp nav wiki trace --all --summary --workspace <alias> --format toon
 mi-lsp nav wiki validate-harness --workspace <alias> --ids CT-NAV-INTENT --format toon
 mi-lsp nav wiki validate-harness --workspace <alias> --paths .docs/wiki/07_technical/contracts/CT-NAV-INTENT.md --format toon

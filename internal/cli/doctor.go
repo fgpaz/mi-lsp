@@ -133,6 +133,10 @@ func getDoctorDaemonInfo(ctx context.Context) (string, int, *model.DaemonPoolSta
 		},
 	})
 	if err != nil {
+		statusErr := daemon.ClassifyDaemonStatusError(err)
+		if errors.Is(statusErr, daemon.ErrDaemonInaccessible) {
+			return "", 0, nil, service.DaemonStateUnknown, service.DaemonErrorCommunication, statusErr
+		}
 		if isDaemonUnavailable(err) {
 			return "", 0, nil, service.DaemonStateStopped, service.DaemonErrorUnavailable, err
 		}

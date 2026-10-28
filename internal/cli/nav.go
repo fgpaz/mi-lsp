@@ -1047,7 +1047,7 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 	var traceAllWorkspaces bool
 	var traceSources traceSourceOptions
 	traceCommand := &cobra.Command{
-		Use:   "trace <DOC-ID|--all>",
+		Use:   "trace <DOC-ID[#ANCLA]|--all>",
 		Short: "Trace wiki RS/RF/TP docs to evidence links",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			payload := map[string]any{}

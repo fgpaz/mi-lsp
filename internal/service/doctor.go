@@ -207,6 +207,9 @@ func checkDaemonConnectivity(ctx context.Context, opts *RunDoctorOptions) Doctor
 	if opts.DaemonErrorKind == DaemonErrorUnavailable || opts.DaemonState == DaemonStateStopped {
 		return DoctorCheck{ID: id, Severity: "P2", OK: true, Available: false, Detail: "Daemon not running (optional)"}
 	}
+	if strings.Contains(opts.DaemonError, "daemon_inaccessible:") {
+		return DoctorCheck{ID: id, Severity: "P1", OK: false, Available: true, ReasonCode: "daemon_inaccessible", Detail: opts.DaemonError}
+	}
 	return DoctorCheck{ID: id, Severity: "P1", OK: false, Available: true, Detail: "Daemon communication failed: " + opts.DaemonError}
 }
 

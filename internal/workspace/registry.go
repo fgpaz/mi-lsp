@@ -618,6 +618,24 @@ func ResolveWorkspaceSelectionReadOnlyPhysical(nameOrPath string, callerCWD stri
 	return resolveWorkspaceSelection(nameOrPath, callerCWD, true, true)
 }
 
+// ResolveReadRoot avoids project scanning for a plain physical file read.
+// It never registers or indexes an unregistered Git worktree.
+func ResolveReadRoot(nameOrPath, callerCWD string) (WorkspaceResolution, error) {
+	if strings.TrimSpace(nameOrPath) == "" {
+		if root, ok := gitTopLevel(callerCWD); ok {
+			registry, err := LoadRegistryReadOnly()
+			if err != nil {
+				return WorkspaceResolution{}, err
+			}
+			if registration, _, found := registeredWorkspaceForRoot(root, registry); found {
+				return WorkspaceResolution{Registration: registration, Source: ResolutionSourceGitTopLevel}, nil
+			}
+			return WorkspaceResolution{Registration: model.WorkspaceRegistration{Name: filepath.Base(root), Root: root, Kind: model.WorkspaceKindSingle}, Source: ResolutionSourceGitTopLevel, Synthetic: true}, nil
+		}
+	}
+	return ResolveWorkspaceSelectionReadOnlyPhysical(nameOrPath, callerCWD)
+}
+
 func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly bool, preserveLinkedRoot bool) (WorkspaceResolution, error) {
 	selector := strings.TrimSpace(nameOrPath)
 	var staleSelector *WorkspaceSelectorError
@@ -640,9 +658,6 @@ func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly boo
 					staleLastWorkspace = &WorkspaceSelectorError{Code: WorkspaceSelectorStale, Selector: snapshot.Defaults.LastWorkspace, Root: ws.Root, Cause: statErr}
 				}
 			}
-		}
-		if _, err := GarbageCollectRegistry(true); err != nil {
-			return WorkspaceResolution{}, err
 		}
 		if staleSelector != nil {
 			return WorkspaceResolution{}, staleSelector
@@ -687,7 +702,7 @@ func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly boo
 				return WorkspaceResolution{Registration: registered, Source: ResolutionSourcePath, Warnings: selection.Warnings}, nil
 			}
 			if gitRoot, gitOK := gitTopLevel(resolvedPath); gitOK {
-				if linked, commonDir, valid := linkedWorktree(gitRoot); valid && linked {
+				if linked, _, valid := linkedWorktree(gitRoot); valid && linked {
 					if registration, selection, found := registeredWorkspaceForRoot(gitRoot, registry); found {
 						return WorkspaceResolution{Registration: registration, Source: ResolutionSourcePath, Warnings: selection.Warnings}, nil
 					}
@@ -701,10 +716,9 @@ func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly boo
 						}
 						return res, nil
 					}
-					if registration, found := registeredMainWorktree(commonDir, registry); found {
-						return WorkspaceResolution{Registration: registration, Source: ResolutionSourcePath, Warnings: []string{"linked worktree resolved to its registered main repository"}}, nil
-					}
-					return WorkspaceResolution{}, &WorkspaceSelectorError{Code: "invalid_workspace", Selector: selector, Root: gitRoot}
+					// An explicit physical worktree must never silently use another
+					// tree's catalog; register it separately before indexed queries.
+					return WorkspaceResolution{}, &WorkspaceSelectorError{Code: "invalid_workspace", Selector: selector, Root: gitRoot, Cause: errors.New("explicit linked worktree is not registered; register the physical worktree separately")}
 				}
 			}
 			registration, err := DetectWorkspace(resolvedPath)
@@ -767,6 +781,10 @@ func registeredWorkspaceForRoot(root string, registry model.RegistryFile) (model
 	}
 	registrations := make([]model.WorkspaceRegistration, 0)
 	for alias, registration := range registry.Workspaces {
+		info, err := os.Stat(registration.Root)
+		if err != nil || !info.IsDir() {
+			continue
+		}
 		registeredRoot, rootOK := normalizeComparablePath(registration.Root)
 		if !rootOK || registeredRoot != canonicalRoot {
 			continue
@@ -1212,6 +1230,10 @@ func resolveWorkspaceFromGitTopLevel(callerCWD string, registry model.RegistryFi
 
 	registrations := make([]model.WorkspaceRegistration, 0)
 	for alias, registration := range registry.Workspaces {
+		info, err := os.Stat(registration.Root)
+		if err != nil || !info.IsDir() {
+			continue
+		}
 		registration.Name = alias
 		registeredRoot, rootOK := normalizeComparablePath(registration.Root)
 		if rootOK && registeredRoot == canonicalRoot {
@@ -1287,6 +1309,10 @@ func resolveWorkspaceFromCallerCWD(callerCWD string, registry model.RegistryFile
 	grouped := map[string][]model.WorkspaceRegistration{}
 	longestRootLen := -1
 	for alias, registration := range registry.Workspaces {
+		info, err := os.Stat(registration.Root)
+		if err != nil || !info.IsDir() {
+			continue
+		}
 		registration.Name = alias
 		normalizedRoot, ok := normalizeComparablePath(registration.Root)
 		if !ok || !pathContains(normalizedCWD, normalizedRoot) {

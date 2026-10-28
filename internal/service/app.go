@@ -71,6 +71,7 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		return model.Envelope{}, err
 	}
 	request = normalizedRequest
+	request = splitTraceAnchorPayload(request)
 
 	var envelope model.Envelope
 	operationStarted := time.Now()
@@ -192,9 +193,9 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 	case "prepare.create", "prepare.verify", "prepare.refresh":
 		envelope, err = a.preparationPacket(ctx, request, strings.TrimPrefix(request.Operation, "prepare."))
 	case "nav.trace":
-		envelope, err = a.trace(ctx, request)
+		envelope, err = a.traceWithAnchor(ctx, request)
 	case "nav.wiki.trace":
-		envelope, err = a.trace(ctx, request)
+		envelope, err = a.traceWithAnchor(ctx, request)
 	case "nav.intent":
 		envelope, err = a.intent(ctx, request)
 	case "nav.recall":
@@ -1283,7 +1284,7 @@ func (a *App) normalizeWorkspaceRequest(ctx context.Context, request model.Comma
 	// Status is a read-only inspection and must resolve the original caller cwd
 	// in workspaceStatus, before ordinary navigation can collapse a linked tree
 	// to its registered main repository.
-	if request.Operation == "workspace.status" || request.Operation == "nav.diagnostics" {
+	if request.Operation == "workspace.status" || request.Operation == "nav.diagnostics" || request.Operation == "nav.multi-read" {
 		return request, nil, nil
 	}
 	if !operationRequiresWorkspaceResolution(request) {

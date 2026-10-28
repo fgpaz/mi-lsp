@@ -129,15 +129,7 @@ func compileWikiContractValidationWithIndexRecords(root string, records, indexRe
 		ContractReadiness: "ready",
 		ContractVerdict:   "PASS",
 	}
-	indexBodies := make([]wikisource.ContractDocBody, 0, len(indexRecords))
-	for _, record := range indexRecords {
-		path := docgraph.ResolveDocumentPath(root, record.Path)
-		rawBody, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		indexBodies = append(indexBodies, wikisource.ContractDocBody{Path: record.Path, Content: string(rawBody)})
-	}
+	indexBodies := readWikiContractIndexBodies(root, indexRecords)
 	wikiIndex := wikisource.BuildContractWikiIDIndex(indexBodies)
 	for _, record := range indexRecords {
 		if strings.TrimSpace(record.DocID) == "" {
@@ -262,6 +254,21 @@ func compileWikiContractValidationWithIndexRecords(root string, records, indexRe
 }
 
 // wikiAnchorTarget is an indexed document with its declared H3 anchors, so a citation can name file:line.
+// readWikiContractIndexBodies reads each indexed document once, so IDs and anchors are declared from the
+// same bytes. An unreadable document is skipped; trace and validate-contract share this rule.
+func readWikiContractIndexBodies(root string, indexRecords []model.DocRecord) []wikisource.ContractDocBody {
+	indexBodies := make([]wikisource.ContractDocBody, 0, len(indexRecords))
+	for _, record := range indexRecords {
+		path := docgraph.ResolveDocumentPath(root, record.Path)
+		rawBody, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		indexBodies = append(indexBodies, wikisource.ContractDocBody{Path: record.Path, Content: string(rawBody)})
+	}
+	return indexBodies
+}
+
 type wikiAnchorTarget struct {
 	path    string
 	anchors map[string]int

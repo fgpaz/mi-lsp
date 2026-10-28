@@ -85,6 +85,9 @@ func NewServer(repoRoot string, maxWorkers int, idleTimeout time.Duration) (*Ser
 }
 
 func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Duration, options StartOptions) (*Server, error) {
+	if err := checkDaemonStartIntegrity(); err != nil {
+		return nil, err
+	}
 	ApplyDaemonMemoryPolicy()
 	options = NormalizeStartOptions(options)
 	maxWorkers = normalizeMaxWorkers(maxWorkers)
@@ -857,6 +860,9 @@ func SpawnBackground(repoRoot string, maxWorkers int, idleTimeout time.Duration)
 }
 
 func SpawnBackgroundWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Duration, options StartOptions) (model.DaemonState, bool, error) {
+	if err := checkDaemonStartIntegrity(); err != nil {
+		return model.DaemonState{}, false, err
+	}
 	if elasticEnabled() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		_, err := readBabelNode(ctx)

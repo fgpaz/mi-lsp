@@ -444,6 +444,79 @@ Sin anclas declaradas.
 			t.Fatalf("expected anchor warning %q in %v", want, anchorWarnings)
 		}
 	}
+
+	// The trace view reads the same declarations as the validator. A resolved anchor reports its H3 and only
+	// the citations that point at it or leave its document; a missing anchor warns but never fails the trace.
+	allBodies := readWikiContractIndexBodies(root, allRecords)
+	language := ResolveWikiContractLanguageAtRoot(root).Language
+
+	focus, traceRefs, traceWarnings := buildWikiAnchorTraceView("FL-ANC-01", "P1", allRecords, allBodies, language)
+	wantFocus := model.WikiAnchorFocus{Ref: "FL-ANC-01#P1", Path: flPath, Line: lineOfContractNeedle(t, flContent, "### P1 · El admin entra"), Status: model.WikiAnchorStatusResolved}
+	if *focus != wantFocus || len(traceWarnings) != 0 {
+		t.Fatalf("resolved focus: got %+v warnings=%v want %+v", *focus, traceWarnings, wantFocus)
+	}
+	if len(traceRefs) != 1 || traceRefs[0] != wantResolved["FL-ANC-01#P1"] {
+		t.Fatalf("incoming citations of FL-ANC-01#P1: got %+v", traceRefs)
+	}
+
+	focus, traceRefs, traceWarnings = buildWikiAnchorTraceView("FL-ANC-01", "P9", allRecords, allBodies, language)
+	if focus.Status != model.WikiAnchorStatusMissing || focus.Line != 0 || focus.Path != flPath {
+		t.Fatalf("missing focus: got %+v", focus)
+	}
+	if len(traceWarnings) != 1 || traceWarnings[0] != "anchor_missing:FL-ANC-01#P9" {
+		t.Fatalf("missing anchor must warn once, got %v", traceWarnings)
+	}
+	if got, ok := findAnchorRef(traceRefs, "FL-ANC-01#P9"); !ok || got.Status != model.WikiAnchorStatusMissing {
+		t.Fatalf("expected the drifted citation under the missing anchor, got %+v", traceRefs)
+	}
+
+	// Six citations leave RF-ANC-01 (the fenced P5 and the unindexed FL-NOPE-99 are excluded). The self-citation
+	// RF-ANC-01#E2 is listed once even though it is both incoming and outgoing, and sorting starts at line 319.
+	focus, traceRefs, _ = buildWikiAnchorTraceView("RF-ANC-01", "E2", allRecords, allBodies, language)
+	if focus.Status != model.WikiAnchorStatusResolved || focus.Line != lineOfContractNeedle(t, rfContent, "### E2 · usuario_largo") {
+		t.Fatalf("E2 focus: got %+v", focus)
+	}
+	if len(traceRefs) != 6 {
+		t.Fatalf("citations for RF-ANC-01#E2 and from RF-ANC-01: got %d %+v", len(traceRefs), traceRefs)
+	}
+	if traceRefs[0] != wantResolved["FL-ANC-01#P1"] {
+		t.Fatalf("first citation by source line: got %+v", traceRefs[0])
+	}
+
+	focus, traceRefs, traceWarnings = buildWikiAnchorTraceView("FL-NOPE-99", "P1", allRecords, allBodies, language)
+	if focus.Status != model.WikiAnchorStatusMissing || focus.Path != "" || len(traceRefs) != 0 || !hasContractWarning(traceWarnings, "anchor_missing:FL-NOPE-99#P1") {
+		t.Fatalf("unindexed target: focus=%+v refs=%+v warnings=%v", focus, traceRefs, traceWarnings)
+	}
+
+	splitCases := []struct {
+		in, doc, anchor string
+		ok              bool
+	}{
+		{"FL-ANC-01#P1", "FL-ANC-01", "P1", true},
+		{" fl-anc-01 # p1 ", "FL-ANC-01", "P1", true},
+		{"FL-ANC-01#", "", "", false},
+		{"#P1", "", "", false},
+		{"FL-ANC-01", "", "", false},
+	}
+	for _, tc := range splitCases {
+		doc, anchor, ok := splitTraceAnchorRef(tc.in)
+		if doc != tc.doc || anchor != tc.anchor || ok != tc.ok {
+			t.Fatalf("splitTraceAnchorRef(%q)=(%q,%q,%v) want (%q,%q,%v)", tc.in, doc, anchor, ok, tc.doc, tc.anchor, tc.ok)
+		}
+	}
+	split := splitTraceAnchorPayload(model.CommandRequest{Operation: "nav.wiki.trace", Payload: map[string]any{"rf": "FL-ANC-01#P1"}})
+	if stringPayload(split.Payload, "rf") != "FL-ANC-01" || stringPayload(split.Payload, traceAnchorPayloadKey) != "P1" {
+		t.Fatalf("split trace payload: %+v", split.Payload)
+	}
+	original := map[string]any{"rf": "FL-ANC-01#P1"}
+	splitTraceAnchorPayload(model.CommandRequest{Operation: "nav.trace", Payload: original})
+	if original["rf"] != "FL-ANC-01#P1" {
+		t.Fatalf("caller payload must not be mutated: %+v", original)
+	}
+	untouched := splitTraceAnchorPayload(model.CommandRequest{Operation: "nav.pack", Payload: map[string]any{"rf": "FL-ANC-01#P1"}})
+	if stringPayload(untouched.Payload, "rf") != "FL-ANC-01#P1" {
+		t.Fatalf("non-trace operation must keep the target: %+v", untouched.Payload)
+	}
 }
 
 func TestDeclaredWikiAnchorsScopesBySectionAndKind(t *testing.T) {

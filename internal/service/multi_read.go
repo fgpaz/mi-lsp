@@ -15,6 +15,7 @@ import (
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 type fileRange struct {
@@ -35,10 +36,11 @@ type multiReadItem struct {
 
 func (a *App) multiRead(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	started := time.Now()
-	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
+	resolution, err := workspace.ResolveReadRoot(request.Context.Workspace, request.Context.CallerCWD)
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	registration := resolution.Registration
 
 	ranges, omissions, err := parseMultiReadPayload(request)
 	if err != nil {

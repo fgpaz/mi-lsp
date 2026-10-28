@@ -11,24 +11,42 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 - Contrato objetivo y gates OPEN para idle, drenaje, cancelación, lease de solo lectura, WAL y supervivencia del servicio bajo el supervisor. La documentación no acredita implementación integrada, aceptación CPU ni publicación de la consulta de lease; v0.16.2 permanece inmutable.
 
-## [0.16.2]
+## [0.16.4] - 2026-10-28
+
+### Corregido
+
+- `nav multi-read` resuelve la raíz física de Git sin escanear o registrar proyectos sintéticos para una lectura directa; no modifica ni poda el registro durante la resolución.
+- La resolución omite raíces de worktrees inexistentes y evita resolver un worktree físico explícito al índice de otro árbol.
+- Windows rechaza arrancar el daemon con token elevado o integridad no verificable. `daemon status` y `doctor` diferencian un dueño vivo o indeterminado e inaccesible de un daemon ausente; no detienen procesos ajenos.
+
+## [0.16.3] - 2026-10-28
+
+### Añadido
+
+- `nav wiki trace <DOC-ID>#<ANCLA>` acepta un ancla como foco: resuelve el H3 declarado (`anchor_focus` con archivo y línea) y, en la traza del documento, agrega `anchor_refs` con quién cita ese ancla y las citas que salen del documento. Ancla inexistente: warning `anchor_missing` y la traza del documento se devuelve igual. No agrega tipos de link al grafo.
+
+### Corregido
+
+- `install.sh` deja de acumular directorios `mi-lsp-install.XXXXXX` de ~950 MB en `${TMPDIR:-/tmp}`: el trap de limpieza sobrevive a la activación con rollback, las señales `HUP`/`INT`/`TERM` terminan la instalación (antes reanudaban tras limpiar) y, al arrancar, se barren los restos propios de más de una hora (`MI_LSP_INSTALL_STALE_TMP_MINUTES`, por omisión 60). Una instalación exitosa, una fallida y una abortada no dejan directorios temporales.
+
+## [0.16.2] - 2026-10-28
+
+### Añadido
+
+- Anclas `<DOC-ID>#<ANCLA>` en la wiki: `P<n>` bajo `Secuencia` en FL, `E<n>` bajo `Errores` en RF y `UXD-NN`/`UXQ-NN` en UXM (`ux_module`), declaradas como prefijo de H3 con ` · `. `validate-contract` resuelve cada cita contra el H3 declarado, expone `anchor_refs` con archivo y línea de destino, y avisa `anchor_missing` o `anchor_duplicate` sin bloquear. Documentos sin anclas siguen válidos y citas a documentos no indexados siguen silenciosas.
 
 ### Corregido
 
 - Mitigación de daemons duplicados: ante un dueño publicado vivo o indeterminado, el nuevo arranque termina antes de listener/SQLite y antes de otro fork. Una reserva de vida separada protege constructores cooperantes del mismo almacenamiento, aunque sus endpoints difieran.
 - El rechazo conserva el estado ajeno y muestra PID/endpoint sin matar procesos ni ampliar permisos. No detiene duplicados legacy existentes ni cierra por sí solo la causa del CPU, idle o WAL; los consumidores deben actualizarse y el supervisor realizar la recarga.
+- `kind: module_map` (nombre canónico de WIKI-CONTRACT-v1 para UXM) se valida y normaliza como `ux_module`, así que sus anclas `UXD`/`UXQ` ya no se ignoran ni aparecen como kind desconocido. Los alias `uxm`, `uj` y `journey` también se normalizan.
 
-## [0.16.1]
+## [0.16.1] - 2026-10-28
 
 ### Añadido
 
 - `mi-lsp-host` Windows x64/arm64 con protocolo `execsafe-host/v1`, streams transparentes y resultado tipado separado del status de transporte. Job privado con kill-on-close y espera del árbol entero; no conserva daemons descendientes por omisión.
 - Dos assets host PE GUI y checksum en la misma release, manteniendo CLI CUI y seis bundles existentes.
-- Anclas `<DOC-ID>#<ANCLA>` en la wiki: `P<n>` bajo `Secuencia` en FL, `E<n>` bajo `Errores` en RF y `UXD-NN`/`UXQ-NN` en UXM (`ux_module`), declaradas como prefijo de H3 con ` · `. `validate-contract` resuelve cada cita contra el H3 declarado, expone `anchor_refs` con archivo y línea de destino, y avisa `anchor_missing` o `anchor_duplicate` sin bloquear. Documentos sin anclas siguen válidos y citas a documentos no indexados siguen silenciosas.
-
-### Corregido
-
-- `kind: module_map` (nombre canónico de WIKI-CONTRACT-v1 para UXM) se valida y normaliza como `ux_module`, así que sus anclas `UXD`/`UXQ` ya no se ignoran ni aparecen como kind desconocido. Los alias `uxm`, `uj` y `journey` también se normalizan.
 
 ## [0.16.0] - 2026-10-27
 
