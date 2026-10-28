@@ -247,14 +247,16 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 
 	// Only heavy daemon-backed queries should auto-start the daemon.
 	if useDaemon && !s.noAutoDaemon && shouldAutoStartDaemon(operation) {
-		ensureDaemon := daemon.EnsureDaemon
+		var ensureErr error
 		if s.ensureDaemon != nil {
-			ensureDaemon = s.ensureDaemon
+			ensureErr = s.ensureDaemon(s.repoRoot)
+		} else {
+			ensureErr = daemon.EnsureDaemonFor(s.repoRoot, request.Context.ClientName, operation)
 		}
-		if err := ensureDaemon(s.repoRoot); err != nil {
+		if ensureErr != nil {
 			// Log warning but don't fail; fall back to direct mode
 			if s.verbose {
-				fmt.Fprintf(os.Stderr, "[mi-lsp] daemon auto-start failed: %v; using direct mode\n", err)
+				fmt.Fprintf(os.Stderr, "[mi-lsp] daemon auto-start failed: %v; using direct mode\n", ensureErr)
 			}
 		}
 	}

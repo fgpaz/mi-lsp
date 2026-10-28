@@ -25,68 +25,24 @@ func findSymbolsWithWorktreeOverlay(ctx context.Context, db *sql.DB, registratio
 	if offset < 0 {
 		offset = 0
 	}
-	excludedSet := make(map[string]struct{}, len(overlay.Changed)+len(overlay.Deleted))
-	for _, p := range overlay.Changed {
-		excludedSet[filepath.ToSlash(p)] = struct{}{}
-	}
-	for _, p := range overlay.Deleted {
-		excludedSet[filepath.ToSlash(p)] = struct{}{}
-	}
-	excluded := make([]string, 0, len(excludedSet))
-	for p := range excludedSet {
-		excluded = append(excluded, p)
-	}
-	sort.Strings(excluded)
-
-	rootReal, err := filepath.EvalSymlinks(overlay.Root)
+	delta, excluded, err := worktreeOverlayDeltaSymbols(registration, project, overlay)
 	if err != nil {
 		return nil, err
 	}
-	delta := make([]model.SymbolRecord, 0)
-	for _, rel := range overlay.Changed {
-		if _, deleted := containsPath(overlay.Deleted, rel); deleted {
+	filteredDelta := delta[:0]
+	for _, symbol := range delta {
+		if exact && symbol.Name != pattern {
 			continue
 		}
-		abs := filepath.Join(overlay.Root, filepath.FromSlash(rel))
-		real, evalErr := filepath.EvalSymlinks(abs)
-		if evalErr != nil {
+		if !exact && !sqlLikeContains(symbol.Name, pattern) {
 			continue
 		}
-		relReal, relErr := filepath.Rel(rootReal, real)
-		if relErr != nil || relReal == ".." || strings.HasPrefix(relReal, ".."+string(filepath.Separator)) || filepath.IsAbs(relReal) {
+		if kind != "" && symbol.Kind != kind {
 			continue
 		}
-		info, statErr := os.Stat(real)
-		if statErr != nil || !info.Mode().IsRegular() || info.Size() > 4*1024*1024 {
-			continue
-		}
-		language := filepath.Ext(real)
-		if language == "" {
-			continue
-		}
-		content, readErr := os.ReadFile(real)
-		if readErr != nil {
-			continue
-		}
-		fileRepo := model.WorkspaceRepo{ID: registration.Name, Name: registration.Name}
-		if found, ok := workspace.FindRepoByFile(project, overlay.Root, abs); ok {
-			fileRepo = found
-		}
-		symbols, _ := indexer.ExtractCatalog(overlay.Root, fileRepo, abs, content)
-		for _, symbol := range symbols {
-			if exact && symbol.Name != pattern {
-				continue
-			}
-			if !exact && !sqlLikeContains(symbol.Name, pattern) {
-				continue
-			}
-			if kind != "" && symbol.Kind != kind {
-				continue
-			}
-			symbol.Workspace = registration.Name
-			delta = append(delta, symbol)
-		}
+		filteredDelta = append(filteredDelta, symbol)
 	}
+	delta = filteredDelta
 	baseLimit := limit + offset + len(delta)
 	if repo != nil {
 		baseLimit = max(baseLimit*10, 100)
@@ -103,6 +59,103 @@ func findSymbolsWithWorktreeOverlay(ctx context.Context, db *sql.DB, registratio
 		all = filterSymbolsByRepo(all, repo)
 	}
 	sort.Slice(all, func(i, j int) bool { return symbolOverlayLess(all[i], all[j]) })
+	if offset >= len(all) {
+		return []model.SymbolRecord{}, nil
+	}
+	all = all[offset:]
+	if len(all) > limit {
+		all = all[:limit]
+	}
+	return all, nil
+}
+
+func worktreeOverlayDeltaSymbols(registration model.WorkspaceRegistration, project model.ProjectFile, overlay workspace.WorktreeOverlay) ([]model.SymbolRecord, []string, error) {
+	excludedSet := make(map[string]struct{}, len(overlay.Changed)+len(overlay.Deleted))
+	for _, path := range overlay.Changed {
+		excludedSet[filepath.ToSlash(path)] = struct{}{}
+	}
+	for _, path := range overlay.Deleted {
+		excludedSet[filepath.ToSlash(path)] = struct{}{}
+	}
+	excluded := make([]string, 0, len(excludedSet))
+	for path := range excludedSet {
+		excluded = append(excluded, path)
+	}
+	sort.Strings(excluded)
+	rootReal, err := filepath.EvalSymlinks(overlay.Root)
+	if err != nil {
+		return nil, nil, err
+	}
+	delta := make([]model.SymbolRecord, 0)
+	for _, rel := range overlay.Changed {
+		if _, deleted := containsPath(overlay.Deleted, rel); deleted {
+			continue
+		}
+		abs := filepath.Join(overlay.Root, filepath.FromSlash(rel))
+		real, evalErr := filepath.EvalSymlinks(abs)
+		if evalErr != nil {
+			continue
+		}
+		relReal, relErr := filepath.Rel(rootReal, real)
+		if relErr != nil || relReal == ".." || strings.HasPrefix(relReal, ".."+string(filepath.Separator)) || filepath.IsAbs(relReal) {
+			continue
+		}
+		info, statErr := os.Stat(real)
+		if statErr != nil || !info.Mode().IsRegular() || info.Size() > 4*1024*1024 || filepath.Ext(real) == "" {
+			continue
+		}
+		content, readErr := os.ReadFile(real)
+		if readErr != nil {
+			continue
+		}
+		fileRepo := model.WorkspaceRepo{ID: registration.Name, Name: registration.Name}
+		if found, ok := workspace.FindRepoByFile(project, overlay.Root, abs); ok {
+			fileRepo = found
+		}
+		symbols, _ := indexer.ExtractCatalog(overlay.Root, fileRepo, abs, content)
+		for _, symbol := range symbols {
+			symbol.Workspace = registration.Name
+			delta = append(delta, symbol)
+		}
+	}
+	return delta, excluded, nil
+}
+
+func overviewSymbolsWithWorktreeOverlay(ctx context.Context, db *sql.DB, registration model.WorkspaceRegistration, project model.ProjectFile, overlay workspace.WorktreeOverlay, prefix string, limit, offset int) ([]model.SymbolRecord, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	delta, excluded, err := worktreeOverlayDeltaSymbols(registration, project, overlay)
+	if err != nil {
+		return nil, err
+	}
+	if prefix != "" {
+		filtered := delta[:0]
+		for _, symbol := range delta {
+			if strings.HasPrefix(symbol.FilePath, prefix) {
+				filtered = append(filtered, symbol)
+			}
+		}
+		delta = filtered
+	}
+	baseLimit := limit + offset + len(delta)
+	base, err := store.OverviewByPrefixExcludingPaths(ctx, db, prefix, baseLimit, 0, excluded)
+	if err != nil {
+		return nil, err
+	}
+	for i := range base {
+		base[i].Workspace = registration.Name
+	}
+	all := append(base, delta...)
+	sort.SliceStable(all, func(i, j int) bool {
+		if all[i].FilePath != all[j].FilePath {
+			return all[i].FilePath < all[j].FilePath
+		}
+		return all[i].StartLine < all[j].StartLine
+	})
 	if offset >= len(all) {
 		return []model.SymbolRecord{}, nil
 	}

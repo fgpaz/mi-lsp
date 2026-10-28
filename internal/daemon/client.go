@@ -152,15 +152,21 @@ func nodeTransportErrorEnvelope(request model.CommandRequest, response elasticda
 // Returns nil if the daemon is ready, or an error if startup failed or timed out.
 // Errors are not fatal—the caller should fall back to direct mode.
 func EnsureDaemon(repoRoot string) error {
-	// Quick health check with 1s timeout
+	return EnsureDaemonFor(repoRoot, "", "")
+}
+
+// EnsureDaemonFor preserves the real CLI caller on health probes so automated
+// checks can be distinguished from an explicit `mi-lsp daemon status` call.
+func EnsureDaemonFor(repoRoot, callerClient, callerOperation string) error {
+	probeClient := healthProbeClientName(callerClient, callerOperation)
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	if elasticEnabled() {
-		if used, err := ensureElasticHealth(ctx); used || err != nil {
+		if used, err := ensureElasticHealth(ctx, probeClient); used || err != nil {
 			return err
 		}
 	}
-	if err := ensureLegacyHealth(ctx); err == nil {
+	if err := ensureLegacyHealth(ctx, probeClient); err == nil {
 		return nil
 	}
 

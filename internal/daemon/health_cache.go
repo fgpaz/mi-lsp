@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	elasticdaemon "github.com/fgpaz/bots-herramientas/mold/daemon"
@@ -13,12 +14,40 @@ import (
 
 // healthCache is shared across CLI processes, but never substitutes a status
 // request made explicitly by a user. A fresh connection is still required.
-func ensureElasticHealth(ctx context.Context) (bool, error) {
+func healthProbeClientName(clientName, operation string) string {
+	clean := func(raw string) string {
+		var b strings.Builder
+		for _, r := range strings.ToLower(strings.TrimSpace(raw)) {
+			if b.Len() >= 32 {
+				break
+			}
+			if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '.' || r == '_' || r == '-' {
+				b.WriteRune(r)
+			} else if b.Len() == 0 || b.String()[b.Len()-1] != '_' {
+				b.WriteByte('_')
+			}
+		}
+		return strings.Trim(b.String(), "_")
+	}
+	clientName, operation = clean(clientName), clean(operation)
+	if clientName == "" && operation == "" {
+		return "mi-lsp-daemon-probe"
+	}
+	if clientName == "" {
+		clientName = "internal"
+	}
+	if operation == "" {
+		operation = "health"
+	}
+	return "mi-lsp-daemon-probe:" + clientName + ":" + operation
+}
+
+func ensureElasticHealth(ctx context.Context, probeClient string) (bool, error) {
 	node, err := readBabelNode(ctx)
 	if err != nil {
 		return true, err
 	}
-	request := model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: model.QueryOptions{ClientName: "mi-lsp-daemon-probe"}}
+	request := model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: model.QueryOptions{ClientName: probeClient}}
 	var healthy bool
 	probe := func() (bool, error) {
 		response, used, err := executeNodeScoped(ctx, request, 0)
@@ -101,6 +130,10 @@ func rememberLegacyHealth() {
 		return
 	}
 	defer unlockStartGuard(lock)
+	writeLegacyHealth(dir)
+}
+
+func writeLegacyHealth(dir string) {
 	statePath, err := daemonStatePath()
 	if err != nil {
 		return
@@ -115,21 +148,21 @@ func rememberLegacyHealth() {
 	}
 }
 
-func ensureLegacyHealth(ctx context.Context) error {
+func ensureLegacyHealth(ctx context.Context, probeClient string) error {
 	dir, err := daemonRootDir()
 	if err != nil {
-		_, err = probeDaemon(ctx)
+		_, err = probeDaemonWithClient(ctx, probeClient)
 		return err
 	}
 	lock, err := os.OpenFile(filepath.Join(dir, "health.lock"), os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
-		_, err = probeDaemon(ctx)
+		_, err = probeDaemonWithClient(ctx, probeClient)
 		return err
 	}
 	defer lock.Close()
 	locked, err := tryLockStartGuard(lock)
 	if err != nil {
-		_, err = probeDaemon(ctx)
+		_, err = probeDaemonWithClient(ctx, probeClient)
 		return err
 	}
 	if !locked {
@@ -143,7 +176,7 @@ func ensureLegacyHealth(ctx context.Context) error {
 	defer unlockStartGuard(lock)
 	statePath, err := daemonStatePath()
 	if err != nil {
-		_, err = probeDaemon(ctx)
+		_, err = probeDaemonWithClient(ctx, probeClient)
 		return err
 	}
 	info, statErr := os.Stat(statePath)
@@ -159,7 +192,7 @@ func ensureLegacyHealth(ctx context.Context) error {
 			return nil
 		}
 	}
-	_, err = probeDaemon(ctx)
+	_, err = probeDaemonWithClient(ctx, probeClient)
 	if err != nil {
 		return err
 	}

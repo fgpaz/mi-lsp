@@ -47,11 +47,11 @@ func newQCommand(state *rootState) *cobra.Command {
 			defer cancel()
 			if !state.noDaemon {
 				if !state.noAutoDaemon {
-					ensure := daemon.EnsureDaemon
 					if state.ensureDaemon != nil {
-						ensure = state.ensureDaemon
+						_ = state.ensureDaemon(state.repoRoot)
+					} else {
+						_ = daemon.EnsureDaemonFor(state.repoRoot, opts.ClientName, "q")
 					}
-					_ = ensure(state.repoRoot)
 				}
 				if envelope, err := daemon.NewClient().Execute(ctx, request); err == nil {
 					return state.printEnvelope(envelope, opts)

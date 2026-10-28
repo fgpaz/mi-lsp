@@ -1887,7 +1887,7 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 }
 
 func (a *App) overview(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
-	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
+	registration, project, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -1902,17 +1902,44 @@ func (a *App) overview(ctx context.Context, request model.CommandRequest) (model
 			prefix = ""
 		}
 	}
-	db, err := openWorkspaceDB(registration, "nav.overview", true) // readOnly
+	overlay, linkedOverlay, overlayErr := workspace.TryResolveWorktreeOverlay(registration.Root)
+	if overlayErr != nil {
+		return model.Envelope{}, overlayErr
+	}
+	indexRegistration := registration
+	baseIndexAvailable := false
+	if linkedOverlay {
+		baseRegistration, found, baseErr := workspace.RegisteredWorktreeBase(overlay)
+		if baseErr != nil {
+			return model.Envelope{}, baseErr
+		}
+		if found {
+			ready, readyErr := store.WorkspaceCatalogReady(ctx, baseRegistration.Root)
+			if readyErr == nil && ready {
+				indexRegistration, baseIndexAvailable = baseRegistration, true
+			}
+		}
+	}
+	db, err := openWorkspaceDB(indexRegistration, "nav.overview", true) // readOnly; worktrees reuse the registered base catalog when ready
 	if err != nil {
 		return model.Envelope{}, err
 	}
 	defer db.Close()
 	offset := intFromAny(request.Payload["offset"], 0)
-	items, err := store.OverviewByPrefix(ctx, db, prefix, request.Context.MaxItems, offset)
+	var items []model.SymbolRecord
+	if linkedOverlay && baseIndexAvailable {
+		items, err = overviewSymbolsWithWorktreeOverlay(ctx, db, registration, project, overlay, prefix, request.Context.MaxItems, offset)
+	} else {
+		items, err = store.OverviewByPrefix(ctx, db, prefix, request.Context.MaxItems, offset)
+	}
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "catalog", Items: items, Stats: model.Stats{Symbols: len(items)}}, nil
+	warnings := []string(nil)
+	if linkedOverlay && baseIndexAvailable {
+		warnings = append(warnings, "worktree_overlay_index: shared common-dir base catalog with physical changed/deleted path overlay")
+	}
+	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "catalog", Items: items, Stats: model.Stats{Symbols: len(items)}, Warnings: warnings}, nil
 }
 
 func (a *App) search(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {

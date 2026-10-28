@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -590,27 +591,39 @@ func SpawnBackgroundWithOptions(repoRoot string, maxWorkers int, idleTimeout tim
 		}
 	}
 	options = NormalizeStartOptions(options)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if state, err := probeDaemon(ctx); err == nil {
-		state.AlreadyRunning = true
-		return state, false, nil
-	}
-
 	lock, err := acquireStartLock(10 * time.Second)
 	if err != nil {
 		return model.DaemonState{}, false, err
 	}
 	defer lock.Close()
 
-	ctx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
+	probeClient := healthProbeClientName("mi-lsp", "daemon.start")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if state, err := probeDaemon(ctx); err == nil {
-		state.AlreadyRunning = true
-		return state, false, nil
+	if err := ensureLegacyHealth(ctx, probeClient); err == nil {
+		if state, err := loadDaemonState(); err == nil {
+			state.AlreadyRunning = true
+			return state, false, nil
+		}
 	}
 	if err := rejectExistingDaemonOwner(); err != nil {
 		return model.DaemonState{}, false, err
+	}
+
+	// Serialize startup probes with ordinary health checks across CLI processes.
+	healthDir, _ := daemonRootDir()
+	var healthLock *os.File
+	if healthDir != "" {
+		f, openErr := os.OpenFile(filepath.Join(healthDir, "health.lock"), os.O_CREATE|os.O_RDWR, 0600)
+		if openErr == nil {
+			locked, lockErr := tryLockStartGuard(f)
+			if lockErr == nil && locked {
+				healthLock = f
+				defer func() { _ = unlockStartGuard(f); _ = f.Close() }()
+			} else {
+				_ = f.Close()
+			}
+		}
 	}
 
 	command, err := daemonServeCommand(repoRoot, maxWorkers, idleTimeout, options)
@@ -625,10 +638,14 @@ func SpawnBackgroundWithOptions(repoRoot string, maxWorkers int, idleTimeout tim
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		state, probeErr := probeDaemon(ctx)
+		state, probeErr := probeDaemonWithClient(ctx, probeClient)
 		cancel()
 		if probeErr == nil {
-			rememberLegacyHealth()
+			if healthLock != nil {
+				writeLegacyHealth(healthDir)
+			} else {
+				rememberLegacyHealth()
+			}
 			return state, true, nil
 		}
 		time.Sleep(200 * time.Millisecond)
@@ -817,7 +834,14 @@ func daemonErrorEnvelope(request model.CommandRequest, err error, fallbackKind s
 }
 
 func probeDaemon(ctx context.Context) (model.DaemonState, error) {
-	response, err := NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: model.QueryOptions{ClientName: "mi-lsp-daemon-probe"}})
+	return probeDaemonWithClient(ctx, healthProbeClientName("", ""))
+}
+
+func probeDaemonWithClient(ctx context.Context, clientName string) (model.DaemonState, error) {
+	if clientName == "" {
+		clientName = healthProbeClientName("", "")
+	}
+	response, err := NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: model.QueryOptions{ClientName: clientName}})
 	if err != nil {
 		return model.DaemonState{}, err
 	}

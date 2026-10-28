@@ -217,19 +217,30 @@ func FindSymbolsExcludingPaths(ctx context.Context, db *sql.DB, pattern string, 
 }
 
 func OverviewByPrefix(ctx context.Context, db *sql.DB, prefix string, limit int, offset int) ([]model.SymbolRecord, error) {
+	return OverviewByPrefixExcludingPaths(ctx, db, prefix, limit, offset, nil)
+}
+
+// OverviewByPrefixExcludingPaths masks worktree-delta paths while reading a shared base catalog.
+func OverviewByPrefixExcludingPaths(ctx context.Context, db *sql.DB, prefix string, limit int, offset int, excluded []string) ([]model.SymbolRecord, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 	if offset < 0 {
 		offset = 0
 	}
-	rows, err := db.QueryContext(ctx, `
-		SELECT `+symbolColumns+`
-		FROM symbols
-		WHERE file_path LIKE ?
-		ORDER BY file_path ASC, start_line ASC
-		LIMIT ? OFFSET ?
-	`, prefix+"%", limit, offset)
+	query := `SELECT ` + symbolColumns + ` FROM symbols WHERE file_path LIKE ?`
+	args := []any{prefix + "%"}
+	if len(excluded) > 0 {
+		placeholders := make([]string, len(excluded))
+		for i, path := range excluded {
+			placeholders[i] = "?"
+			args = append(args, path)
+		}
+		query += " AND file_path NOT IN (" + strings.Join(placeholders, ",") + ")"
+	}
+	query += " ORDER BY file_path ASC, start_line ASC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
+	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
