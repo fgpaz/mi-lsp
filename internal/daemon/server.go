@@ -476,9 +476,13 @@ func (s *Server) runShutdownOwner() {
 	}
 	if s.telemetry != nil {
 		if err := s.telemetry.Close(); err != nil {
-			cleanupErr = errors.Join(cleanupErr, err)
-			s.finishShutdown(cleanupErr)
-			return
+			// A bounded caller may time out while the driver still owns the DB.
+			// Keep the lease and fence until the close owner actually joins it.
+			if err = s.telemetry.WaitClosed(context.Background()); err != nil {
+				cleanupErr = errors.Join(cleanupErr, err)
+				s.finishShutdown(cleanupErr)
+				return
+			}
 		}
 	}
 	if s.instanceLease != nil {
