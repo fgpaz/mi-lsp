@@ -109,42 +109,5 @@ if [[ "$upload" -eq 0 ]]; then
   exit 0
 fi
 
-tag="v${version}"
-if ! git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then
-  echo "refusing upload: tag ${tag} does not exist (this script does not create tags)" >&2
-  exit 1
-fi
-head="$(git rev-parse HEAD)"
-tagged="$(git rev-parse "${tag}^{commit}")"
-if [[ "$head" != "$tagged" ]]; then
-  echo "refusing upload: HEAD ${head} is not ${tag} (${tagged})" >&2
-  exit 1
-fi
-
-files=()
-for name in "${expected_names[@]}"; do
-  if [[ ! -f "dist/${name}" ]]; then
-    echo "refusing upload: dist/${name} is missing; run without --upload first" >&2
-    exit 1
-  fi
-  files+=("dist/${name}")
-done
-
-# Never mutate an existing release, including a partial prior attempt. A failed
-# create must be inspected remotely before any deliberate recovery.
-if gh release view "$tag" >/dev/null 2>&1; then
-  echo "refusing upload: release ${tag} exists; inspect assets and recover manually" >&2
-  exit 1
-fi
-# Distinguish absence from an authentication/network error; gh reports 404 via API.
-if ! gh api "repos/{owner}/{repo}/releases/tags/${tag}" >/dev/null 2>dist/release-preflight-error.txt; then
-  if ! grep -q 'HTTP 404' dist/release-preflight-error.txt; then
-    echo 'release preflight failed; inspect dist/release-preflight-error.txt' >&2
-    exit 1
-  fi
-else
-  echo "refusing upload: release ${tag} exists" >&2
-  exit 1
-fi
-gh release create "$tag" --verify-tag --title "mi-lsp ${tag}" "${files[@]}"
-echo "release.sh: uploaded ${#files[@]} assets to ${tag}" >&2
+echo 'BLOCKED: upload requires the AE coordinator and certified publication gate' >&2
+exit 1

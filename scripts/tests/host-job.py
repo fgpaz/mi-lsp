@@ -53,7 +53,8 @@ def record(path):
     raw=path.read_bytes(); lines=raw.splitlines(keepends=True)
     assert len(lines)==2 and all(x.endswith(b'\n') for x in lines),raw
     r=json.loads(lines[1]); assert lines[0]==('execsafe-host/v1 %s %d\n'%(r['kind'],r['exit_code'])).encode()
-    assert r['protocol']=='execsafe-host/v1'; return r
+    assert r['protocol']=='execsafe-host/v1'; assert not r.get('cleanup_errors'),r
+    return r
 
 def main():
     host,python=map(Path,sys.argv[1:]); assert host.is_absolute() and host.is_file() and python.is_absolute() and python.is_file()
