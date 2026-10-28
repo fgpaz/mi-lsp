@@ -45,6 +45,16 @@ var (
 	deleteAttributes = kernel.NewProc("DeleteProcThreadAttributeList")
 )
 
+// assignOwnedProcess is private so the suspended-assignment failure path can
+// be exercised without changing the job of the test runner.
+var assignOwnedProcess = func(job, process uintptr) error {
+	ok, _, err := assignJob.Call(job, process)
+	if ok == 0 {
+		return err
+	}
+	return nil
+}
+
 type startupInfoEx struct {
 	startup syscall.StartupInfo
 	attributes uintptr
@@ -203,8 +213,7 @@ func run(args []string, timeout time.Duration) (result outcome) {
 			if err := drainJob(job); err != nil { result.Cleanup = append(result.Cleanup, diag("drain_cleanup_job", err)) }
 		}
 	}()
-	r, _, e = assignJob.Call(job, uintptr(process.Process))
-	if r == 0 { return failed("assign_job", e) }
+	if err := assignOwnedProcess(job, uintptr(process.Process)); err != nil { return failed("assign_job", err) }
 	assigned = true
 	r, _, e = resumeThread.Call(uintptr(process.Thread))
 	if uint32(r) == 0xffffffff { return failed("resume_thread", e) }
