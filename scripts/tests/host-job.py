@@ -63,7 +63,7 @@ def main():
             d=Path(tmp); control=d/'control'; control.touch(); result=d/'control.result'
             if scenario=='exclusive':
                 result.write_bytes(b'preserve')
-                p=subprocess.run([str(host),'--control-file',str(control),'--',str(python),'-c','pass'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10,creationflags=subprocess.CREATE_NO_WINDOW)
+                p=subprocess.run([str(host),'--control-file',str(control),'--',str(python),'-c','pass'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10,creationflags=0)
                 assert p.returncode==125 and result.read_bytes()==b'preserve'; continue
             foreign=subprocess.Popen([str(python),script,'--payload','foreign',str(d)],creationflags=subprocess.CREATE_NO_WINDOW)
             p=None; child_handle=None
@@ -71,7 +71,7 @@ def main():
                 wait_file(d/'foreign.ready')
                 mode='root' if scenario=='wait' else 'hold'
                 timeout='1500' if scenario=='timeout' else '15000'
-                p=subprocess.Popen([str(host),'--timeout-ms',timeout,'--control-file',str(control),'--',str(python),script,'--payload',mode,str(d),'125'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=subprocess.CREATE_NO_WINDOW)
+                p=subprocess.Popen([str(host),'--timeout-ms',timeout,'--control-file',str(control),'--',str(python),script,'--payload',mode,str(d),'125'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=0)
                 wait_file(d/'root.ready'); child_handle=open_observer(int((d/'child.pid').read_text()))
                 if scenario=='wait':
                     assert p.poll() is None and k.WaitForSingleObject(child_handle,0)==258

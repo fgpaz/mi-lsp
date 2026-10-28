@@ -31,7 +31,7 @@ def main():
             p = subprocess.run([str(host), "--control-file", str(control), "--",
                                 str(python), "-c", program, str(code), *args],
                                input=payload, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               timeout=30, creationflags=subprocess.CREATE_NO_WINDOW)
+                               timeout=30, creationflags=0)
             assert p.returncode == 0, (code, p.returncode)
             assert p.stdout == payload + ("\n" + repr(args)).encode("utf-8"), code
             assert p.stderr == b"\x00\xff", code
