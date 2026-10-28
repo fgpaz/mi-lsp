@@ -781,6 +781,10 @@ func registeredWorkspaceForRoot(root string, registry model.RegistryFile) (model
 	}
 	registrations := make([]model.WorkspaceRegistration, 0)
 	for alias, registration := range registry.Workspaces {
+		info, err := os.Stat(registration.Root)
+		if err != nil || !info.IsDir() {
+			continue
+		}
 		registeredRoot, rootOK := normalizeComparablePath(registration.Root)
 		if !rootOK || registeredRoot != canonicalRoot {
 			continue
@@ -1226,6 +1230,10 @@ func resolveWorkspaceFromGitTopLevel(callerCWD string, registry model.RegistryFi
 
 	registrations := make([]model.WorkspaceRegistration, 0)
 	for alias, registration := range registry.Workspaces {
+		info, err := os.Stat(registration.Root)
+		if err != nil || !info.IsDir() {
+			continue
+		}
 		registration.Name = alias
 		registeredRoot, rootOK := normalizeComparablePath(registration.Root)
 		if rootOK && registeredRoot == canonicalRoot {
@@ -1301,6 +1309,10 @@ func resolveWorkspaceFromCallerCWD(callerCWD string, registry model.RegistryFile
 	grouped := map[string][]model.WorkspaceRegistration{}
 	longestRootLen := -1
 	for alias, registration := range registry.Workspaces {
+		info, err := os.Stat(registration.Root)
+		if err != nil || !info.IsDir() {
+			continue
+		}
 		registration.Name = alias
 		normalizedRoot, ok := normalizeComparablePath(registration.Root)
 		if !ok || !pathContains(normalizedCWD, normalizedRoot) {
