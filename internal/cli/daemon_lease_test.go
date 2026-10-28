@@ -24,6 +24,10 @@ func leaseQueryPrivateHome(t *testing.T) string {
 // Exercise only existing Cobra construction/execution APIs. Until the lease
 // command exists this fails behaviorally, not because a future Go API is absent.
 func executeLeaseQuery(t *testing.T) (map[string]any, []byte) {
+	return executeLeaseQueryWithBudget(t, 1<<20)
+}
+
+func executeLeaseQueryWithBudget(t *testing.T, maxChars int) (map[string]any, []byte) {
 	t.Helper()
 	capture, err := os.CreateTemp(t.TempDir(), "lease-output-")
 	if err != nil {
@@ -33,7 +37,7 @@ func executeLeaseQuery(t *testing.T) (map[string]any, []byte) {
 	oldStdout := os.Stdout
 	os.Stdout = capture
 	defer func() { os.Stdout = oldStdout }()
-	state := &rootState{repoRoot: t.TempDir(), format: "json", formatExplicit: true, maxChars: 1 << 20}
+	state := &rootState{repoRoot: t.TempDir(), format: "json", formatExplicit: true, maxChars: maxChars}
 	command := newDaemonCommand(state)
 	command.SetArgs([]string{"lease"})
 	command.SetOut(capture)
@@ -65,6 +69,12 @@ func executeLeaseQuery(t *testing.T) (map[string]any, []byte) {
 	item := envelope.Items[0]
 	if item["schema"] != "mi-lsp-daemon-lease/v1" {
 		t.Fatalf("missing stable client lease schema: %v", item["schema"])
+	}
+	allowed := map[string]bool{"schema": true, "state": true, "owner_pid": true, "instance_id": true, "liveness": true, "endpoint": true}
+	for key := range item {
+		if !allowed[key] {
+			t.Fatalf("lease output contains non-contract field %q", key)
+		}
 	}
 	return item, body
 }
@@ -134,4 +144,36 @@ func TestDaemonLeaseQueryDoesNotStartAutomaticUpdate(t *testing.T) {
 	if shouldStartAutomaticUpdate([]string{"lease", "daemon"}, "0.16.2", false) {
 		t.Fatal("readonly lease query must not launch automatic updater")
 	}
+}
+
+func TestDaemonLeaseQueryPreservesSmallJSONBudget(t *testing.T) {
+	leaseQueryPrivateHome(t)
+	item, body := executeLeaseQueryWithBudget(t, 1)
+	if item["schema"] != "mi-lsp-daemon-lease/v1" || !json.Valid(body) {
+		t.Fatalf("lease JSON was cut by output budget: %q", body)
+	}
+}
+
+func TestRootDaemonLeasePreRunIsReadonly(t *testing.T) {
+	home := leaseQueryPrivateHome(t)
+	root := NewRootCommand()
+	started := false
+	setUpdateAutomaticStartForTest(root, "0.16.2", func() error { started = true; return nil })
+	capture, err := os.CreateTemp(t.TempDir(), "root-lease-output-")
+	if err != nil { t.Fatal(err) }
+	defer capture.Close()
+	oldStdout := os.Stdout
+	os.Stdout = capture
+	defer func() { os.Stdout = oldStdout }()
+	root.SetArgs([]string{"daemon", "lease", "--format", "json", "--max-chars", "1"})
+	root.SetOut(capture)
+	root.SetErr(io.Discard)
+	if err := root.Execute(); err != nil { t.Fatalf("root lease command failed: %v", err) }
+	os.Stdout = oldStdout
+	if started { t.Fatal("root pre-run started the automatic updater for lease query") }
+	if _, err := os.Stat(filepath.Join(home, ".mi-lsp")); !os.IsNotExist(err) { t.Fatalf("root lease pre-run created runtime state: %v", err) }
+	if _, err := capture.Seek(0, 0); err != nil { t.Fatal(err) }
+	body, err := io.ReadAll(capture)
+	if err != nil { t.Fatal(err) }
+	if !json.Valid(body) { t.Fatalf("root lease JSON was truncated by tiny output budget: %q", body) }
 }

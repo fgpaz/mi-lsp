@@ -290,7 +290,13 @@ and tsserver processes, reducing cold-start latency.`,
 	perfSmokeCommand.Flags().IntVar(&maxWatchedRoots, "max-watched-roots", 0, "Maximum active watched roots")
 	perfSmokeCommand.Flags().IntVar(&maxInflight, "max-inflight", 0, "Maximum concurrent daemon-served heavy requests")
 
-	command.AddCommand(startCommand, statusCommand, stopCommand, restartCommand, serveCommand, debugStateCommand, openCommand, logsCommand, perfSmokeCommand)
+	leaseCommand := &cobra.Command{Use: "lease", Short: "Read daemon lease metadata without daemon IPC", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		item := daemon.ReadLeaseSnapshot()
+		envelope := model.Envelope{Ok: true, Backend: "daemon-lease", Items: []map[string]any{{"schema": item.Schema, "state": item.State, "owner_pid": item.OwnerPID, "instance_id": item.InstanceID, "liveness": item.Liveness, "endpoint": item.Endpoint}}}
+		opts := state.queryOptions(cmd, "daemon.lease", nil)
+		return state.printEnvelope(envelope, opts)
+	}}
+	command.AddCommand(startCommand, statusCommand, stopCommand, restartCommand, serveCommand, debugStateCommand, openCommand, logsCommand, perfSmokeCommand, leaseCommand)
 	return command
 }
 
