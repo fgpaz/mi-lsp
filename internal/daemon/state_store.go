@@ -422,6 +422,8 @@ func (s *TelemetryStore) Checkpoint() error {
 	// Keep the busy-handler wait well below the overall context budget. Otherwise
 	// SQLite's configured wait can consume the operation deadline and hide BUSY.
 	if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout=%d", telemetryCheckpointBusyWait.Milliseconds())); err != nil {
+		// The driver may fail after applying the PRAGMA. Discard uncertain state.
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 		s.setFailure("checkpoint_error", false)
 		return fmt.Errorf("wal_checkpoint set busy_timeout: %w", err)
 	}
