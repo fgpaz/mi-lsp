@@ -6,10 +6,14 @@ import (
 	"time"
 )
 
-// telemetryOwnershipBudget limits only local gate/OS-lease acquisition and
-// legacy database-path resolution. It never bounds the callback while it owns
-// the physical writer lease.
+// telemetryOwnershipBudget bounds only owner/path/lease acquisition and WAL
+// measurement. It never releases physical ownership while SQL is running.
 const telemetryOwnershipBudget = 250 * time.Millisecond
+
+func (s *TelemetryStore) telemetryOwnershipGate() chan struct{} {
+	s.ownershipOnce.Do(func() { s.ownership = make(chan struct{}, 1) })
+	return s.ownership
+}
 
 func (s *TelemetryStore) withTelemetryWriteOwnershipContext(ctx context.Context, fn func(context.Context) error) error {
 	if s == nil || s.db == nil {
@@ -21,24 +25,17 @@ func (s *TelemetryStore) withTelemetryWriteOwnershipContext(ctx context.Context,
 	if fn == nil {
 		return errors.New("telemetry ownership callback is nil")
 	}
-	if s.ownership == nil {
-		s.stateMu.Lock()
-		if s.ownership == nil {
-			s.ownership = make(chan struct{}, 1)
-		}
-		s.stateMu.Unlock()
-	}
 	acquireCtx, cancel := context.WithTimeout(ctx, telemetryOwnershipBudget)
 	defer cancel()
+	gate := s.telemetryOwnershipGate()
 	select {
-	case s.ownership <- struct{}{}:
+	case gate <- struct{}{}:
 	case <-acquireCtx.Done():
 		return acquireCtx.Err()
 	}
-	defer func() { <-s.ownership }()
+	defer func() { <-gate }()
 	return s.withTelemetryWriterLeaseContext(acquireCtx, func(context.Context) error {
-		// Callback gets its original, independently-lived context. The bounded
-		// context above is solely for gate/lease/path resolution.
+		// Use caller lifetime for physical SQL, not the bounded acquire context.
 		return fn(ctx)
 	})
 }
@@ -47,17 +44,22 @@ func (s *TelemetryStore) withTelemetryMutationContext(ctx context.Context, fn fu
 	if fn == nil {
 		return errors.New("telemetry mutation callback is nil")
 	}
-	return s.withTelemetryWriteOwnershipContext(ctx, func(writeCtx context.Context) error {
+	admissionEntered := false
+	err := s.withTelemetryWriteOwnershipContext(ctx, func(writeCtx context.Context) error {
+		admissionEntered = true
 		if err := s.admitTelemetryMutationWithLeaseHeldContext(writeCtx); err != nil {
-			s.reject(walAdmissionReason(err))
 			return err
 		}
 		return fn(writeCtx)
 	})
+	if err != nil && !admissionEntered {
+		s.reject(walAdmissionReason(err))
+	}
+	return err
 }
 
-// admitTelemetryMutationWithLeaseHeldContext requires both the local owner and
-// the canonical database OS lease. It does not acquire either lock itself.
+// The caller must hold both the local ownership gate and canonical OS lease.
+// Each refusal increments RejectedWrites exactly once here.
 func (s *TelemetryStore) admitTelemetryMutationWithLeaseHeldContext(ctx context.Context) error {
 	maxBytes := s.walMaxBytes
 	if maxBytes <= 0 {
@@ -66,22 +68,19 @@ func (s *TelemetryStore) admitTelemetryMutationWithLeaseHeldContext(ctx context.
 	measureCtx, cancel := context.WithTimeout(ctx, telemetryOwnershipBudget)
 	defer cancel()
 	size, err := s.walSizeWithContext(measureCtx)
+	if err == nil && size >= maxBytes {
+		err = s.checkpointWithLeaseHeldContext(measureCtx)
+		if err == nil {
+			size, err = s.walSizeWithContext(measureCtx)
+		}
+		if err == nil && size >= maxBytes {
+			err = errTelemetryWALLimit
+		}
+	}
 	if err != nil {
-		return err
+		s.reject(walAdmissionReason(err))
 	}
-	if size >= maxBytes {
-		if err := s.checkpointWithLeaseHeldContext(measureCtx); err != nil {
-			return err
-		}
-		size, err = s.walSizeWithContext(measureCtx)
-		if err != nil {
-			return err
-		}
-		if size >= maxBytes {
-			return errTelemetryWALLimit
-		}
-	}
-	return nil
+	return err
 }
 
 func (s *TelemetryStore) withTelemetryOwnershipOnlyContext(ctx context.Context, fn func(context.Context) error) error {
@@ -91,20 +90,14 @@ func (s *TelemetryStore) withTelemetryOwnershipOnlyContext(ctx context.Context, 
 	return s.withTelemetryWriteOwnershipContext(ctx, fn)
 }
 
-// Physical close may not abandon acquisition when its caller's drain deadline
-// expires. It waits for both ownership layers with a live background context.
+// Closing is a physical ownership operation: do not abandon it on the caller's
+// drain deadline. Wait for both gates with a live context until DB.Close returns.
 func (s *TelemetryStore) withTelemetryCloseOwnership(fn func() error) error {
 	if s == nil || s.db == nil {
 		return nil
 	}
-	if s.ownership == nil {
-		s.stateMu.Lock()
-		if s.ownership == nil {
-			s.ownership = make(chan struct{}, 1)
-		}
-		s.stateMu.Unlock()
-	}
-	s.ownership <- struct{}{}
-	defer func() { <-s.ownership }()
+	gate := s.telemetryOwnershipGate()
+	gate <- struct{}{}
+	defer func() { <-gate }()
 	return s.withTelemetryWriterLeaseContext(context.Background(), func(context.Context) error { return fn() })
 }

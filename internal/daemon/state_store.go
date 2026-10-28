@@ -143,6 +143,7 @@ type TelemetryStore struct {
 	done          chan struct{}
 	wg            sync.WaitGroup
 	admissionMu   sync.Mutex
+	ownershipOnce sync.Once
 	ownership     chan struct{}
 	stateMu       sync.RWMutex
 	closed        bool
@@ -158,41 +159,61 @@ type TelemetryStore struct {
 	closeErr      error
 }
 
-func openTelemetryStore() (*TelemetryStore, error) {
+func openTelemetryStore() (opened *TelemetryStore, retErr error) {
 	path, err := daemonDatabasePath()
 	if err != nil {
 		return nil, err
 	}
-	guardPath, err := filepath.Abs(path)
+	canonicalPath, err := canonicalTelemetryDatabasePath(path)
 	if err != nil {
 		return nil, err
 	}
-	guardLease, err := runtimeinfo.AcquireFileLeaseContext(context.Background(), guardPath+".writer.guard")
+	_, statErr := os.Stat(canonicalPath)
+	existingDB := statErr == nil
+	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+		return nil, fmt.Errorf("inspect telemetry database before open: %w", statErr)
+	}
+	guardLease, err := runtimeinfo.AcquireFileLeaseContext(context.Background(), canonicalPath+".writer.guard")
 	if err != nil {
 		return nil, fmt.Errorf("acquire telemetry schema lease: %w", err)
 	}
-	defer guardLease.Release()
-	db, err := sql.Open("sqlite", path)
+	guardReleased := false
+	defer func() {
+		if !guardReleased {
+			retErr = errors.Join(retErr, wrapTelemetryLeaseRelease(guardLease.Release()))
+		}
+	}()
+	db, err := sql.Open("sqlite", canonicalPath)
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	store := &TelemetryStore{
-		dbPath:      path,
+		dbPath:      canonicalPath,
 		db:          db,
 		writeQueue:  make(chan telemetryWriteRequest, 256),
 		done:        make(chan struct{}),
 		walMaxBytes: telemetryWALMaxBytes,
 	}
+	failOpen := func(cause error) (*TelemetryStore, error) {
+		return nil, errors.Join(cause, db.Close())
+	}
+	if existingDB {
+		if err := store.admitTelemetryMutationWithLeaseHeldContext(context.Background()); err != nil {
+			return failOpen(fmt.Errorf("admit telemetry open/schema: %w", err))
+		}
+	}
 	if err := store.configureConnection(); err != nil {
-		_ = db.Close()
-		return nil, err
+		return failOpen(err)
 	}
 	if err := store.initSchema(); err != nil {
-		_ = db.Close()
-		return nil, err
+		return failOpen(err)
 	}
+	if err := guardLease.Release(); err != nil {
+		return failOpen(wrapTelemetryLeaseRelease(err))
+	}
+	guardReleased = true
 	// Start async write worker (PERF-06).
 	store.wg.Add(1)
 	go store.asyncWriteWorker()
@@ -565,35 +586,15 @@ func (s *TelemetryStore) walSizeWithContext(ctx context.Context) (int64, error) 
 }
 
 func (s *TelemetryStore) admitWAL() error {
-	return s.withTelemetryOwnershipOnlyContext(s.ownedWriteContext(), func(ctx context.Context) error {
+	admissionEntered := false
+	err := s.withTelemetryOwnershipOnlyContext(s.ownedWriteContext(), func(ctx context.Context) error {
+		admissionEntered = true
 		return s.admitTelemetryMutationWithLeaseHeldContext(ctx)
 	})
-}
-
-func (s *TelemetryStore) admitWALWithLeaseHeld(ctx context.Context) error {
-	maxBytes := s.walMaxBytes
-	if maxBytes <= 0 {
-		maxBytes = telemetryWALMaxBytes
+	if err != nil && !admissionEntered {
+		s.reject(walAdmissionReason(err))
 	}
-	size, err := s.walSize()
-	if err != nil {
-		return err
-	}
-	// Reserve bounded headroom for admitted-but-not-yet-written queue entries.
-	reserved := int64(len(s.writeQueue)+1) * 64 * 1024
-	if size+reserved >= maxBytes {
-		if err := s.checkpointWithLeaseHeldContext(s.ownedWriteContext()); err != nil {
-			return err
-		}
-		size, err = s.walSize()
-		if err != nil {
-			return err
-		}
-		if size+reserved >= maxBytes {
-			return errTelemetryWALLimit
-		}
-	}
-	return nil
+	return err
 }
 
 func (s *TelemetryStore) WALHealth() WALHealth {
@@ -807,7 +808,9 @@ func (s *TelemetryStore) initSchema() error {
 		`ALTER TABLE access_events ADD COLUMN harness TEXT`,
 		`ALTER TABLE access_events ADD COLUMN q_stages INTEGER`,
 	} {
-		_, _ = s.db.Exec(migration)
+		if _, err := s.db.Exec(migration); err != nil && !isTelemetryDuplicateColumnError(err) {
+			return fmt.Errorf("telemetry schema migration %q: %w", migration, err)
+		}
 	}
 	for _, index := range []string{
 		`CREATE INDEX IF NOT EXISTS idx_access_events_occurred_at ON access_events(occurred_at DESC)`,
@@ -824,6 +827,13 @@ func (s *TelemetryStore) initSchema() error {
 		}
 	}
 	return nil
+}
+
+func isTelemetryDuplicateColumnError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "duplicate column name")
 }
 
 func (s *TelemetryStore) StartRun(state model.DaemonState) (int64, error) {
@@ -948,10 +958,26 @@ func (s *TelemetryStore) RecordAccess(runID int64, event model.AccessEvent) erro
 	if s == nil {
 		return errors.New("telemetry store unavailable")
 	}
+	s.stateMu.RLock()
+	closed := s.closed
+	s.stateMu.RUnlock()
+	if closed {
+		s.reject("closed")
+		return errors.New("telemetry store closed")
+	}
+	if err := checkTelemetryEventSize(event); err != nil {
+		s.reject("event_too_large")
+		return err
+	}
+	// Enqueue preflight is advisory; persistQueued rechecks under the same
+	// ownership/OS lease immediately before its real SQL write.
+	if err := s.admitWAL(); err != nil {
+		return err
+	}
 	s.admissionMu.Lock()
 	defer s.admissionMu.Unlock()
 	s.stateMu.RLock()
-	closed := s.closed
+	closed = s.closed
 	s.stateMu.RUnlock()
 	if closed {
 		s.reject("closed")
