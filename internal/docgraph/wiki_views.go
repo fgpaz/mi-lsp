@@ -164,7 +164,6 @@ func BuildWikiMatrixForLanguage(docs []WikiViewDoc, language model.WikiContractL
 			continue
 		}
 		cases, parseWarnings := model.ParseWikiContractTestCases(doc.Content, language)
-		parseWarnings = append(parseWarnings, model.ValidateWikiContractSections(tpID, "test", doc.Content, language)...)
 		for _, warning := range parseWarnings {
 			result.Warnings = appendUniqueString(result.Warnings, "parser_warning:"+tpID+":"+warning.Message)
 		}
@@ -201,7 +200,9 @@ func BuildWikiMatrixForLanguage(docs []WikiViewDoc, language model.WikiContractL
 			criteria[criterion.Number] = criterion.Text
 		}
 		for _, finding := range model.ValidateWikiContractSections(rfID, "requirement", doc.Content, language) {
-			result.Warnings = appendUniqueString(result.Warnings, "parser_warning:"+rfID+":"+finding.Message)
+			if finding.SectionKey == "acceptance_criteria" {
+				result.Warnings = appendUniqueString(result.Warnings, "parser_warning:"+rfID+":"+finding.Message)
+			}
 		}
 		if len(criteria) == 0 {
 			result.Warnings = appendUniqueString(result.Warnings, "parser_warning:rf_missing_acceptance_criteria:"+rfID)
