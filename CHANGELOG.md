@@ -13,6 +13,20 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 - Contrato objetivo y gates OPEN para idle, drenaje, cancelación, lease de solo lectura, WAL y supervivencia del servicio bajo el supervisor. La documentación no acredita implementación integrada, aceptación CPU ni publicación de la consulta de lease; v0.16.2 permanece inmutable.
 
+## [0.16.6] - 2026-10-29
+
+### Corregido
+
+- Diagnósticos TS/JS en Windows: la raíz npm global usa stdout sin mezclar advertencias de stderr; el lector de tsserver tolera el LF adicional de CRLF y conserva errores de protocolo explícitos. Los detalles priorizan la causa sobre los argumentos sanitizados.
+- Doctor compara el prefijo de versión `v` de manera consistente; se aclaran errores de archivos ausentes o fuera del workspace. La aceptación de los diagnósticos Windows requiere humo normal-user independiente.
+
+## [0.16.5] - 2026-10-29
+
+### Añadido
+
+- Consultas de texto en worktrees enlazados sobre índice base con overlay de cambios físicos; el overlay semántico y de grafo continúa incompleto.
+- Se deduplican probes de daemon y trabajo de overview en worktrees.
+
 ## [0.16.4] - 2026-10-28
 
 ### Añadido
