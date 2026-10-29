@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -11,7 +12,16 @@ import (
 func (s *TelemetryStore) purgeAndVacuumContext(ctx context.Context, retentionDays int, maxBytes int64) (int, bool, error) {
 	var purged int64
 	var vacuumed bool
+	entered := false
 	err := s.withTelemetryWriteOwnershipContext(ctx, func(ownedCtx context.Context) error {
+		entered = true
+		s.stateMu.RLock()
+		closed := s.closed
+		s.stateMu.RUnlock()
+		if closed {
+			s.reject("closed")
+			return telemetryAdmissionError{cause: errors.New("telemetry store closed")}
+		}
 		days := retentionDays
 		// maxBytes selects the legacy aggressive-retention window only; it is
 		// neither a VACUUM toggle nor a WAL budget.
@@ -31,6 +41,10 @@ func (s *TelemetryStore) purgeAndVacuumContext(ctx context.Context, retentionDay
 		vacuumed = true
 		return nil
 	})
+	if err != nil && !entered {
+		s.reject(walAdmissionReason(err))
+		return int(purged), vacuumed, telemetryAdmissionError{cause: err}
+	}
 	return int(purged), vacuumed, err
 }
 
