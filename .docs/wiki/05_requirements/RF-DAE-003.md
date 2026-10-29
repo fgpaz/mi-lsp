@@ -18,7 +18,7 @@ links:
 
 ## Alcance del candidato integrado
 
-El contrato de la fuente actual UNTESTED, el registro histórico de `327e1620bee14512884c773bbfae7f3c73405dbc`, sus límites de lease, cierre e idle y las puertas OPEN están descritos en [TECH-LOCAL-DAEMON](../07_technical/TECH-LOCAL-DAEMON.md) y [TP-DAE](../06_tests/TP-DAE.md). No implica adopción en main ni release ni aceptación del arreglo completo.
+El contrato de la fuente actual, documentado por una unidad UNTESTED, el registro histórico de `327e1620bee14512884c773bbfae7f3c73405dbc`, sus límites de lease, cierre e idle y las puertas OPEN están descritos en [TECH-LOCAL-DAEMON](../07_technical/TECH-LOCAL-DAEMON.md) y [TP-DAE](../06_tests/TP-DAE.md). No implica adopción en main ni release ni aceptación del arreglo completo.
 
 ## Propósito
 
@@ -114,7 +114,7 @@ CLI `mi-lsp`, con operaciones y selectores detallados en el comportamiento del r
 7. El cierre tiene un único dueño: detiene admisiones, drena y conserva DB, lease y fence hasta que realmente terminan los recursos poseídos. Un deadline del llamador informa cierre incompleto, no libera prematuramente; el progreso continúa sin requerir una segunda llamada manual y cada cierre poseído se libera exactamente una vez. Preservar el fence conjunto de actualización y la cancelación y join del scheduler A15.
 8. Cancelación o deadline del peer cancela su request, no el servicio; se preservan también los deadlines y cancelaciones legítimos del servidor. El daemon es servicio independiente del árbol/job del comando. B22 requiere prueba real Windows de supervivencia al cancelar `wait_tree`, sin debilitar kill-tree ni sus 30 asserts; flags DETACHED/BREAKAWAY por sí solos no prueban independencia.
 9. La consulta de lease de solo lectura descrita en TECH-LOCAL-DAEMON distingue incertidumbre de ausencia y no concede autoridad de stop. La reserva OS de vida de instancia es distinta del lease de escritura de DB; la prueba nativa del servicio y la integración B22 permanecen OPEN.
-10. Telemetría WAL aplica admisión acotada y reporta rechazo, busy, deadlines y fallas honestamente; 16 MiB es umbral de admisión, no techo físico. El contrato actual de health está descrito en TECH-LOCAL-DAEMON; prueba full actual y aceptación nativa permanecen OPEN. No se afirma causa ni aceptación global CPU.
+10. Telemetría WAL aplica admisión acotada y reporta rechazo, busy, deadlines y fallas honestamente; 16 MiB es umbral de admisión, no techo físico. El contrato actual de health está descrito en TECH-LOCAL-DAEMON; FULL Linux de la fuente actual fue aceptado por el padre con el alcance de TECH-LOCAL-DAEMON; aceptación nativa permanece OPEN. No se afirma causa ni aceptación global CPU.
 
 ### 9. Escenarios de aceptación (Gherkin)
 ```gherkin

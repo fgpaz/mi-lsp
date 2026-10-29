@@ -7,7 +7,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
-- Documentado el contrato de fuente actual UNTESTED de lease, admisión WAL, cierre y health; no implica prueba nativa, full, aceptación global ni release.
+- Documentado sin pruebas propias el contrato de fuente actual de lease, admisión WAL, cierre y health. FULL Linux del padre tiene alcance delimitado en TECH-LOCAL-DAEMON; no implica prueba nativa, aceptación global ni release.
 
 ### Documentación
 
