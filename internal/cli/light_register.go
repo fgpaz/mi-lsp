@@ -10,10 +10,8 @@ import (
 )
 
 func lightRegisterCommand() *cobra.Command {
-	return &cobra.Command{Use: "internal-light-register <selector> <cwd> <reservation>", Hidden: true, Args: cobra.ExactArgs(3), RunE: func(_ *cobra.Command, args []string) error {
-		_, err := workspace.RegisterGitRootLight(args[0], args[1])
-		workspace.FinishLightRegistration(args[2], err)
-		return err
+	return &cobra.Command{Use: "internal-light-register <selector> <cwd> <reservation>", Hidden: true, Args: cobra.ExactArgs(3), RunE: func(cmd *cobra.Command, args []string) error {
+		return workspace.RunLightRegistration(cmd.Context(), args[0], args[1], args[2])
 	}}
 }
 
@@ -48,9 +46,15 @@ func scheduleLightRegistration(selector, cwd string) string {
 		workspace.FinishLightRegistration(reservation, err)
 		return fmt.Sprintf("auto_register_failed: %v", err)
 	}
-	if err := cmd.Process.Release(); err != nil {
-		workspace.FinishLightRegistration(reservation, err)
-		return fmt.Sprintf("auto_register_failed: %v", err)
+	return releaseLightRegistrationWorker(cmd.Process.Release)
+}
+
+// Start already succeeded. A handle-release error does not establish child exit
+// and cannot authorize finishing its reservation. The worker alone finishes it.
+// Per-call injection keeps the oracle private, without PATH/global factories.
+func releaseLightRegistrationWorker(release func() error) string {
+	if err := release(); err != nil {
+		return fmt.Sprintf("auto_register_pending: worker started; process handle release failed; reservation retained: %v", err)
 	}
 	return "auto_register_pending: lightweight registration scheduled; no index started"
 }

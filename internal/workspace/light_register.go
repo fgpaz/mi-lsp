@@ -1,12 +1,12 @@
 package workspace
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
@@ -34,8 +34,9 @@ func NeedsLightRegistration(selector, cwd string) (bool, error) {
 	return !found, nil
 }
 
-// LightRegistrationReservation coordinates async registration workers across processes.
-// The reservation is a mkdir-based lease keyed by canonical git root.
+// LightRegistrationReservation returns an opaque per-generation receipt to the
+// starter. Existing/legacy/unknown roots remain busy regardless of age. This is
+// a conservative reservation, not proof of a live process or a lifetime lease.
 func LightRegistrationReservation(selector, cwd string) (string, bool, error) {
 	root, ok := autoRegisterCandidateRoot(selector, cwd)
 	if !ok {
@@ -47,46 +48,27 @@ func LightRegistrationReservation(selector, cwd string) (string, bool, error) {
 	}
 	sum := sha256.Sum256([]byte(filepath.Clean(root)))
 	reservation := filepath.Join(filepath.Dir(registryPath), ".light-register-"+hex.EncodeToString(sum[:12]))
-	if err := os.Mkdir(reservation, 0o700); err == nil {
-		return reservation, true, nil
-	} else if !os.IsExist(err) {
-		return "", false, err
-	}
-	// Recover a reservation left behind by a crashed worker; never steal a live one.
-	info, err := os.Stat(reservation)
-	if err != nil {
-		return "", false, err
-	}
-	if time.Since(info.ModTime()) > 2*time.Minute {
-		_ = os.Remove(reservation + ".failure")
-		if err := os.Remove(reservation); err == nil {
-			if err := os.Mkdir(reservation, 0o700); err == nil {
-				return reservation, true, nil
-			}
-		}
-	}
-	return reservation, false, nil
+	return reserveLightRegistrationAt(context.Background(), reservation)
 }
 
-// LightRegistrationFailure returns and clears a prior asynchronous worker failure.
+// LightRegistrationFailure consumes a prior error only under the same stable
+// guard used for claim/work/finish. A busy root reference has no finish right.
 func LightRegistrationFailure(reservation string) string {
-	data, err := os.ReadFile(reservation + ".failure")
-	if err != nil {
+	root, _, valid := lightRegistrationProfileReceipt(reservation)
+	if !valid {
 		return ""
 	}
-	_ = os.Remove(reservation + ".failure")
-	return strings.TrimSpace(string(data))
+	return lightRegistrationFailureAt(context.Background(), root)
 }
 
-// FinishLightRegistration releases the cross-process reservation and preserves failures for the next query to report.
+// FinishLightRegistration conditionally finishes only its exact generation;
+// legacy root-only references or indeterminate cleanup retain the reservation.
 func FinishLightRegistration(reservation string, registrationErr error) {
-	if reservation == "" {
+	_, nonce, valid := lightRegistrationProfileReceipt(reservation)
+	if !valid || nonce == "" {
 		return
 	}
-	if registrationErr != nil {
-		_ = os.WriteFile(reservation+".failure", []byte(registrationErr.Error()), 0o600)
-	}
-	_ = os.Remove(reservation)
+	_ = finishLightRegistrationAt(context.Background(), reservation, registrationErr)
 }
 
 // RegisterGitRootLight only updates the registry. It never creates project files or indexes.
