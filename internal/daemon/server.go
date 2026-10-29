@@ -126,7 +126,7 @@ func newServerWithConstructionDeps(repoRoot string, maxWorkers int, idleTimeout 
 	lifeLease, err := runtimeinfo.AcquireFileLeaseContext(lifeCtx, lifeLeasePath)
 	cancelLife()
 	if err != nil {
-		return nil, fmt.Errorf("daemon OS lifetime lease unavailable: %w", err)
+		return nil, fmt.Errorf("daemon instance owner lease unavailable (OS lifetime): %w", err)
 	}
 	lifeLeaseTransferred := false
 	defer func() {
