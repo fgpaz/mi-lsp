@@ -160,6 +160,8 @@ type TelemetryStore struct {
 	drainOnce     sync.Once
 	drainTimer    *time.Timer
 	closeComplete chan struct{}
+	closeRequested chan struct{}
+	closeRequestOnce sync.Once
 	closeErr      error
 }
 
@@ -682,6 +684,7 @@ func (s *TelemetryStore) ownedWriteContext() context.Context {
 	s.ownerOnce.Do(func() {
 		s.writeCtx, s.cancelWrites = context.WithCancel(context.Background())
 		s.closeComplete = make(chan struct{})
+		s.closeRequested = make(chan struct{})
 	})
 	return s.writeCtx
 }
@@ -697,8 +700,8 @@ func (s *TelemetryStore) startDrainDeadline() {
 	})
 }
 
-// Close bounds the caller, not physical ownership. A failed gate acquisition
-// leaves closeComplete open and can be retried by a later Close call.
+// Close bounds the caller, not physical ownership. WaitClosed can retry a
+// failed gate acquisition after shutdown has been requested.
 func (s *TelemetryStore) Close() error {
 	if s == nil || s.db == nil {
 		return nil
@@ -708,6 +711,7 @@ func (s *TelemetryStore) Close() error {
 	s.closed = true
 	s.stateMu.Unlock()
 	attempt := s.startTelemetryCloseAttempt()
+	s.closeRequestOnce.Do(func() { close(s.closeRequested) })
 	ctx, cancel := context.WithTimeout(context.Background(), telemetryCloseDrainTimeout)
 	defer cancel()
 	select {
@@ -789,10 +793,34 @@ func (s *TelemetryStore) WaitClosed(ctx context.Context) error {
 	}
 	s.ownedWriteContext()
 	select {
-	case <-s.closeComplete:
-		return s.closeResult()
+	case <-s.closeRequested:
 	case <-ctx.Done():
 		return fmt.Errorf("telemetry close incomplete: %w", ctx.Err())
+	}
+	for {
+		attempt := s.startTelemetryCloseAttempt()
+		select {
+		case <-s.closeComplete:
+			return s.closeResult()
+		case <-ctx.Done():
+			return fmt.Errorf("telemetry close incomplete: %w", errors.Join(ctx.Err(), s.closeResult()))
+		case <-attempt:
+		}
+		if s.isTelemetryClosePhysical() {
+			return s.closeResult()
+		}
+		// Only a completed pre-callback failure reaches this backoff. The
+		// mutex in startTelemetryCloseAttempt joins competing waiters.
+		timer := time.NewTimer(100 * time.Millisecond)
+		select {
+		case <-s.closeComplete:
+			timer.Stop()
+			return s.closeResult()
+		case <-ctx.Done():
+			timer.Stop()
+			return fmt.Errorf("telemetry close incomplete: %w", errors.Join(ctx.Err(), s.closeResult()))
+		case <-timer.C:
+		}
 	}
 }
 
