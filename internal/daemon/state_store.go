@@ -327,31 +327,7 @@ func (s *TelemetryStore) execWithRetryContext(ctx context.Context, query string,
 //
 // Returns (purged_count, vacuum_success, error).
 func (s *TelemetryStore) PurgeAndVacuum(retentionDays int, maxBytes int64) (int, bool, error) {
-	days := retentionDays
-
-	// Check database size and downgrade retention if needed.
-	sz, sizeErr := s.dbSize()
-	if sizeErr == nil && sz > maxBytes {
-		days = 7
-	}
-
-	// Purge events older than the retention window.
-	cutoff := time.Now().AddDate(0, 0, -days)
-	purged, purgeErr := s.PurgeOldEvents(cutoff)
-	if purgeErr != nil {
-		return int(purged), false, fmt.Errorf("purge events: %w", purgeErr)
-	}
-
-	// Run VACUUM to reclaim space, bounded by a timeout so it cannot hang the daemon
-	// indefinitely if a reader holds a lock.
-	vctx, vcancel := context.WithTimeout(s.ownedWriteContext(), 30*time.Second)
-	_, vacErr := s.db.ExecContext(vctx, "VACUUM")
-	vcancel()
-	if vacErr != nil {
-		return int(purged), false, fmt.Errorf("vacuum: %w", vacErr)
-	}
-
-	return int(purged), true, nil
+	return s.purgeAndVacuumContext(s.ownedWriteContext(), retentionDays, maxBytes)
 }
 
 // dbSize returns the current database file size in bytes.
@@ -368,19 +344,11 @@ func (s *TelemetryStore) dbSize() (int64, error) {
 }
 
 func (s *TelemetryStore) PurgeOldEvents(olderThan time.Time) (int64, error) {
-	result, err := s.execWithRetry(`DELETE FROM access_events WHERE occurred_at < ?`, olderThan.Unix())
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+	return s.purgeOldEventsContext(s.ownedWriteContext(), olderThan)
 }
 
 func (s *TelemetryStore) PurgeOldRuns(olderThan time.Time) (int64, error) {
-	result, err := s.db.ExecContext(s.ownedWriteContext(), `DELETE FROM daemon_runs WHERE stopped_at IS NOT NULL AND stopped_at < ?`, olderThan.Unix())
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+	return s.purgeOldRunsContext(s.ownedWriteContext(), olderThan)
 }
 
 // asyncWriteWorker is the single consumer goroutine that processes telemetry writes.
