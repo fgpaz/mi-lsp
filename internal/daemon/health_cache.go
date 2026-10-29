@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,6 +43,9 @@ func healthProbeClientName(clientName, operation string) string {
 	return "mi-lsp-daemon-probe:" + clientName + ":" + operation
 }
 
+// ErrNegativeHealth reports a rejected or invalid health response without exposing wire data.
+var ErrNegativeHealth = errors.New("daemon health response negative")
+
 func ensureElasticHealth(ctx context.Context, probeClient string) (bool, error) {
 	node, err := readBabelNode(ctx)
 	if err != nil {
@@ -52,6 +56,12 @@ func ensureElasticHealth(ctx context.Context, probeClient string) (bool, error) 
 	probe := func() (bool, error) {
 		response, used, err := executeNodeScoped(ctx, request, 0)
 		healthy = response.Ok
+		if used && err == nil && !response.Ok {
+			if ctx.Err() != nil {
+				return true, ctx.Err()
+			}
+			return true, ErrNegativeHealth
+		}
 		return used, err
 	}
 	dir, err := daemonRootDir()

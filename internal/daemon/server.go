@@ -1141,8 +1141,11 @@ func probeDaemonWithClient(ctx context.Context, clientName string) (model.Daemon
 	if err != nil {
 		return model.DaemonState{}, err
 	}
-	if len(response.Warnings) > 0 && !response.Ok {
-		return model.DaemonState{}, errors.New(strings.Join(response.Warnings, "; "))
+	if !response.Ok {
+		if ctx.Err() != nil {
+			return model.DaemonState{}, ctx.Err()
+		}
+		return model.DaemonState{}, ErrNegativeHealth
 	}
 	body, marshalErr := json.Marshal(response.Items)
 	if marshalErr != nil {
