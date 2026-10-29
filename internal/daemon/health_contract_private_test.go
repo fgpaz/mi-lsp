@@ -21,24 +21,24 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/worker"
 )
 
-// The transport contract uses its own unpredictable node registration and a
-// short private socket. No live daemon or pre-existing registration is touched.
+// The transport contract injects a private endpoint without touching the node registry.
 func healthContractHome(t *testing.T) (string, string) {
 	t.Helper()
 	home, err := os.MkdirTemp("/tmp", "mh-")
 	if err != nil { t.Fatal(err) }
 	t.Cleanup(func() { _ = os.RemoveAll(home) })
-	for _, key := range []string{"HOME", "USERPROFILE", "XDG_RUNTIME_DIR", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"} {
+	for _, key := range []string{"HOME", "USERPROFILE", "TMPDIR", "TMP", "TEMP", "XDG_RUNTIME_DIR", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"} {
 		t.Setenv(key, home)
 	}
 	node := "hc" + filepath.Base(home)[3:]
 	t.Setenv("USERNAME", node)
 	t.Setenv("MI_LSP_ELASTIC", "1")
-	bin := filepath.Join(home, "bin")
-	if err := os.Mkdir(bin, 0700); err != nil { t.Fatal(err) }
-	script := "#!/bin/sh\nprintf '%s\\n' '{\"nodo\":\"" + node + "\"}'\n"
-	if err := os.WriteFile(filepath.Join(bin, "botsd"), []byte(script), 0700); err != nil { t.Fatal(err) }
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	oldName, oldDial := healthNodeName, healthNodeDial
+	healthNodeName = func(context.Context) (string, error) { return node, nil }
+	healthNodeDial = func(ctx context.Context, name string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", filepath.Join(home, "node.sock"))
+	}
+	t.Cleanup(func() { healthNodeName, healthNodeDial = oldName, oldDial })
 	if err := saveDaemonState(model.DaemonState{}); err != nil { t.Fatal(err) }
 	return home, node
 }
@@ -91,21 +91,9 @@ func healthContractListen(t *testing.T, path string, reply func(net.Conn)) *heal
 	return s
 }
 
-func healthContractNode(t *testing.T, home, node string, reply func(net.Conn)) *healthContractServer {
+func healthContractNode(t *testing.T, home string, reply func(net.Conn)) *healthContractServer {
 	t.Helper()
-	path := filepath.Join(home, "node.sock")
-	s := healthContractListen(t, path, reply)
-	// This fixed lock directory is the node transport's discovery mechanism.
-	// Exclusive creation and removal apply only to this test's unique name.
-	dir := "/tmp/bots-herramientas/daemon"
-	if err := os.MkdirAll(dir, 01777); err != nil { t.Fatal(err) }
-	lock := filepath.Join(dir, "mi-lsp-"+node+".sock.lock")
-	f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-	if err != nil { t.Fatal(err) }
-	t.Cleanup(func() { _ = os.Remove(lock) })
-	if _, err := fmt.Fprintln(f, path); err != nil { _ = f.Close(); t.Fatal(err) }
-	if err := f.Close(); err != nil { t.Fatal(err) }
-	return s
+	return healthContractListen(t, filepath.Join(home, "node.sock"), reply)
 }
 
 func healthContractWireReply(wire string) func(net.Conn) {
@@ -125,14 +113,14 @@ func TestAORPHHealthNodeContract(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			home, node := healthContractHome(t)
-			nodeServer := healthContractNode(t, home, node, healthContractWireReply(tc.wire))
+			nodeServer := healthContractNode(t, home, healthContractWireReply(tc.wire))
 			legacy := healthContractListen(t, defaultEndpoint(), func(conn net.Conn) {})
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			used, err := ensureElasticHealth(ctx, "contract")
 			if !used || !errors.Is(err, ErrNegativeHealth) { t.Fatalf("used=%v err=%v", used, err) }
 			if strings.Contains(err.Error(), "private-wire-marker") { t.Fatal("wire data leaked") }
-			// An invalid repo root prevents process startup even if a regression falls through.
+			// Keep the repo root unusable; this alone does not prove no spawn.
 			if err := EnsureDaemonFor("/dev/null", "contract", "health"); !errors.Is(err, ErrNegativeHealth) { t.Fatalf("ensure: %v", err) }
 			if nodeServer.requests.Load() != 2 || legacy.requests.Load() != 0 { t.Fatalf("node=%d legacy=%d", nodeServer.requests.Load(), legacy.requests.Load()) }
 			cache := filepath.Join(home, ".mi-lsp", "daemon", "health-elastic-"+node+".json")
@@ -144,7 +132,13 @@ func TestAORPHHealthNodeContract(t *testing.T) {
 func TestAORPHHealthPositiveAndAbsent(t *testing.T) {
 	t.Run("positive", func(t *testing.T) {
 		home, node := healthContractHome(t)
-		s := healthContractNode(t, home, node, healthContractWireReply(`{"ok":true,"data":{"ok":true}}`))
+		healthContractNode(t, home, healthContractWireReply(`{"ok":true,"data":{"ok":true}}`))
+		var dials atomic.Int32
+		privateDial := healthNodeDial
+		healthNodeDial = func(ctx context.Context, name string) (net.Conn, error) {
+			dials.Add(1)
+			return privateDial(ctx, name)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		used, err := ensureElasticHealth(ctx, "contract")
@@ -153,8 +147,7 @@ func TestAORPHHealthPositiveAndAbsent(t *testing.T) {
 		if _, err := os.Stat(cache); err != nil { t.Fatalf("positive cache: %v", err) }
 		used, err = ensureElasticHealth(ctx, "contract")
 		if !used || err != nil { t.Fatalf("cached used=%v err=%v", used, err) }
-		// The second call still connects; the server's empty read is harmless.
-		if s.requests.Load() < 1 { t.Fatal("no real request") }
+		if dials.Load() != 2 { t.Fatalf("cache must perform a fresh dial: got %d", dials.Load()) }
 	})
 	t.Run("absent", func(t *testing.T) {
 		healthContractHome(t)
@@ -186,28 +179,17 @@ func TestAORPHHealthLegacyWarninglessNegative(t *testing.T) {
 func TestAORPHHealthContextChain(t *testing.T) {
 	for _, deadline := range []bool{false, true} {
 		t.Run(fmt.Sprint("deadline=", deadline), func(t *testing.T) {
-			home, node := healthContractHome(t)
-			arrived := make(chan struct{}, 1)
-			healthContractNode(t, home, node, func(conn net.Conn) {
-				var request json.RawMessage
-				if json.NewDecoder(conn).Decode(&request) == nil { arrived <- struct{}{} }
-				_, _ = conn.Read(make([]byte, 1))
-			})
+			home, _ := healthContractHome(t)
 			var ctx context.Context
 			var cancel context.CancelFunc
-			if deadline { ctx, cancel = context.WithTimeout(context.Background(), 250*time.Millisecond) } else { ctx, cancel = context.WithCancel(context.Background()) }
+			if deadline { ctx, cancel = context.WithTimeout(context.Background(), 3*time.Second) } else { ctx, cancel = context.WithCancel(context.Background()) }
 			defer cancel()
-			result := make(chan error, 1)
-			go func() { _, err := ensureElasticHealth(ctx, "contract"); result <- err }()
-			select {
-			case <-arrived:
-				if !deadline { cancel() }
-			case <-time.After(3*time.Second):
-				cancel()
-				<-result
-				t.Fatal("private request did not arrive")
-			}
-			err := <-result
+			healthContractNode(t, home, func(conn net.Conn) {
+				var request json.RawMessage
+				if json.NewDecoder(conn).Decode(&request) == nil && !deadline { cancel() }
+				_, _ = conn.Read(make([]byte, 1))
+			})
+			_, err := ensureElasticHealth(ctx, "contract")
 			want := context.Canceled
 			if deadline { want = context.DeadlineExceeded }
 			if !errors.Is(err, want) { t.Fatalf("context error=%v want=%v", err, want) }

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	elasticdaemon "github.com/fgpaz/bots-herramientas/mold/daemon"
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
@@ -47,7 +46,7 @@ func healthProbeClientName(clientName, operation string) string {
 var ErrNegativeHealth = errors.New("daemon health response negative")
 
 func ensureElasticHealth(ctx context.Context, probeClient string) (bool, error) {
-	node, err := readBabelNode(ctx)
+	node, err := healthNodeName(ctx)
 	if err != nil {
 		return true, err
 	}
@@ -78,7 +77,7 @@ func ensureElasticHealth(ctx context.Context, probeClient string) (bool, error) 
 		return probe()
 	}
 	dial := func() error {
-		conn, err := elasticdaemon.DialContext(ctx, "mi-lsp-"+node)
+		conn, err := healthNodeDial(ctx, "mi-lsp-"+node)
 		if err == nil {
 			_ = conn.Close()
 		}

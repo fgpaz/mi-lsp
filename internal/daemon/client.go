@@ -81,11 +81,16 @@ func (c *Client) execute(ctx context.Context, request model.CommandRequest, dial
 	return response, nil
 }
 
+// These private adapters preserve the normal node resolver and transport while
+// allowing isolated contract fixtures to use a private endpoint.
+var healthNodeName = readBabelNode
+var healthNodeDial = elasticdaemon.DialContext
+
 // executeNodeScoped uses the public node-scoped transport before the legacy
 // per-profile endpoint. A successful dial commits the request to this route:
 // after any write attempt, errors are returned as envelopes and never replayed.
 func executeNodeScoped(ctx context.Context, request model.CommandRequest, dialTimeout time.Duration) (model.Envelope, bool, error) {
-	node, err := readBabelNode(ctx)
+	node, err := healthNodeName(ctx)
 	if err != nil {
 		return model.Envelope{}, true, err
 	}
@@ -94,7 +99,7 @@ func executeNodeScoped(ctx context.Context, request model.CommandRequest, dialTi
 	if dialTimeout > 0 {
 		dialCtx, dialCancel = context.WithTimeout(ctx, dialTimeout)
 	}
-	conn, err := elasticdaemon.DialContext(dialCtx, "mi-lsp-"+node)
+	conn, err := healthNodeDial(dialCtx, "mi-lsp-"+node)
 	dialCancel()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
