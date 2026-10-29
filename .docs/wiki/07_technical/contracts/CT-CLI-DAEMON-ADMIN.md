@@ -8,6 +8,8 @@ links:
   supports:
   - RF-IDX-001
   - RF-WKS-001
+  code:
+  - path: internal/service/doctor.go
 ---
 
 ## Consumidor
@@ -302,7 +304,7 @@ Reglas de formato:
 
 #### `doctor`: salida única y error ya emitido
 
-`doctor` de salud (distinto de `workspace doctor`) emite el envelope `backend=doctor` mediante el formatter común. Cuando el daemon responde, agrega `daemon_pool` con las estadísticas del pool compartido (`listo`, `vivo`, `ayudantes`, `fila`, `capacidad_fila`, `rechazos_ocupado`, `memoria_bytes`), derivadas de la misma respuesta `system.status`; si el daemon no está disponible, omite ese campo. No sustituye el estado por métricas del pool Roslyn/workspace. Si los checks fallan, conserva `ok=false`, checks y resumen, y retorna el sentinel `envelopePrintedError` por valor: coincide con el `errors.As` existente de `IsEnvelopePrintedError`. El handler externo en `cmd/mi-lsp/main.go` no vuelve a emitir `WriteProcessFailure` para ese error; preserva el exit code envuelto, distinto de cero. Los errores anteriores a la emisión y los fallos de impresión no llevan sentinel y siguen por el handler de errores normal.
+`doctor` de salud (distinto de `workspace doctor`) emite el envelope `backend=doctor` mediante el formatter común. Cuando el daemon responde, agrega `daemon_pool` con las estadísticas del pool compartido (`listo`, `vivo`, `ayudantes`, `fila`, `capacidad_fila`, `rechazos_ocupado`, `memoria_bytes`), derivadas de la misma respuesta `system.status`; si el daemon no está disponible, omite ese campo. No sustituye el estado por métricas del pool Roslyn/workspace. `daemon-version-drift` compara ambos strings de versión tras quitar como máximo un prefijo `v` cuando precede un dígito; no relaja comparaciones de otras identidades cuando existan. Si los checks fallan, conserva `ok=false`, checks y resumen, y retorna el sentinel `envelopePrintedError` por valor: coincide con el `errors.As` existente de `IsEnvelopePrintedError`. El handler externo en `cmd/mi-lsp/main.go` no vuelve a emitir `WriteProcessFailure` para ese error; preserva el exit code envuelto, distinto de cero. Los errores anteriores a la emisión y los fallos de impresión no llevan sentinel y siguen por el handler de errores normal.
 
 - **Marcador estable**: cli-doctor-single-emission
 - **formats**:

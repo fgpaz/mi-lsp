@@ -15,6 +15,7 @@ import (
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/processutil"
+	"github.com/fgpaz/mi-lsp/internal/worker"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
@@ -84,7 +85,7 @@ func (a *App) diagnostics(ctx context.Context, request model.CommandRequest) (mo
 	for _, path := range paths {
 		absolute, relative, code := diagnosticsPath(registration.Root, path)
 		if code != "" {
-			omit(path, code, "source unavailable or outside selected workspace")
+			omit(path, code, diagnosticPathFailureReason(code))
 			continue
 		}
 		if admitted >= maxFiles {
@@ -195,7 +196,7 @@ func (a *App) diagnostics(ctx context.Context, request model.CommandRequest) (mo
 					}
 				}
 			}
-			omit(result.path, code, response.Backend+" semantic diagnostic request failed; no clean result inferred")
+			omit(result.path, code, diagnosticBackendFailureReason(response, result.err))
 			continue
 		}
 		summary.FilesChecked++
@@ -343,6 +344,38 @@ func (a *App) diagnosticsCall(ctx context.Context, reg model.WorkspaceRegistrati
 
 func diagnosticsFailure(workspaceName, code, reason string) model.Envelope {
 	return model.Envelope{ContractVersion: "diagnostics/v1", Ok: false, Partial: true, Degraded: true, Reason: code, Hint: reason, Workspace: workspaceName, Backend: "semantic-diagnostics", Items: []model.Diagnostic{}, Diagnostics: &model.DiagnosticsSummary{Backends: map[string]int{}}, Error: &model.EnvelopeError{Kind: code, Code: code, ReasonCode: code, Message: reason}, Omissions: []model.EnvelopeOmission{{ErrorCode: code, Reason: reason}}}
+}
+
+func diagnosticPathFailureReason(code string) string {
+	switch code {
+	case "file_missing":
+		return "source file does not exist in the selected workspace root"
+	case "invalid_path":
+		return "source path is invalid or outside the selected workspace"
+	case "work_limit":
+		return "source exceeds the diagnostics work limit"
+	default:
+		return "source unavailable for diagnostics"
+	}
+}
+
+func diagnosticBackendFailureReason(response model.WorkerResponse, err error) string {
+	backend := response.Backend
+	if backend == "" {
+		backend = "semantic backend"
+	}
+	reason := backend + " semantic diagnostic request failed; no clean result inferred"
+	if !strings.EqualFold(backend, "tsserver") {
+		return reason
+	}
+	detail := response.Error
+	if err != nil {
+		detail = err.Error()
+	}
+	if detail = worker.SanitizeTsserverErrorDetail(detail); detail != "" {
+		return reason + "; detail: " + detail
+	}
+	return reason
 }
 
 func diagnosticSeverityRank(s string) int {
