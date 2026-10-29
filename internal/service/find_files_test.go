@@ -119,8 +119,18 @@ func TestFindFilesGitIgnoreRankingBudgetAndCache(t *testing.T) {
 			t.Fatal(err)
 		}
 		encoded, _ := json.Marshal(limited)
-		if len(encoded)+1 > size || !limited.Truncated || limited.Reason != "budget_bytes" || limited.NextHint == "" {
+		if len(encoded)+1 > size {
 			t.Fatalf("bad budget: %s", encoded)
+		}
+		if size == 512 && !limited.Truncated {
+			t.Fatalf("expected budget truncation: %s", encoded)
+		}
+		if limited.Truncated {
+			if limited.Reason != "budget_bytes" || limited.NextHint == "" || len(limited.Items) >= limited.Matched {
+				t.Fatalf("bad budget truncation: %s", encoded)
+			}
+		} else if len(limited.Items) != limited.Matched || limited.Reason != "" || limited.NextHint != "" {
+			t.Fatalf("bad complete response: %s", encoded)
 		}
 	}
 	top, err := finder.FindFiles(context.Background(), root, "*", FindFilesOptions{Top: 1, MaxBytes: 4096})
