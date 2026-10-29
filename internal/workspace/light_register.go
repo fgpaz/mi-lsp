@@ -54,21 +54,28 @@ func LightRegistrationReservation(selector, cwd string) (string, bool, error) {
 // LightRegistrationFailure consumes a prior error only under the same stable
 // guard used for claim/work/finish. A busy root reference has no finish right.
 func LightRegistrationFailure(reservation string) string {
+	failure, _ := LightRegistrationFailureResult(reservation)
+	return failure
+}
+
+// LightRegistrationFailureResult distinguishes absent failure from an unknown,
+// unreadable or contended receipt. The legacy string wrapper preserves its API.
+func LightRegistrationFailureResult(reservation string) (string, error) {
 	root, _, valid := lightRegistrationProfileReceipt(reservation)
 	if !valid {
-		return ""
+		return "", errLightRegistrationOwnerUnknown
 	}
-	return lightRegistrationFailureAt(context.Background(), root)
+	return lightRegistrationFailureResultAt(context.Background(), root)
 }
 
 // FinishLightRegistration conditionally finishes only its exact generation;
 // legacy root-only references or indeterminate cleanup retain the reservation.
-func FinishLightRegistration(reservation string, registrationErr error) {
+func FinishLightRegistration(reservation string, registrationErr error) error {
 	_, nonce, valid := lightRegistrationProfileReceipt(reservation)
 	if !valid || nonce == "" {
-		return
+		return errLightRegistrationOwnerUnknown
 	}
-	_ = finishLightRegistrationAt(context.Background(), reservation, registrationErr)
+	return finishLightRegistrationAt(context.Background(), reservation, registrationErr)
 }
 
 // RegisterGitRootLight only updates the registry. It never creates project files or indexes.

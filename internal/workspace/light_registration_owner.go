@@ -191,12 +191,24 @@ func RunLightRegistration(ctx context.Context, selector, cwd, receipt string) er
 	})
 }
 
-func lightRegistrationFailureAt(ctx context.Context, root string) (failure string) {
-	_ = withLightRegistrationGuard(ctx, root, func() error {
+// Legacy internal wrapper discards status; new callers use the result API.
+func lightRegistrationFailureAt(ctx context.Context, root string) string {
+	failure, _ := lightRegistrationFailureResultAt(ctx, root)
+	return failure
+}
+
+func lightRegistrationFailureResultAt(ctx context.Context, root string) (failure string, err error) {
+	err = withLightRegistrationGuard(ctx, root, func() error {
 		path := root + ".failure"
 		info, err := os.Lstat(path)
-		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
 			return err
+		}
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			return errors.New("light registration failure receipt is not a regular file")
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -208,5 +220,5 @@ func lightRegistrationFailureAt(ctx context.Context, root string) (failure strin
 		failure = strings.TrimSpace(string(data))
 		return nil
 	})
-	return failure
+	return failure, err
 }
