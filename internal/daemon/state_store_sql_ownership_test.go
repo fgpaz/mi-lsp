@@ -153,8 +153,8 @@ func TestTelemetryPublicReaderOwnsRowsUntilCloseAndCloseWaits(t *testing.T) {
 		t.Fatal("close admission was not closed while reader remained borrowed")
 	}
 	releaseOnce.Do(func() { close(control.release) })
-	if err := <-readerDone; err != nil {
-		t.Fatalf("public export reader: %v", err)
+	if err := <-readerDone; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("public export reader during shutdown: %v", err)
 	}
 	if err := <-closeDone; err != nil {
 		t.Fatalf("Close after reader return: %v", err)

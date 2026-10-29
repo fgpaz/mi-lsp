@@ -392,7 +392,11 @@ func (s *TelemetryStore) persistQueued(req telemetryWriteRequest) {
 		s.failWrite()
 		return
 	}
-	if err := s.recordAccessDirectInternal(req.runID, req.event, req.isDirect); err != nil {
+	// isDirect describes the event's run association, not queue admission.
+	err := s.withTelemetryMutationDrainContext(s.ownedWriteContext(), true, func(ctx context.Context) error {
+		return s.recordAccessDirectUnderLease(ctx, req.runID, req.event, req.isDirect)
+	})
+	if err != nil {
 		if isTelemetryAdmissionError(err) {
 			s.failWriteReason(walAdmissionReason(err))
 		} else {
@@ -401,17 +405,11 @@ func (s *TelemetryStore) persistQueued(req telemetryWriteRequest) {
 	}
 }
 
-// recordAccessDirectInternal handles the actual database write (called from async worker).
+// recordAccessDirectInternal admits a synchronous public write.
 func (s *TelemetryStore) recordAccessDirectInternal(runID int64, event model.AccessEvent, isDirect bool) error {
-	write := func(ctx context.Context) error {
+	return s.withTelemetryMutationContext(s.ownedWriteContext(), func(ctx context.Context) error {
 		return s.recordAccessDirectUnderLease(ctx, runID, event, isDirect)
-	}
-	if isDirect {
-		return s.withTelemetryMutationContext(s.ownedWriteContext(), write)
-	}
-	// Queue entries accepted before Close are internal admitted work and must
-	// drain; public writes are closed-admission checked inside the owner gate.
-	return s.withTelemetryMutationDrainContext(s.ownedWriteContext(), true, write)
+	})
 }
 
 func (s *TelemetryStore) recordAccessDirectUnderLease(ctx context.Context, runID int64, event model.AccessEvent, isDirect bool) error {
