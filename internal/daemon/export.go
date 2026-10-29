@@ -1,7 +1,9 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -141,17 +143,13 @@ type KnownBurst struct {
 }
 
 func QueryAccessEvents(store *TelemetryStore, query ExportQuery) ([]model.AccessEvent, error) {
+	if store == nil {
+		return nil, errors.New("telemetry store unavailable")
+	}
 	if query.Limit < 0 {
 		query.Limit = 500
 	}
-
 	sql, args := buildAccessEventsSQL(query, true)
-	rows, err := store.db.QueryContext(store.ownedWriteContext(), sql, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
 	capHint := query.Limit
 	switch {
 	case capHint <= 0:
@@ -160,38 +158,42 @@ func QueryAccessEvents(store *TelemetryStore, query ExportQuery) ([]model.Access
 		capHint = 512
 	}
 	items := make([]model.AccessEvent, 0, capHint)
-	for rows.Next() {
-		item, err := scanAccessEvent(rows)
-		if err != nil {
-			return nil, err
+	err := store.withTelemetryReadOwnershipContext(store.ownedWriteContext(), func(ctx context.Context) error {
+		rows, err := store.db.QueryContext(ctx, sql, args...)
+		if err != nil { return err }
+		defer rows.Close()
+		for rows.Next() {
+			item, err := scanAccessEvent(rows)
+			if err != nil { return err }
+			items = append(items, item)
 		}
-		items = append(items, item)
-	}
-	return items, rows.Err()
+		return rows.Err()
+	})
+	if err != nil { return nil, err }
+	return items, nil
 }
 
 func QueryAccessSummary(store *TelemetryStore, query ExportQuery) (ExportSummary, error) {
+	if store == nil {
+		return ExportSummary{}, errors.New("telemetry store unavailable")
+	}
 	if query.Limit < 0 {
 		query.Limit = 500
 	}
 	sql, args := buildAccessEventsSQL(query, false)
-	rows, err := store.db.QueryContext(store.ownedWriteContext(), sql, args...)
-	if err != nil {
-		return ExportSummary{}, err
-	}
-	defer rows.Close()
-
 	acc := newSummaryAccumulator()
-	for rows.Next() {
-		item, err := scanAccessEvent(rows)
-		if err != nil {
-			return ExportSummary{}, err
+	err := store.withTelemetryReadOwnershipContext(store.ownedWriteContext(), func(ctx context.Context) error {
+		rows, err := store.db.QueryContext(ctx, sql, args...)
+		if err != nil { return err }
+		defer rows.Close()
+		for rows.Next() {
+			item, err := scanAccessEvent(rows)
+			if err != nil { return err }
+			acc.add(item)
 		}
-		acc.add(item)
-	}
-	if err := rows.Err(); err != nil {
-		return ExportSummary{}, err
-	}
+		return rows.Err()
+	})
+	if err != nil { return ExportSummary{}, err }
 	return acc.summary(), nil
 }
 

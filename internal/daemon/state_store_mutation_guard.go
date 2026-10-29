@@ -51,12 +51,26 @@ func isTelemetryAdmissionError(err error) bool {
 }
 
 func (s *TelemetryStore) withTelemetryMutationContext(ctx context.Context, fn func(context.Context) error) error {
+	return s.withTelemetryMutationDrainContext(ctx, false, fn)
+}
+
+func (s *TelemetryStore) withTelemetryMutationDrainContext(ctx context.Context, allowClosing bool, fn func(context.Context) error) error {
 	if fn == nil {
 		return errors.New("telemetry mutation callback is nil")
 	}
 	admissionEntered := false
 	err := s.withTelemetryWriteOwnershipContext(ctx, func(writeCtx context.Context) error {
 		admissionEntered = true
+		if !allowClosing {
+			s.stateMu.RLock()
+			closed := s.closed
+			s.stateMu.RUnlock()
+			if closed {
+				err := errors.New("telemetry store closed")
+				s.reject("closed")
+				return telemetryAdmissionError{cause: err}
+			}
+		}
 		if err := s.admitTelemetryMutationWithLeaseHeldContext(writeCtx); err != nil {
 			return telemetryAdmissionError{cause: err}
 		}
@@ -92,6 +106,23 @@ func (s *TelemetryStore) admitTelemetryMutationWithLeaseHeldContext(ctx context.
 		s.reject(walAdmissionReason(err))
 	}
 	return err
+}
+
+// withTelemetryReadOwnershipContext admits external readers under the same
+// local/OS owner as SQL writers and holds it until rows/connections are closed.
+func (s *TelemetryStore) withTelemetryReadOwnershipContext(ctx context.Context, fn func(context.Context) error) error {
+	if fn == nil {
+		return errors.New("telemetry read callback is nil")
+	}
+	return s.withTelemetryWriteOwnershipContext(ctx, func(ownedCtx context.Context) error {
+		s.stateMu.RLock()
+		closed := s.closed
+		s.stateMu.RUnlock()
+		if closed {
+			return errors.New("telemetry store closed")
+		}
+		return fn(ownedCtx)
+	})
 }
 
 func (s *TelemetryStore) withTelemetryOwnershipOnlyContext(ctx context.Context, fn func(context.Context) error) error {
