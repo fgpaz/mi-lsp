@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -43,13 +44,34 @@ func findSymbolsWithWorktreeOverlay(ctx context.Context, db *sql.DB, registratio
 		filteredDelta = append(filteredDelta, symbol)
 	}
 	delta = filteredDelta
-	baseLimit := limit + offset + len(delta)
-	if repo != nil {
-		baseLimit = max(baseLimit*10, 100)
-	}
-	base, err := store.FindSymbolsExcludingPaths(ctx, db, pattern, kind, exact, baseLimit, 0, excluded)
-	if err != nil {
-		return nil, err
+	var base []model.SymbolRecord
+	if repo == nil {
+		baseLimit := limit + offset + len(delta)
+		base, err = store.FindSymbolsExcludingPaths(ctx, db, pattern, kind, exact, baseLimit, 0, excluded)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		maxInt := int(^uint(0) >> 1)
+		if offset > maxInt-limit {
+			return nil, fmt.Errorf("overlay pagination overflow")
+		}
+		needed := offset + limit
+		const pageSize = 100
+		for pageOffset := 0; ; {
+			page, queryErr := store.FindSymbolsExcludingPaths(ctx, db, pattern, kind, exact, pageSize, pageOffset, excluded)
+			if queryErr != nil {
+				return nil, queryErr
+			}
+			base = append(base, filterSymbolsByRepo(page, repo)...)
+			if len(base) >= needed || len(page) < pageSize {
+				break
+			}
+			if pageOffset > maxInt-len(page) {
+				return nil, fmt.Errorf("overlay pagination overflow")
+			}
+			pageOffset += len(page)
+		}
 	}
 	for i := range base {
 		base[i].Workspace = registration.Name
