@@ -644,7 +644,15 @@ func (s *TelemetryStore) WALHealth() WALHealth {
 	h.WALBytes = 0
 	h.WALBytesKnown = false
 	if !h.Closed {
-		size, err := s.walSize()
+		var size int64
+		var err error
+		// A refresh requires an available pool connection. Observe readiness
+		// without borrowing/opening SQLite or disturbing active SQL ownership.
+		if s.db == nil || s.db.Stats().Idle == 0 {
+			err = errors.New("telemetry WAL refresh unavailable")
+		} else {
+			size, err = s.walSize()
+		}
 		s.stateMu.Lock()
 		h = s.health
 		h.Closed = s.closed
