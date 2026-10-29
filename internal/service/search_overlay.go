@@ -15,7 +15,7 @@ import (
 // searchWorktreeOverlay searches the base tree plus only the physical delta.
 // Changed paths mask base hits even if the base checkout itself has local edits.
 func searchWorktreeOverlay(ctx context.Context, root, searchRoot string, project model.ProjectFile, pattern string, regex bool, limit int, diagnostics *searchPatternDiagnostics) ([]map[string]any, bool, error) {
-	overlay, linked, err := workspace.TryResolveWorktreeOverlay(root)
+	overlay, linked, err := workspace.TryResolveWorktreeOverlayContext(ctx, root)
 	if err != nil || !linked {
 		return nil, linked, err
 	}

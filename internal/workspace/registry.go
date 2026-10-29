@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 )
 
 const registryDirName = ".mi-lsp"
@@ -1474,22 +1474,33 @@ func pathContains(cwd string, root string) bool {
 }
 
 func gitTopLevel(root string) (string, bool) {
+	resolved, ok, _ := gitTopLevelContext(context.Background(), root)
+	return resolved, ok
+}
+
+func gitTopLevelContext(ctx context.Context, root string) (string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
 	ctxRoot := strings.TrimSpace(root)
 	if ctxRoot == "" {
-		return "", false
+		return "", false, nil
 	}
-	command := processutil.Command("git", "-C", ctxRoot, "rev-parse", "--show-toplevel")
+	command := processutil.CommandContext(ctx, "git", "-C", ctxRoot, "rev-parse", "--show-toplevel")
 	output, err := command.Output()
 	if err != nil {
-		return "", false
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return "", false, ctxErr
+		}
+		return "", false, nil
 	}
 	topLevel := strings.TrimSpace(string(output))
 	if topLevel == "" {
-		return "", false
+		return "", false, nil
 	}
 	absolute, err := filepath.Abs(topLevel)
 	if err != nil {
-		return "", false
+		return "", false, nil
 	}
 	if evaluated, evalErr := filepath.EvalSymlinks(absolute); evalErr == nil {
 		absolute = evaluated
@@ -1500,14 +1511,17 @@ func gitTopLevel(root string) (string, bool) {
 	// but only after Git has confirmed that the caller belongs to a repository.
 	caller, err := filepath.Abs(ctxRoot)
 	if err != nil {
-		return "", false
+		return "", false, nil
 	}
 	if evaluated, evalErr := filepath.EvalSymlinks(caller); evalErr == nil {
 		caller = evaluated
 	}
 	caller = filepath.Clean(caller)
 	if !pathContains(caller, gitRoot) {
-		return "", false
+		return "", false, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return "", false, err
 	}
 	if marker, ok := inspectGitMarker(ctxRoot); ok {
 		markerRoot, markerErr := filepath.Abs(marker.Root)
@@ -1517,13 +1531,20 @@ func gitTopLevel(root string) (string, bool) {
 			}
 			markerRoot = filepath.Clean(markerRoot)
 			if pathContains(caller, markerRoot) {
-				if linked, _, valid := linkedWorktree(markerRoot); valid && linked {
-					return markerRoot, true
+				linked, _, valid, linkErr := linkedWorktreeContext(ctx, markerRoot)
+				if linkErr != nil {
+					return "", false, linkErr
+				}
+				if valid && linked {
+					return markerRoot, true, nil
 				}
 			}
 		}
 	}
-	return gitRoot, true
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
+	return gitRoot, true, nil
 }
 
 type gitMarkerInspection struct {
