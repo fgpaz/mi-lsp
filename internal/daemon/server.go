@@ -92,6 +92,15 @@ type serverConstructionDeps struct {
 	generateAdminToken func() (string, error)
 }
 
+// cleanupPartialTelemetryStoreResult consumes a partial store returned alongside
+// an open error before the caller releases any enclosing constructor leases.
+func cleanupPartialTelemetryStoreResult(store *TelemetryStore, openErr error) (*TelemetryStore, error) {
+	if openErr == nil || store == nil {
+		return store, openErr
+	}
+	return nil, (&Server{telemetry: store}).cleanupFailedConstruction(openErr)
+}
+
 func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Duration, options StartOptions) (*Server, error) {
 	return newServerWithConstructionDeps(repoRoot, maxWorkers, idleTimeout, options, serverConstructionDeps{
 		openTelemetryStore: openTelemetryStore,
@@ -143,7 +152,8 @@ func newServerWithConstructionDeps(repoRoot string, maxWorkers int, idleTimeout 
 	}
 	telemetry, err := deps.openTelemetryStore()
 	if err != nil {
-		return nil, err
+		_, cleanupErr := cleanupPartialTelemetryStoreResult(telemetry, err)
+		return nil, cleanupErr
 	}
 	manager := NewManagerWithOptions(repoRoot, maxWorkers, idleTimeout, options)
 	manager.SetTelemetryStore(telemetry)

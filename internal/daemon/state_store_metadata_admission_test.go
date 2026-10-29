@@ -259,6 +259,11 @@ func TestSnapshotRollbackPhysicallyJoinsBeforeLeaseRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Errorf("remove private rollback fixture directory: %v", err)
+		}
+	})
 	path := filepath.Join(dir, "state.db")
 	gate := &metadataRollbackGate{entered: make(chan struct{}), release: make(chan struct{})}
 	driverName := fmt.Sprintf("metadata-rollback-%d", metadataGateDriverSequence.Add(1))
@@ -279,9 +284,6 @@ func TestSnapshotRollbackPhysicallyJoinsBeforeLeaseRelease(t *testing.T) {
 				t.Errorf("join second rollback fixture store: %v", err)
 			}
 			cancelSecond()
-		}
-		if err := os.RemoveAll(dir); err != nil {
-			t.Errorf("remove private rollback fixture: %v", err)
 		}
 	})
 	second = openMetadataFixtureStore(t, path, false)

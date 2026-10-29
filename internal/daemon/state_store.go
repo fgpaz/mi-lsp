@@ -188,8 +188,10 @@ func openTelemetryStore() (*TelemetryStore, error) {
 	return store, nil
 }
 
+// OpenTelemetryStore joins any partially opened store before returning an open error.
 func OpenTelemetryStore() (*TelemetryStore, error) {
-	return openTelemetryStore()
+	store, err := openTelemetryStore()
+	return cleanupPartialTelemetryStoreResult(store, err)
 }
 
 func (s *TelemetryStore) enableWALMode() error {
