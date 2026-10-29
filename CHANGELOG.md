@@ -7,6 +7,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+- Documentado sin pruebas propias el contrato de fuente actual de lease, admisión WAL, cierre y health. FULL Linux del padre tiene alcance delimitado en TECH-LOCAL-DAEMON; no implica prueba nativa, aceptación global ni release.
+
 ### Documentación
 
 - Contrato objetivo y gates OPEN para idle, drenaje, cancelación, lease de solo lectura, WAL y supervivencia del servicio bajo el supervisor. La documentación no acredita implementación integrada, aceptación CPU ni publicación de la consulta de lease; v0.16.2 permanece inmutable.
