@@ -40,6 +40,16 @@ func (s *TelemetryStore) withTelemetryWriteOwnershipContext(ctx context.Context,
 	})
 }
 
+type telemetryAdmissionError struct { cause error }
+
+func (e telemetryAdmissionError) Error() string { return e.cause.Error() }
+func (e telemetryAdmissionError) Unwrap() error { return e.cause }
+
+func isTelemetryAdmissionError(err error) bool {
+	var admissionErr telemetryAdmissionError
+	return errors.As(err, &admissionErr)
+}
+
 func (s *TelemetryStore) withTelemetryMutationContext(ctx context.Context, fn func(context.Context) error) error {
 	if fn == nil {
 		return errors.New("telemetry mutation callback is nil")
@@ -48,12 +58,13 @@ func (s *TelemetryStore) withTelemetryMutationContext(ctx context.Context, fn fu
 	err := s.withTelemetryWriteOwnershipContext(ctx, func(writeCtx context.Context) error {
 		admissionEntered = true
 		if err := s.admitTelemetryMutationWithLeaseHeldContext(writeCtx); err != nil {
-			return err
+			return telemetryAdmissionError{cause: err}
 		}
 		return fn(writeCtx)
 	})
 	if err != nil && !admissionEntered {
 		s.reject(walAdmissionReason(err))
+		return telemetryAdmissionError{cause: err}
 	}
 	return err
 }

@@ -48,6 +48,29 @@ func (s *TelemetryStore) withTelemetryWriterLeaseContext(ctx context.Context, fn
 	return fn(ctx)
 }
 
+// inspectTelemetryDatabaseAfterLease rechecks both canonical identity and
+// existence only after the caller owns the writer guard.
+func inspectTelemetryDatabaseAfterLease(path, expectedCanonical string) (bool, error) {
+	canonical, err := canonicalTelemetryDatabasePath(path)
+	if err != nil {
+		return false, fmt.Errorf("revalidate telemetry database path after lease: %w", err)
+	}
+	if canonical != expectedCanonical {
+		return false, fmt.Errorf("telemetry database identity changed while acquiring lease: before=%q after=%q", expectedCanonical, canonical)
+	}
+	info, err := os.Stat(canonical)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("inspect telemetry database after lease: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return false, errors.New("telemetry database is not a regular file after lease")
+	}
+	return true, nil
+}
+
 // canonicalTelemetryDatabasePath resolves an existing database and its
 // physical parent for a not-yet-created database, so all cooperating stores
 // derive the same persistent writer guard.

@@ -168,11 +168,6 @@ func openTelemetryStore() (opened *TelemetryStore, retErr error) {
 	if err != nil {
 		return nil, err
 	}
-	_, statErr := os.Stat(canonicalPath)
-	existingDB := statErr == nil
-	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
-		return nil, fmt.Errorf("inspect telemetry database before open: %w", statErr)
-	}
 	guardLease, err := runtimeinfo.AcquireFileLeaseContext(context.Background(), canonicalPath+".writer.guard")
 	if err != nil {
 		return nil, fmt.Errorf("acquire telemetry schema lease: %w", err)
@@ -183,6 +178,10 @@ func openTelemetryStore() (opened *TelemetryStore, retErr error) {
 			retErr = errors.Join(retErr, wrapTelemetryLeaseRelease(guardLease.Release()))
 		}
 	}()
+	existingDB, err := inspectTelemetryDatabaseAfterLease(path, canonicalPath)
+	if err != nil {
+		return nil, err
+	}
 	db, err := sql.Open("sqlite", canonicalPath)
 	if err != nil {
 		return nil, err
@@ -211,7 +210,25 @@ func openTelemetryStore() (opened *TelemetryStore, retErr error) {
 		return failOpen(err)
 	}
 	if err := guardLease.Release(); err != nil {
-		return failOpen(wrapTelemetryLeaseRelease(err))
+		guardReleased = true // Release consumes/unlocks its handle even on error.
+		wrappedReleaseErr := wrapTelemetryLeaseRelease(err)
+		reowned, acquireErr := runtimeinfo.AcquireFileLeaseContext(context.Background(), canonicalPath+".writer.guard")
+		if acquireErr != nil {
+			// Return the live store with its error so the caller retains a handle
+			// and can retry physical cleanup; never close outside proven ownership.
+			return store, errors.Join(wrappedReleaseErr, fmt.Errorf("reacquire telemetry lease for failed-open cleanup: %w", acquireErr))
+		}
+		cleanupPath, pathErr := canonicalTelemetryDatabasePath(path)
+		if pathErr == nil && cleanupPath != canonicalPath {
+			pathErr = fmt.Errorf("telemetry database identity changed before failed-open cleanup: %q != %q", cleanupPath, canonicalPath)
+		}
+		if pathErr != nil {
+			releaseErr := reowned.Release()
+			return store, errors.Join(wrappedReleaseErr, pathErr, wrapTelemetryLeaseRelease(releaseErr))
+		}
+		closeErr := db.Close()
+		reacquireReleaseErr := reowned.Release()
+		return nil, errors.Join(wrappedReleaseErr, closeErr, wrapTelemetryLeaseRelease(reacquireReleaseErr))
 	}
 	guardReleased = true
 	// Start async write worker (PERF-06).
@@ -402,7 +419,11 @@ func (s *TelemetryStore) persistQueued(req telemetryWriteRequest) {
 		return
 	}
 	if err := s.recordAccessDirectInternal(req.runID, req.event, req.isDirect); err != nil {
-		s.failWrite()
+		if isTelemetryAdmissionError(err) {
+			s.failWriteReason(walAdmissionReason(err))
+		} else {
+			s.failWrite()
+		}
 	}
 }
 
@@ -571,11 +592,39 @@ func (s *TelemetryStore) walSize() (int64, error) {
 }
 
 func (s *TelemetryStore) walSizeWithContext(ctx context.Context) (int64, error) {
-	var path string
-	if err := s.db.QueryRowContext(ctx, "PRAGMA database_list").Scan(new(int), new(string), &path); err != nil {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	info, err := os.Stat(path + "-wal")
+	path := s.dbPath
+	if path == "" {
+		// Compatibility for private legacy fixtures only. Production stores set
+		// their canonical path before first SQL, so measurement never opens SQLite.
+		var name string
+		if err := s.db.QueryRowContext(ctx, "PRAGMA database_list").Scan(new(int), &name, &path); err != nil {
+			return 0, err
+		}
+		if name != "main" || path == "" {
+			return 0, errors.New("telemetry database main path unavailable")
+		}
+	}
+	canonicalPath, err := canonicalTelemetryDatabasePath(path)
+	if err != nil {
+		return 0, err
+	}
+	dbInfo, err := os.Stat(canonicalPath)
+	if err != nil {
+		return 0, fmt.Errorf("stat telemetry database for WAL measurement: %w", err)
+	}
+	if !dbInfo.Mode().IsRegular() {
+		return 0, errors.New("telemetry database is not a regular file for WAL measurement")
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	info, err := os.Stat(canonicalPath + "-wal")
 	if errors.Is(err, os.ErrNotExist) {
 		return 0, nil
 	}
@@ -948,7 +997,9 @@ func (s *TelemetryStore) RecordAccessDirect(event model.AccessEvent) error {
 		return err
 	}
 	if err := s.recordAccessDirectInternal(0, event, true); err != nil {
-		s.failWrite()
+		if !isTelemetryAdmissionError(err) {
+			s.failWrite()
+		}
 		return err
 	}
 	return nil

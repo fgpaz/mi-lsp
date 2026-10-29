@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/runtimeinfo"
 	_ "modernc.org/sqlite"
 )
 
@@ -70,7 +72,8 @@ func TestTelemetryOwnershipCrossStoreCancellationPhysicalReturnAndRecovery(t *te
 		t.Fatalf("set bounded driver wait: %v", err)
 	}
 	entered := make(chan struct{})
-	ownerCtx, cancelOwner := context.WithCancel(context.Background())
+	ownerCtx, cancelOwner := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancelOwner()
 	ownerDone := make(chan error, 1)
 	ownerFinished := make(chan struct{})
 	go func() {
@@ -86,17 +89,9 @@ func TestTelemetryOwnershipCrossStoreCancellationPhysicalReturnAndRecovery(t *te
 	var competitorFinished chan struct{}
 	defer func() {
 		_ = blockerTx.Rollback()
-		select {
-		case <-ownerFinished:
-		case <-time.After(3 * time.Second):
-			t.Errorf("owner goroutine did not physically join during cleanup")
-		}
+		<-ownerFinished
 		if competitorFinished != nil {
-			select {
-			case <-competitorFinished:
-			case <-time.After(3 * time.Second):
-				t.Errorf("competitor goroutine did not join during cleanup")
-			}
+			<-competitorFinished
 		}
 	}()
 	select {
@@ -105,7 +100,8 @@ func TestTelemetryOwnershipCrossStoreCancellationPhysicalReturnAndRecovery(t *te
 		t.Fatal("first owner did not enter its real mutation callback")
 	}
 
-	competingCtx, cancelCompeting := context.WithCancel(context.Background())
+	competingCtx, cancelCompeting := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancelCompeting()
 	competitorDone := make(chan error, 1)
 	competitorStarted := make(chan struct{})
 	competitorFinished = make(chan struct{})
@@ -122,20 +118,15 @@ func TestTelemetryOwnershipCrossStoreCancellationPhysicalReturnAndRecovery(t *te
 	case <-time.After(3 * time.Second):
 		t.Fatal("competing owner did not start")
 	}
-	time.Sleep(50 * time.Millisecond)
-	cancelOwner()
-	cancelCompeting()
-	cancelOwner()
-	cancelCompeting()
-
 	select {
 	case err := <-competitorDone:
-		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-			t.Fatalf("competing owner must report context cancellation, got %v", err)
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("competing owner must report its acquisition deadline, got %v", err)
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("competing owner did not stop at its canceled acquisition")
+		t.Fatal("competing owner did not stop at its acquisition deadline")
 	}
+	<-ownerCtx.Done() // exact owner-context cancellation boundary, not timer padding
 	select {
 	case err := <-ownerDone:
 		t.Fatalf("physical owner returned before SQLite released its write lock: %v", err)
@@ -220,6 +211,23 @@ func TestTelemetryAdmissionRefusalCountedOnceAndRecovers(t *testing.T) {
 	if got := s.WALHealth().RejectedWrites - before; got != 1 {
 		t.Fatalf("admission refusal count=%d, want exactly 1 (err=%v)", got, err)
 	}
+
+	directBefore := s.WALHealth()
+	if err := s.RecordAccessDirect(model.AccessEvent{Operation: "direct-rejected"}); err == nil {
+		t.Fatal("direct mutation above threshold unexpectedly succeeded")
+	}
+	directAfter := s.WALHealth()
+	if directAfter.RejectedWrites != directBefore.RejectedWrites+1 || directAfter.FailedWrites != directBefore.FailedWrites || directAfter.LastWriteFailure != "busy" {
+		t.Fatalf("direct admission history/counters overwritten or duplicated: before=%+v after=%+v", directBefore, directAfter)
+	}
+
+	queuedBefore := s.WALHealth()
+	s.persistQueued(telemetryWriteRequest{event: model.AccessEvent{Operation: "queued-rejected"}})
+	queuedAfter := s.WALHealth()
+	if queuedAfter.RejectedWrites != queuedBefore.RejectedWrites+1 || queuedAfter.FailedWrites != queuedBefore.FailedWrites+1 || queuedAfter.LastWriteFailure != "busy" {
+		t.Fatalf("queued admission history/counters are not phase-accurate: before=%+v after=%+v", queuedBefore, queuedAfter)
+	}
+
 	if err := reader.Rollback(); err != nil {
 		t.Fatalf("release reader pin: %v", err)
 	}
@@ -232,6 +240,52 @@ func TestTelemetryAdmissionRefusalCountedOnceAndRecovers(t *testing.T) {
 		return err
 	}); err != nil {
 		t.Fatalf("mutation after admission recovery: %v", err)
+	}
+}
+
+func TestTelemetryKnownPathWALMeasureDoesNotOpenSQLite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "known.db")
+	if err := os.WriteFile(path, []byte("private database fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := &TelemetryStore{dbPath: path, db: db}
+	if _, err := s.walSizeWithContext(context.Background()); err != nil {
+		t.Fatalf("filesystem WAL measurement: %v", err)
+	}
+	if got := db.Stats().OpenConnections; got != 0 {
+		t.Fatalf("known-path WAL measurement opened SQLite: open connections=%d", got)
+	}
+}
+
+func TestTelemetryOpenRevalidatesExistenceAfterWriterLease(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "appears-under-lease.db")
+	canonical, err := canonicalTelemetryDatabasePath(path)
+	if err != nil {
+		t.Fatalf("canonical absent bootstrap path: %v", err)
+	}
+	lease, err := runtimeinfo.AcquireFileLeaseContext(context.Background(), canonical+".writer.guard")
+	if err != nil {
+		t.Fatalf("acquire private writer lease: %v", err)
+	}
+	defer func() {
+		if err := lease.Release(); err != nil {
+			t.Errorf("release private writer lease: %v", err)
+		}
+	}()
+	if err := os.WriteFile(path, []byte("created by prior owner"), 0o600); err != nil {
+		t.Fatalf("create fixture while holding acquisition boundary: %v", err)
+	}
+	exists, err := inspectTelemetryDatabaseAfterLease(path, canonical)
+	if err != nil {
+		t.Fatalf("revalidate DB state after lock: %v", err)
+	}
+	if !exists {
+		t.Fatal("post-lock revalidation treated a newly created DB as bootstrap")
 	}
 }
 
