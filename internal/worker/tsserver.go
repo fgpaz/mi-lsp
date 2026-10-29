@@ -2,6 +2,7 @@ package worker
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -327,15 +328,23 @@ func writeTSServerRequest(writer io.Writer, payload any) error {
 
 func readTSFrame(reader *bufio.Reader) (tsserverEnvelope, error) {
 	contentLength := 0
+	headerSeen := false
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
+			if errors.Is(err, io.EOF) && !headerSeen {
+				return tsserverEnvelope{}, errors.New("tsserver returned invalid content length")
+			}
 			return tsserverEnvelope{}, err
 		}
 		line = strings.TrimSpace(line)
 		if line == "" {
-			break
+			if headerSeen {
+				break
+			}
+			continue
 		}
+		headerSeen = true
 		if separator := strings.IndexByte(line, ':'); separator >= 0 && strings.EqualFold(strings.TrimSpace(line[:separator]), "Content-Length") {
 			value := strings.TrimSpace(line[separator+1:])
 			contentLength, err = strconv.Atoi(value)
@@ -352,7 +361,7 @@ func readTSFrame(reader *bufio.Reader) (tsserverEnvelope, error) {
 		return tsserverEnvelope{}, err
 	}
 	var envelope tsserverEnvelope
-	if err := json.Unmarshal(body, &envelope); err != nil {
+	if err := json.Unmarshal(bytes.TrimSpace(body), &envelope); err != nil {
 		return tsserverEnvelope{}, err
 	}
 	return envelope, nil
@@ -444,11 +453,19 @@ func globalTsserverNpmRoot(nodePath string) (string, error) {
 	}
 	args := []string{npmCLI, "root", "-g"}
 	command := processutil.CommandContext(ctx, nodePath, args...)
-	output, err := command.CombinedOutput()
+	var stderr boundedTailWriter
+	stderr.limit = 4096
+	command.Stderr = &stderr
+	output, err := command.Output()
 	if err != nil {
-		return "", tsserverExecutionError("global_root", displayProcessArgv(nodePath, args...), err, string(output))
+		return "", tsserverErrorWithStderr("global_root", displayProcessArgv(nodePath, args...), err, stderr.String())
 	}
-	root := strings.TrimSpace(string(output))
+	root := ""
+	for _, line := range strings.Split(string(output), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			root = line
+		}
+	}
 	if root == "" {
 		return "", errors.New("tsserver global_root failed: npm returned an empty module root")
 	}
@@ -568,7 +585,7 @@ func displayProcessArgv(program string, args ...string) string {
 }
 
 func tsserverExecutionError(stage, argv string, cause error, output string) error {
-	parts := []string{"tsserver " + stage + " failed", "process_args=" + argv}
+	parts := []string{"tsserver " + stage + " failed"}
 	if cause != nil {
 		if detail := SanitizeTsserverErrorDetail(cause.Error()); detail != "" {
 			parts = append(parts, "cause="+detail)
@@ -577,6 +594,7 @@ func tsserverExecutionError(stage, argv string, cause error, output string) erro
 	if detail := SanitizeTsserverErrorDetail(output); detail != "" {
 		parts = append(parts, "process_output="+detail)
 	}
+	parts = append(parts, "process_args="+SanitizeTsserverErrorDetail(argv))
 	return errors.New(strings.Join(parts, "; "))
 }
 
