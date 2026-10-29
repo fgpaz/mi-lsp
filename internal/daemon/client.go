@@ -163,18 +163,42 @@ func EnsureDaemon(repoRoot string) error {
 // EnsureDaemonFor preserves the real CLI caller on health probes so automated
 // checks can be distinguished from an explicit `mi-lsp daemon status` call.
 func EnsureDaemonFor(repoRoot, callerClient, callerOperation string) error {
-	probeClient := healthProbeClientName(callerClient, callerOperation)
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	return EnsureDaemonForContext(context.Background(), repoRoot, callerClient, callerOperation)
+}
+
+const daemonAutoStartBudget = 3 * time.Second
+
+func daemonAutoStartContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	return context.WithTimeout(parent, daemonAutoStartBudget)
+}
+
+// EnsureDaemonForContext shares one startup budget across every stage. The
+// service, once started, is not owned by this request context.
+func EnsureDaemonForContext(parent context.Context, repoRoot, callerClient, callerOperation string) error {
+	ctx, cancel := daemonAutoStartContext(parent)
 	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	probeClient := healthProbeClientName(callerClient, callerOperation)
+	probeCtx, cancelProbe := context.WithTimeout(ctx, time.Second)
 	if elasticEnabled() {
-		if used, err := ensureElasticHealth(ctx, probeClient); used || err != nil {
+		if used, err := ensureElasticHealth(probeCtx, probeClient); used || err != nil {
+			cancelProbe()
 			return err
 		}
 	}
-	if err := ensureLegacyHealth(ctx, probeClient); err == nil {
-		return nil
+	err := ensureLegacyHealth(probeCtx, probeClient)
+	cancelProbe()
+	if err == nil || errors.Is(err, ErrNegativeHealth) {
+		return err
 	}
-
-	_, _, err := SpawnBackground(repoRoot, DefaultMaxWorkers(), 30*time.Minute)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	_, _, err = SpawnBackgroundWithOptionsContext(ctx, repoRoot, DefaultMaxWorkers(), 30*time.Minute, DefaultStartOptions())
 	return err
 }

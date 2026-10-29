@@ -50,7 +50,7 @@ func newQCommand(state *rootState) *cobra.Command {
 					if state.ensureDaemon != nil {
 						_ = state.ensureDaemon(state.repoRoot)
 					} else {
-						_ = daemon.EnsureDaemonFor(state.repoRoot, opts.ClientName, "q")
+						_ = daemon.EnsureDaemonForContext(ctx, state.repoRoot, opts.ClientName, "q")
 					}
 				}
 				if envelope, err := daemon.NewClient().Execute(ctx, request); err == nil {
