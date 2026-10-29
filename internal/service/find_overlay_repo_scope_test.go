@@ -23,7 +23,11 @@ func TestFindOverlayScopedRepoPagesPastOtherRepos(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { if err := db.Close(); err != nil { t.Error(err) } })
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	var files []model.FileRecord
 	var symbols []model.SymbolRecord
 	add := func(repo model.WorkspaceRepo, path, source string) {
@@ -52,17 +56,34 @@ func TestFindOverlayScopedRepoPagesPastOtherRepos(t *testing.T) {
 	find := func(pattern, kind string, exact bool, limit, offset int) []model.SymbolRecord {
 		t.Helper()
 		got, err := findSymbolsWithWorktreeOverlay(ctx, db, registration, project, overlay, pattern, kind, exact, limit, offset, &scope)
-		if err != nil { t.Fatal(err) }
+		if err != nil {
+			t.Fatal(err)
+		}
 		return got
 	}
-	for _, tc := range []struct { offset int; want string }{{0, "MatchZBase"}, {1, "MatchZDelta"}, {2, "MatchZSecond"}} {
+	for _, tc := range []struct {
+		offset int
+		want   string
+	}{{0, "MatchZBase"}, {1, "MatchZDelta"}, {2, "MatchZSecond"}} {
 		got := find("Match", "", false, 1, tc.offset)
-		if len(got) != 1 || got[0].Name != tc.want { t.Errorf("offset %d: got %#v, want %s", tc.offset, got, tc.want) }
+		if len(got) != 1 || got[0].Name != tc.want {
+			t.Errorf("offset %d: got %#v, want %s", tc.offset, got, tc.want)
+		}
 	}
-	if got := find("MatchZMasked", "", true, 1, 0); len(got) != 0 { t.Errorf("masked: %#v", got) }
-	if got := find("no-such-symbol", "", false, 1, 0); len(got) != 0 { t.Errorf("no match: %#v", got) }
-	if got := find("MatchZBase", "", true, 1, 0); len(got) != 1 || got[0].Name != "MatchZBase" { t.Errorf("exact: %#v", got) }
-	if got := find("Match", "not-a-kind", false, 1, 0); len(got) != 0 { t.Errorf("kind: %#v", got) }
+	if got := find("MatchZMasked", "", true, 1, 0); len(got) != 0 {
+		t.Errorf("masked: %#v", got)
+	}
+	if got := find("no-such-symbol", "", false, 1, 0); len(got) != 0 {
+		t.Errorf("no match: %#v", got)
+	}
+	if got := find("MatchZBase", "", true, 1, 0); len(got) != 1 || got[0].Name != "MatchZBase" {
+		t.Errorf("exact: %#v", got)
+	}
+	if got := find("Match", "not-a-kind", false, 1, 0); len(got) != 0 {
+		t.Errorf("kind: %#v", got)
+	}
 	scope = model.WorkspaceRepo{ID: "unmatched", Name: "sELECTED"}
-	if got := find("Match", "", false, 1, 0); len(got) != 1 || got[0].Name != "MatchZBase" { t.Errorf("name scope: %#v", got) }
+	if got := find("Match", "", false, 1, 0); len(got) != 1 || got[0].Name != "MatchZBase" {
+		t.Errorf("name scope: %#v", got)
+	}
 }
