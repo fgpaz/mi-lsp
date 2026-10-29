@@ -91,7 +91,27 @@ func (a *App) multiRead(ctx context.Context, request model.CommandRequest) (mode
 			continue
 		}
 
-		content, lineCount, itemTruncated, readErr := readFileRange(absFile, fr.StartLine, fr.EndLine, maxChars-totalChars)
+		// Lexical containment alone permits symlinks to escape the workspace.
+		// Resolve existing targets before opening them and fail closed on errors.
+		rootReal, rootErr := filepath.EvalSymlinks(registration.Root)
+		fileReal, fileErr := filepath.EvalSymlinks(absFile)
+		if rootErr == nil && fileErr == nil {
+			rel, relErr := filepath.Rel(rootReal, fileReal)
+			if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
+				omissions = append(omissions, model.EnvelopeOmission{Input: "<outside-workspace>", Reason: "path outside workspace root", ErrorCode: "outside_workspace", RequestedRange: requestedRange(fr)})
+				continue
+			}
+		}
+		var content string
+		var lineCount int
+		var itemTruncated bool
+		readErr := rootErr
+		if readErr == nil {
+			readErr = fileErr
+		}
+		if readErr == nil {
+			content, lineCount, itemTruncated, readErr = readFileRange(fileReal, fr.StartLine, fr.EndLine, maxChars-totalChars)
+		}
 		if readErr != nil {
 			omissions = append(omissions, model.EnvelopeOmission{
 				Path:           safeWorkspacePath(registration.Root, absFile),

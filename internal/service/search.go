@@ -130,6 +130,28 @@ func searchPatternScopedWithDiagnostics(ctx context.Context, workspaceRoot strin
 	return searchPatternFallbackWithDiagnostics(ctx, workspaceRoot, searchRoot, project, pattern, useRegex, limit, diagnostics)
 }
 
+func searchPatternPathsWithDiagnostics(ctx context.Context, workspaceRoot string, searchRoots []string, project model.ProjectFile, pattern string, useRegex bool, limit int, diagnostics *searchPatternDiagnostics) ([]map[string]any, error) {
+	if len(searchRoots) == 0 {
+		return []map[string]any{}, nil
+	}
+	if rgBin := resolveRgBinary(); rgBin != "" {
+		return searchPatternRgPathsWithDiagnostics(ctx, workspaceRoot, searchRoots, project, pattern, useRegex, limit, rgBin, diagnostics)
+	}
+	return searchPatternPathsFallbackWithDiagnostics(ctx, workspaceRoot, searchRoots, project, pattern, useRegex, limit, diagnostics)
+}
+
+func searchPatternPathsFallbackWithDiagnostics(ctx context.Context, workspaceRoot string, searchRoots []string, project model.ProjectFile, pattern string, useRegex bool, limit int, diagnostics *searchPatternDiagnostics) ([]map[string]any, error) {
+	items := make([]map[string]any, 0)
+	for _, root := range searchRoots {
+		part, err := searchPatternFallbackWithDiagnostics(ctx, workspaceRoot, root, project, pattern, useRegex, limit, diagnostics)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, part...)
+	}
+	return mergeOverlaySearchItems(items, limit), nil
+}
+
 func withSearchTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	if timeout <= 0 {
 		return ctx, func() {}
@@ -142,6 +164,13 @@ func searchPatternRg(ctx context.Context, workspaceRoot string, searchRoot strin
 }
 
 func searchPatternRgWithDiagnostics(ctx context.Context, workspaceRoot string, searchRoot string, project model.ProjectFile, pattern string, useRegex bool, limit int, rgBin string, diagnostics *searchPatternDiagnostics) ([]map[string]any, error) {
+	return searchPatternRgPathsWithDiagnostics(ctx, workspaceRoot, []string{searchRoot}, project, pattern, useRegex, limit, rgBin, diagnostics)
+}
+
+func searchPatternRgPathsWithDiagnostics(ctx context.Context, workspaceRoot string, searchRoots []string, project model.ProjectFile, pattern string, useRegex bool, limit int, rgBin string, diagnostics *searchPatternDiagnostics) ([]map[string]any, error) {
+	if len(searchRoots) == 0 {
+		return []map[string]any{}, nil
+	}
 	if limit <= 0 {
 		limit = DefaultConfig().DefaultSearchLimit
 	}
@@ -149,7 +178,7 @@ func searchPatternRgWithDiagnostics(ctx context.Context, workspaceRoot string, s
 	searchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	command := rgCommand(searchCtx, rgBin, buildRipgrepArgs(pattern, useRegex, searchRoot)...)
+	command := rgCommand(searchCtx, rgBin, buildRipgrepArgs(pattern, useRegex, searchRoots...)...)
 	processutil.ConfigureNonInteractiveCommand(command)
 
 	stdout, err := command.StdoutPipe()
@@ -162,7 +191,7 @@ func searchPatternRgWithDiagnostics(ctx context.Context, workspaceRoot string, s
 	if err := command.Start(); err != nil {
 		if isTransientRipgrepAccessError(err) {
 			recordRipgrepFallback(diagnostics, err)
-			return searchPatternFallbackWithDiagnostics(ctx, workspaceRoot, searchRoot, project, pattern, useRegex, limit, diagnostics)
+			return searchPatternPathsFallbackWithDiagnostics(ctx, workspaceRoot, searchRoots, project, pattern, useRegex, limit, diagnostics)
 		}
 		return nil, err
 	}
@@ -240,13 +269,13 @@ func searchPatternRgWithDiagnostics(ctx context.Context, workspaceRoot string, s
 			combinedErr := fmt.Errorf("%w: %s", waitErr, msg)
 			if isTransientRipgrepAccessError(combinedErr) {
 				recordRipgrepFallback(diagnostics, combinedErr)
-				return searchPatternFallbackWithDiagnostics(ctx, workspaceRoot, searchRoot, project, pattern, useRegex, limit, diagnostics)
+				return searchPatternPathsFallbackWithDiagnostics(ctx, workspaceRoot, searchRoots, project, pattern, useRegex, limit, diagnostics)
 			}
 			return nil, fmt.Errorf("%w: %s", waitErr, msg)
 		}
 		if isTransientRipgrepAccessError(waitErr) {
 			recordRipgrepFallback(diagnostics, waitErr)
-			return searchPatternFallbackWithDiagnostics(ctx, workspaceRoot, searchRoot, project, pattern, useRegex, limit, diagnostics)
+			return searchPatternPathsFallbackWithDiagnostics(ctx, workspaceRoot, searchRoots, project, pattern, useRegex, limit, diagnostics)
 		}
 		return nil, waitErr
 	}
@@ -311,9 +340,9 @@ func isRegexParseError(err error) bool {
 		strings.Contains(message, "unexpected ]")
 }
 
-func buildRipgrepArgs(pattern string, useRegex bool, searchRoot string) []string {
+func buildRipgrepArgs(pattern string, useRegex bool, searchRoots ...string) []string {
 	args := []string{
-		"--line-number", "--no-heading", "--color", "never", "--hidden",
+		"--line-number", "--no-heading", "--with-filename", "--color", "never", "--hidden",
 		"--glob", "!.mi-lsp/**",
 		"--glob", "!**/.mi-lsp/**",
 		"--glob", "!.mi-lsp/index.db",
@@ -324,7 +353,8 @@ func buildRipgrepArgs(pattern string, useRegex bool, searchRoot string) []string
 	if !useRegex {
 		args = append(args, "-F")
 	}
-	args = append(args, pattern, searchRoot)
+	args = append(args, pattern)
+	args = append(args, searchRoots...)
 	return args
 }
 

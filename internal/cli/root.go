@@ -164,6 +164,7 @@ func NewRootCommand() *cobra.Command {
 
 	root.PersistentFlags().BoolVar(&state.noAutoRegister, "no-auto-register", false, "Do not register the git root of the cwd or requested path as a workspace on first query (also MI_LSP_NO_AUTO_REGISTER=1)")
 
+	root.AddCommand(lightRegisterCommand())
 	root.AddCommand(
 		newUpdateCommand(state, hooks),
 		newInitCommand(state),
@@ -192,6 +193,7 @@ func NewRootCommand() *cobra.Command {
 		newSeedCommand(state),
 		newGrepCommand(state),
 		newStatsCommand(),
+		newNativeEventCommand(),
 		newUsageReportCommand(),
 	)
 	return root
@@ -245,14 +247,16 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 
 	// Only heavy daemon-backed queries should auto-start the daemon.
 	if useDaemon && !s.noAutoDaemon && shouldAutoStartDaemon(operation) {
-		ensureDaemon := daemon.EnsureDaemon
+		var ensureErr error
 		if s.ensureDaemon != nil {
-			ensureDaemon = s.ensureDaemon
+			ensureErr = s.ensureDaemon(s.repoRoot)
+		} else {
+			ensureErr = daemon.EnsureDaemonFor(s.repoRoot, request.Context.ClientName, operation)
 		}
-		if err := ensureDaemon(s.repoRoot); err != nil {
+		if ensureErr != nil {
 			// Log warning but don't fail; fall back to direct mode
 			if s.verbose {
-				fmt.Fprintf(os.Stderr, "[mi-lsp] daemon auto-start failed: %v; using direct mode\n", err)
+				fmt.Fprintf(os.Stderr, "[mi-lsp] daemon auto-start failed: %v; using direct mode\n", ensureErr)
 			}
 		}
 	}
@@ -285,13 +289,6 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 		traceCLITiming("daemon.execute", time.Since(routeStarted), s.verbose)
 	}
 	if !useDaemon || daemonFailed {
-		refreshWarning := ""
-		if !daemonFailed && request.Operation == "nav.multi-read" {
-			_, refreshErr := s.refreshMultiReadPaths(ctx, request)
-			if refreshErr != nil {
-				refreshWarning = "query index refresh deferred: " + refreshErr.Error()
-			}
-		}
 		serviceStarted := time.Now()
 		if s.appExecute != nil {
 			envelope, err = s.appExecute(ctx, request)
@@ -299,9 +296,6 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 			envelope, err = s.app.Execute(ctx, request)
 		}
 		traceCLITiming("service.execute", time.Since(serviceStarted), s.verbose)
-		if refreshWarning != "" {
-			envelope.Warnings = append(envelope.Warnings, refreshWarning)
-		}
 		if err == nil && daemonFailed && envelope.Hint == "" {
 			if request.Operation == "nav.diagnostics" {
 				envelope.Hint = "daemon_unavailable; served by local semantic backends"
@@ -313,6 +307,11 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 			route = "direct_fallback"
 		} else {
 			route = "direct"
+		}
+	}
+	if err == nil && envelope.Ok && strings.HasPrefix(operation, "nav.") && !opts.NoAutoRegister {
+		if warning := scheduleLightRegistration(opts.Workspace, opts.CallerCWD); warning != "" {
+			envelope.Warnings = append(envelope.Warnings, warning)
 		}
 	}
 	latency := time.Since(started)

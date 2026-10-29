@@ -287,8 +287,8 @@ func checkDaemonVersion(ctx context.Context, opts *RunDoctorOptions) DoctorCheck
 		}
 	}
 
-	// Check if they match
-	if daemonVersion != cliVersion {
+	// Compare the same semantic release whether Go build info includes its conventional v prefix.
+	if normalizeDoctorVersion(daemonVersion) != normalizeDoctorVersion(cliVersion) {
 		return DoctorCheck{
 			ID:       id,
 			Severity: "P2",
@@ -472,6 +472,14 @@ func checkTruncationRate(ctx context.Context, opts *RunDoctorOptions) DoctorChec
 }
 
 // ============ Helper functions ============
+
+func normalizeDoctorVersion(version string) string {
+	version = strings.TrimSpace(version)
+	if len(version) > 1 && version[0] == 'v' && version[1] >= '0' && version[1] <= '9' {
+		return version[1:]
+	}
+	return version
+}
 
 // getCLIVersion returns the version of the running CLI.
 func getCLIVersion() string {

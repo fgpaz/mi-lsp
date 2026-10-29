@@ -10,10 +10,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/processutil"
@@ -21,11 +24,13 @@ import (
 
 type TsserverClient struct {
 	workspace  model.WorkspaceRegistration
+	nodePath   string
 	tsserverJS string
 	cmd        *exec.Cmd
 	stdin      io.WriteCloser
 	stdout     io.ReadCloser
 	reader     *bufio.Reader
+	stderr     *boundedTailWriter
 	mu         sync.Mutex
 	sequence   int
 }
@@ -67,18 +72,23 @@ type tsQuickInfoBody struct {
 }
 
 func NewTsserverClient(workspace model.WorkspaceRegistration) (*TsserverClient, error) {
-	tsserverPath, err := findTsserverPath(workspace.Root)
+	nodePath, err := resolveNodeExecutable()
 	if err != nil {
 		return nil, err
 	}
-	return &TsserverClient{workspace: workspace, tsserverJS: tsserverPath}, nil
+	tsserverPath, err := findTsserverPath(workspace.Root, nodePath)
+	if err != nil {
+		return nil, err
+	}
+	return &TsserverClient{workspace: workspace, nodePath: nodePath, tsserverJS: tsserverPath}, nil
 }
 
 func CanUseTsserver(workspaceRoot string) bool {
-	if _, err := exec.LookPath("node"); err != nil {
+	nodePath, err := resolveNodeExecutable()
+	if err != nil {
 		return false
 	}
-	_, err := findTsserverPath(workspaceRoot)
+	_, err = findTsserverPath(workspaceRoot, nodePath)
 	return err == nil
 }
 
@@ -86,27 +96,32 @@ func (c *TsserverClient) Start() error {
 	if c.cmd != nil {
 		return nil
 	}
-	if _, err := exec.LookPath("node"); err != nil {
-		return errors.New("node is required for tsserver backend")
+	if c.nodePath == "" {
+		return tsserverExecutionError("spawn", displayProcessArgv("node"), errors.New("resolved Node executable is unavailable"), "")
 	}
-	cmd := processutil.Command("node", c.tsserverJS, "--useSingleInferredProjectPerProjectRoot", "true")
+	args := []string{c.tsserverJS, "--useSingleInferredProjectPerProjectRoot", "true"}
+	argv := displayProcessArgv(c.nodePath, args...)
+	cmd := processutil.Command(c.nodePath, args...)
 	processutil.ConfigureNonInteractiveCommand(cmd)
+	stderr := &boundedTailWriter{limit: 4096}
+	cmd.Stderr = stderr
 	bindWorkerLifetime(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return err
+		return tsserverExecutionError("stdin_pipe", argv, err, "")
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return err
+		return tsserverExecutionError("stdout_pipe", argv, err, "")
 	}
 	if err := cmd.Start(); err != nil {
-		return err
+		return tsserverErrorWithStderr("spawn", argv, err, stderr.String())
 	}
 	c.cmd = cmd
 	c.stdin = stdin
 	c.stdout = stdout
 	c.reader = bufio.NewReader(stdout)
+	c.stderr = stderr
 	return nil
 }
 
@@ -164,6 +179,7 @@ func (c *TsserverClient) Close() error {
 	c.stdin = nil
 	c.stdout = nil
 	c.reader = nil
+	c.stderr = nil
 	return err
 }
 
@@ -260,7 +276,10 @@ func (c *TsserverClient) sendEvent(command string, arguments map[string]any) (in
 		"command":   command,
 		"arguments": arguments,
 	}
-	return c.sequence, writeTSServerRequest(c.stdin, message)
+	if err := writeTSServerRequest(c.stdin, message); err != nil {
+		return c.sequence, c.failure("request_write", command, err)
+	}
+	return c.sequence, nil
 }
 
 func (c *TsserverClient) sendRequest(ctx context.Context, command string, arguments map[string]any) (json.RawMessage, error) {
@@ -276,13 +295,13 @@ func (c *TsserverClient) sendRequest(ctx context.Context, command string, argume
 		}
 		message, err := readTSFrame(c.reader)
 		if err != nil {
-			return nil, err
+			return nil, c.failure("response_read", command, err)
 		}
 		if message.Type != "response" || message.RequestSeq != seq {
 			continue
 		}
 		if !message.Success {
-			return nil, errors.New(strings.TrimSpace(message.Message))
+			return nil, c.failure("request_rejected", command, errors.New(strings.TrimSpace(message.Message)))
 		}
 		return message.Body, nil
 	}
@@ -339,25 +358,66 @@ func readTSFrame(reader *bufio.Reader) (tsserverEnvelope, error) {
 	return envelope, nil
 }
 
-func findTsserverPath(workspaceRoot string) (string, error) {
+func findTsserverPath(workspaceRoot, nodePath string) (string, error) {
 	for current := workspaceRoot; current != ""; current = filepath.Dir(current) {
 		candidate := filepath.Join(current, "node_modules", "typescript", "lib", "tsserver.js")
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate, nil
+		if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() {
+			return resolveTsserverScript(nodePath, candidate)
 		}
 		next := filepath.Dir(current)
 		if next == current {
 			break
 		}
 	}
-	globalRoot, err := globalNpmRoot()
-	if err == nil {
-		candidate := filepath.Join(strings.TrimSpace(globalRoot), "typescript", "lib", "tsserver.js")
-		if _, statErr := os.Stat(candidate); statErr == nil {
-			return candidate, nil
+	globalRoot, err := globalTsserverNpmRoot(nodePath)
+	if err != nil {
+		return "", err
+	}
+	candidate := filepath.Join(strings.TrimSpace(globalRoot), "typescript", "lib", "tsserver.js")
+	if info, statErr := os.Stat(candidate); statErr == nil && info.Mode().IsRegular() {
+		return resolveTsserverScript(nodePath, candidate)
+	}
+	return "", errors.New("tsserver unavailable: typescript/lib/tsserver.js was not found in the workspace or global npm root")
+}
+
+func resolveNodeExecutable() (string, error) {
+	candidate, err := exec.LookPath("node")
+	if err != nil {
+		return "", tsserverExecutionError("node_lookup", displayProcessArgv("node"), err, "")
+	}
+	absolute, err := filepath.Abs(candidate)
+	if err != nil {
+		return "", tsserverExecutionError("node_path", displayProcessArgv("node"), err, "")
+	}
+	if runtime.GOOS == "windows" {
+		extension := strings.ToLower(filepath.Ext(absolute))
+		if extension == ".cmd" || extension == ".bat" {
+			return "", errors.New("tsserver node_lookup failed: PATH resolved node to a shell shim; an executable node.exe is required")
 		}
 	}
-	return "", errors.New("tsserver is unavailable; install typescript locally or globally")
+	if resolved, resolveErr := filepath.EvalSymlinks(absolute); resolveErr == nil {
+		return resolved, nil
+	}
+	return absolute, nil
+}
+
+func findNpmCLIPath(nodePath string) (string, error) {
+	searchDirs := []string{filepath.Dir(nodePath)}
+	if appData := strings.TrimSpace(os.Getenv("APPDATA")); appData != "" {
+		searchDirs = append(searchDirs, filepath.Join(appData, "npm"))
+	}
+	for _, dir := range searchDirs {
+		candidate := filepath.Join(dir, "node_modules", "npm", "bin", "npm-cli.js")
+		info, err := os.Stat(candidate)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		if resolved, err := filepath.EvalSymlinks(candidate); err == nil {
+			return resolved, nil
+		}
+		return candidate, nil
+	}
+	return "", errors.New("npm root discovery requires npm-cli.js beside node or under the AppData npm prefix; no .cmd shim was executed")
 }
 
 func globalNpmRoot() (string, error) {
@@ -370,6 +430,174 @@ func globalNpmRoot() (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(output)), nil
+}
+
+func globalTsserverNpmRoot(nodePath string) (string, error) {
+	if runtime.GOOS != "windows" {
+		return globalNpmRoot()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	npmCLI, err := findNpmCLIPath(nodePath)
+	if err != nil {
+		return "", err
+	}
+	args := []string{npmCLI, "root", "-g"}
+	command := processutil.CommandContext(ctx, nodePath, args...)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return "", tsserverExecutionError("global_root", displayProcessArgv(nodePath, args...), err, string(output))
+	}
+	root := strings.TrimSpace(string(output))
+	if root == "" {
+		return "", errors.New("tsserver global_root failed: npm returned an empty module root")
+	}
+	return root, nil
+}
+
+const nodeRealpathScript = `process.stdout.write(require("fs").realpathSync(process.argv[1]))`
+
+func resolveTsserverScript(nodePath, candidate string) (string, error) {
+	absolute, err := filepath.Abs(candidate)
+	if err != nil {
+		return "", tsserverExecutionError("script_path", displayProcessArgv(nodePath, candidate), err, "")
+	}
+	if runtime.GOOS != "windows" {
+		resolved, err := filepath.EvalSymlinks(absolute)
+		if err != nil {
+			return "", tsserverExecutionError("script_realpath", displayProcessArgv(nodePath, candidate), err, "")
+		}
+		return resolved, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	args := []string{"-e", nodeRealpathScript, absolute}
+	command := processutil.CommandContext(ctx, nodePath, args...)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return "", tsserverExecutionError("script_realpath", displayProcessArgv(nodePath, "-e", "<fixed-realpath-script>", absolute), err, string(output))
+	}
+	resolved := strings.TrimSpace(string(output))
+	if resolved == "" {
+		return "", errors.New("tsserver script_realpath failed: Node returned an empty realpath")
+	}
+	return resolved, nil
+}
+
+type boundedTailWriter struct {
+	mu     sync.Mutex
+	limit  int
+	buffer []byte
+}
+
+func (w *boundedTailWriter) Write(p []byte) (int, error) {
+	written := len(p)
+	if w.limit <= 0 {
+		return written, nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(p) >= w.limit {
+		w.buffer = append(w.buffer[:0], p[len(p)-w.limit:]...)
+		return written, nil
+	}
+	if overflow := len(w.buffer) + len(p) - w.limit; overflow > 0 {
+		copy(w.buffer, w.buffer[overflow:])
+		w.buffer = w.buffer[:len(w.buffer)-overflow]
+	}
+	w.buffer = append(w.buffer, p...)
+	return written, nil
+}
+
+func (w *boundedTailWriter) String() string {
+	if w == nil {
+		return ""
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return string(w.buffer)
+}
+
+var (
+	tsserverBearerTokenRE     = regexp.MustCompile(`(?i)\bbearer\s+(?:"[^"]*"|'[^']*'|[^\s,;]+)`)
+	tsserverSensitiveValueRE  = regexp.MustCompile(`(?i)\b(bearer|authorization|access[_ -]?token|token|password|secret|api[_ -]?key)\b(\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)`)
+	tsserverWindowsUserPathRE = regexp.MustCompile(`(?i)([a-z]:[\\/](?:users|documents and settings)[\\/])[^\\/\s"'<>|]+`)
+	tsserverUnixHomePathRE    = regexp.MustCompile(`((?:/home|/Users)/)[^/\s"'<>|]+`)
+)
+
+func SanitizeTsserverErrorDetail(detail string) string {
+	detail = strings.ToValidUTF8(detail, "�")
+	detail = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, detail)
+	detail = strings.Join(strings.Fields(detail), " ")
+	detail = tsserverBearerTokenRE.ReplaceAllString(detail, "Bearer <redacted>")
+	detail = tsserverSensitiveValueRE.ReplaceAllString(detail, "$1$2<redacted>")
+	detail = tsserverWindowsUserPathRE.ReplaceAllString(detail, "${1}<user>")
+	detail = tsserverUnixHomePathRE.ReplaceAllString(detail, "${1}<user>")
+	const maxDetail = 512
+	if len(detail) > maxDetail {
+		detail = detail[:maxDetail]
+		for !utf8.ValidString(detail) {
+			detail = detail[:len(detail)-1]
+		}
+		detail += "…"
+	}
+	return detail
+}
+
+func displayProcessArgv(program string, args ...string) string {
+	values := make([]string, 0, len(args)+1)
+	values = append(values, SanitizeTsserverErrorDetail(program))
+	for _, arg := range args {
+		if strings.Contains(arg, "realpathSync") {
+			arg = "<fixed-realpath-script>"
+		} else {
+			arg = SanitizeTsserverErrorDetail(arg)
+		}
+		values = append(values, arg)
+	}
+	quoted := make([]string, len(values))
+	for i, value := range values {
+		quoted[i] = strconv.Quote(value)
+	}
+	return "[" + strings.Join(quoted, ",") + "]"
+}
+
+func tsserverExecutionError(stage, argv string, cause error, output string) error {
+	parts := []string{"tsserver " + stage + " failed", "process_args=" + argv}
+	if cause != nil {
+		if detail := SanitizeTsserverErrorDetail(cause.Error()); detail != "" {
+			parts = append(parts, "cause="+detail)
+		}
+	}
+	if detail := SanitizeTsserverErrorDetail(output); detail != "" {
+		parts = append(parts, "process_output="+detail)
+	}
+	return errors.New(strings.Join(parts, "; "))
+}
+
+func tsserverErrorWithStderr(stage, argv string, cause error, stderr string) error {
+	base := tsserverExecutionError(stage, argv, cause, "")
+	if detail := SanitizeTsserverErrorDetail(stderr); detail != "" {
+		return errors.New(base.Error() + "; stderr=" + detail)
+	}
+	return base
+}
+
+func (c *TsserverClient) failure(stage, command string, cause error) error {
+	if command != "" {
+		stage += " command=" + command
+	}
+	argv := displayProcessArgv(c.nodePath, c.tsserverJS, "--useSingleInferredProjectPerProjectRoot", "true")
+	stderr := ""
+	if c.stderr != nil {
+		stderr = c.stderr.String()
+	}
+	return tsserverErrorWithStderr(stage, argv, cause, stderr)
 }
 
 func intFromPayload(payload map[string]any, key string, defaultValue int) int {

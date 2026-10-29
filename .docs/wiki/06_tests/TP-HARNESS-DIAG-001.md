@@ -20,9 +20,9 @@ TESTING_DEFERRED_UNTIL_IMPLEMENTATION_COMPLETE. Esta lane agrega casos/fixtures,
 - CLI: un archivo o `--changed` exclusivamente; `--base` requiere cambios; `--max-files` y offset acotados; payload exacto para `nav.diagnostics`.
 - Git: staged, unstaged, eliminación, untracked con espacios/salto de línea, gitignore y base de merge; refs parecidas a flags no pasan como argumentos de proceso.
 - Routing: un diff Go+TS genera ambos backends, con errores primero aunque el backend de warnings termine antes. Sin backend: `partial`, omisión tipada y nunca lista limpia.
-- Aislamiento: path fuera del root, symlink externo, archivo eliminado y dos worktrees del mismo repo. Ningún resultado del checkout principal satisface el otro worktree.
+- Aislamiento: path fuera del root, symlink externo, archivo eliminado y dos worktrees del mismo repo. `file_missing` explica ausencia en la raíz; `invalid_path` conserva el rechazo externo. Ningún resultado del checkout principal satisface el otro worktree.
 - LSP: informe pull `full` vacío es válido; `null` o `unchanged` sin informe previo no lo son; push para otra URI se descarta; publicación vacía se distingue de ausencia; todo push conserva `partial`.
-- tsserver: syntactic/semantic/suggestion DiagnosticsSync, coordenadas `startLocation` uno-based, código y severidad.
+- tsserver: syntactic/semantic/suggestion DiagnosticsSync, coordenadas `startLocation` uno-based, código y severidad. En fallo de spawn/protocolo, comprobar etapa, argv y stderr acotado/sanitizado; nunca inferir limpio.
 - Presupuesto: errores delante de warnings, totales previos al límite, salida humana corta y razones de omisión conservadas.
 
 ## Smoke semántico real, una vez integrado

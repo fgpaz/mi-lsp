@@ -58,15 +58,10 @@ func AutoRegisterWorkspace(selector string, callerCWD string) (AutoRegisterResul
 		return AutoRegisterResult{}, nil
 	}
 	force := strings.EqualFold(strings.TrimSpace(os.Getenv(AutoRegisterModeEnvVar)), "force")
-	if isLinkedWorktree, commonDir, valid := linkedWorktree(root); valid && isLinkedWorktree && !force {
-		registry, err := LoadRegistryReadOnly()
-		if err != nil {
-			return AutoRegisterResult{}, err
-		}
-		if mainRoot, found := registeredMainWorktree(commonDir, registry); found {
-			return AutoRegisterResult{Alias: mainRoot.Name, Root: mainRoot.Root}, nil
-		}
-		return AutoRegisterResult{}, &WorkspaceSelectorError{Code: "invalid_workspace", Root: root, Cause: fmt.Errorf("linked worktree has no registered main repository")}
+	if isLinkedWorktree, _, valid := linkedWorktree(root); valid && isLinkedWorktree {
+		// Linked worktrees are resolved as physical read-only overlays. Never
+		// register or silently alias one to the main worktree's content/index.
+		return AutoRegisterResult{}, nil
 	}
 	if !force && !autoRegisterDefaultRootEligible(root) {
 		return AutoRegisterResult{}, nil

@@ -51,9 +51,9 @@ Roslyn worker:
 
 TS semantic bridge:
 
-- transporte via `node <tsserver.js>`
-- framing `Content-Length` propio de `tsserver`
-- sin handshake separado de `mi-lsp`; el bridge opera request/response por comando
+- transporte via `node <tsserver.js>` y framing `Content-Length` propio de `tsserver`; no hay handshake separado de `mi-lsp`.
+- En Windows se resuelve el ejecutable Node y el realpath de `tsserver.js`; los paths se pasan como argv separados. La consulta de raíz global usa `node <npm-cli.js> root -g`, nunca ejecuta un shim `.cmd` ni construye una cadena de shell.
+- El fallo de spawn o protocolo conserva etapa, argv real con segmentos de perfil redacted, causa y stderr acotado/sanitizado; no incluye contenido de source ni secretos.
 
 Pyright y Go LSP bridge:
 

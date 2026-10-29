@@ -706,19 +706,11 @@ func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly boo
 					if registration, selection, found := registeredWorkspaceForRoot(gitRoot, registry); found {
 						return WorkspaceResolution{Registration: registration, Source: ResolutionSourcePath, Warnings: selection.Warnings}, nil
 					}
-					if preserveLinkedRoot {
-						return linkedWorktreeInspectionResolution(gitRoot), nil
-					}
-					if readOnly {
-						res := linkedWorktreeInspectionResolution(gitRoot)
-						res.Warnings = []string{
-							"explicit path selects an unregistered linked worktree; using physical read-only root resolution without registration or index",
-						}
-						return res, nil
-					}
-					// An explicit physical worktree must never silently use another
-					// tree's catalog; register it separately before indexed queries.
-					return WorkspaceResolution{}, &WorkspaceSelectorError{Code: "invalid_workspace", Selector: selector, Root: gitRoot, Cause: errors.New("explicit linked worktree is not registered; register the physical worktree separately")}
+					// An unregistered linked tree is a physical read-only overlay,
+					// never an alias to the main checkout or a new full index.
+					res := linkedWorktreeInspectionResolution(gitRoot)
+					res.Warnings = []string{"worktree_overlay_index_explicit_incomplete: explicit linked worktree resolved to its physical root; semantic base-index plus delta overlay is not implemented"}
+					return res, nil
 				}
 			}
 			registration, err := DetectWorkspace(resolvedPath)
@@ -1202,7 +1194,7 @@ func linkedWorktreeInspectionResolution(root string) WorkspaceResolution {
 		},
 		Source:    ResolutionSourceGitTopLevel,
 		Synthetic: true,
-		Warnings:  []string{"workspace omitted; linked worktree is not registered; using synthetic read-only root resolution"},
+		Warnings:  []string{"worktree_overlay_index_explicit_incomplete: linked worktree is kept at its physical root; semantic base-index plus delta overlay is not implemented"},
 	}
 }
 
@@ -1215,13 +1207,13 @@ func resolveWorkspaceFromGitTopLevel(callerCWD string, registry model.RegistryFi
 		if registration, _, found := registeredWorkspaceForRoot(gitRoot, registry); found {
 			return WorkspaceResolution{Registration: registration, Source: ResolutionSourceGitTopLevel}, true
 		}
-		if preserveLinkedRoot {
-			return linkedWorktreeInspectionResolution(gitRoot), true
-		}
+		// Preserve the physical worktree as the query root. Resolving to the
+		// common-dir's main checkout would leak content from a different branch.
+		resolution := linkedWorktreeInspectionResolution(gitRoot)
 		if registration, found := registeredMainWorktree(commonDir, registry); found {
-			return WorkspaceResolution{Registration: registration, Source: ResolutionSourceGitTopLevel, Warnings: []string{"linked worktree resolved to its registered main repository"}}, true
+			resolution.Warnings = append(resolution.Warnings, fmt.Sprintf("linked worktree shares git common-dir with registered base %q; physical text overlay is used; semantic base-index plus delta overlay remains explicit_incomplete", registration.Name))
 		}
-		return WorkspaceResolution{}, false
+		return resolution, true
 	}
 	canonicalRoot, ok := normalizeComparablePath(gitRoot)
 	if !ok {

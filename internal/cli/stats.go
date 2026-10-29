@@ -33,11 +33,13 @@ type statsReport struct {
 	TotalCalls int                    `json:"total_calls"`
 	ByClient   map[string]statsBucket `json:"by_client,omitempty"`
 	ByOp       map[string]statsBucket `json:"by_op,omitempty"`
+	ByClientOp map[string]statsBucket `json:"by_client_op,omitempty"`
+	Minutes    int                    `json:"minutes,omitempty"`
 }
 
 func newStatsCommand() *cobra.Command {
-	var days int
-	var byClient, byOp bool
+	var days, minutes int
+	var byClient, byOp, byClientOp bool
 	var format string
 	cmd := &cobra.Command{
 		Use:   "stats",
@@ -46,7 +48,10 @@ func newStatsCommand() *cobra.Command {
 			if days <= 0 {
 				return fmt.Errorf("--days must be greater than zero")
 			}
-			if !byClient && !byOp {
+			if minutes < 0 {
+				return fmt.Errorf("--minutes must not be negative")
+			}
+			if !byClient && !byOp && !byClientOp {
 				byClient = true
 			}
 			s, err := daemon.OpenTelemetryStore()
@@ -54,11 +59,15 @@ func newStatsCommand() *cobra.Command {
 				return fmt.Errorf("cannot open telemetry store: %w", err)
 			}
 			defer s.Close()
-			events, err := daemon.QueryAccessEvents(s, daemon.ExportQuery{Since: time.Now().Add(-time.Duration(days) * 24 * time.Hour)})
+			window := time.Duration(days) * 24 * time.Hour
+			if minutes > 0 {
+				window = time.Duration(minutes) * time.Minute
+			}
+			events, err := daemon.QueryAccessEvents(s, daemon.ExportQuery{Since: time.Now().Add(-window)})
 			if err != nil {
 				return fmt.Errorf("query telemetry: %w", err)
 			}
-			report := statsReport{Days: days, TotalCalls: len(events)}
+			report := statsReport{Days: days, Minutes: minutes, TotalCalls: len(events)}
 			if byClient {
 				report.ByClient = aggregateStats(events, func(e model.AccessEvent) string {
 					if strings.TrimSpace(e.ClientName) == "" {
@@ -73,6 +82,11 @@ func newStatsCommand() *cobra.Command {
 						return "unknown"
 					}
 					return e.Operation
+				})
+			}
+			if byClientOp {
+				report.ByClientOp = aggregateStats(events, func(e model.AccessEvent) string {
+					return e.ClientName + "/" + e.Operation
 				})
 			}
 			var body []byte
@@ -93,6 +107,8 @@ func newStatsCommand() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&byClient, "by-client", false, "Break down calls, success, latency, output bytes and fallback by client")
 	cmd.Flags().BoolVar(&byOp, "by-op", false, "Break down calls by operation")
+	cmd.Flags().BoolVar(&byClientOp, "by-client-op", false, "Break down by client and operation")
+	cmd.Flags().IntVar(&minutes, "minutes", 0, "Window in minutes (overrides days)")
 	cmd.Flags().IntVar(&days, "days", 7, "Number of days to include")
 	cmd.Flags().StringVar(&format, "format", "json", "Output format: json or compact")
 	return cmd

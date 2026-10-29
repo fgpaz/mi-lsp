@@ -97,13 +97,13 @@ func replaceCatalogTx(ctx context.Context, tx *sql.Tx, project model.ProjectFile
 	}
 
 	metadata := map[string]string{
-		WorkspaceMetaIndexedAt: fmt.Sprintf("%d", time.Now().Unix()),
+		WorkspaceMetaIndexedAt:  fmt.Sprintf("%d", time.Now().Unix()),
 		WorkspaceMetaTotalFiles: fmt.Sprintf("%d", len(files)),
-		"total_symbols":      fmt.Sprintf("%d", len(symbols)),
-		"workspace_kind":     project.Project.Kind,
-		"default_repo":       project.Project.DefaultRepo,
-		"default_entrypoint": project.Project.DefaultEntrypoint,
-		"repo_count":         fmt.Sprintf("%d", len(project.Repos)),
+		"total_symbols":         fmt.Sprintf("%d", len(symbols)),
+		"workspace_kind":        project.Project.Kind,
+		"default_repo":          project.Project.DefaultRepo,
+		"default_entrypoint":    project.Project.DefaultEntrypoint,
+		"repo_count":            fmt.Sprintf("%d", len(project.Repos)),
 	}
 	if err := UpsertWorkspaceMetaMap(ctx, tx, metadata); err != nil {
 		return err
@@ -163,6 +163,12 @@ func SymbolsByFile(ctx context.Context, db *sql.DB, filePath string, limit int, 
 }
 
 func FindSymbols(ctx context.Context, db *sql.DB, pattern string, kind string, exact bool, limit int, offset int) ([]model.SymbolRecord, error) {
+	return FindSymbolsExcludingPaths(ctx, db, pattern, kind, exact, limit, offset, nil)
+}
+
+// FindSymbolsExcludingPaths performs the normal catalog search while masking
+// physical paths supplied by a query-time worktree overlay.
+func FindSymbolsExcludingPaths(ctx context.Context, db *sql.DB, pattern string, kind string, exact bool, limit int, offset int, excluded []string) ([]model.SymbolRecord, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -188,6 +194,14 @@ func FindSymbols(ctx context.Context, db *sql.DB, pattern string, kind string, e
 		query += " AND kind = ?"
 		args = append(args, kind)
 	}
+	if len(excluded) > 0 {
+		placeholders := make([]string, len(excluded))
+		for i, path := range excluded {
+			placeholders[i] = "?"
+			args = append(args, path)
+		}
+		query += " AND file_path NOT IN (" + strings.Join(placeholders, ",") + ")"
+	}
 	query += ` ORDER BY name ASC, file_path ASC,
 		repo_id ASC, repo_name ASC, kind ASC, start_line ASC, end_line ASC,
 		parent ASC, qualified_name ASC, signature ASC, signature_hash ASC,
@@ -203,19 +217,30 @@ func FindSymbols(ctx context.Context, db *sql.DB, pattern string, kind string, e
 }
 
 func OverviewByPrefix(ctx context.Context, db *sql.DB, prefix string, limit int, offset int) ([]model.SymbolRecord, error) {
+	return OverviewByPrefixExcludingPaths(ctx, db, prefix, limit, offset, nil)
+}
+
+// OverviewByPrefixExcludingPaths masks worktree-delta paths while reading a shared base catalog.
+func OverviewByPrefixExcludingPaths(ctx context.Context, db *sql.DB, prefix string, limit int, offset int, excluded []string) ([]model.SymbolRecord, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 	if offset < 0 {
 		offset = 0
 	}
-	rows, err := db.QueryContext(ctx, `
-		SELECT `+symbolColumns+`
-		FROM symbols
-		WHERE file_path LIKE ?
-		ORDER BY file_path ASC, start_line ASC
-		LIMIT ? OFFSET ?
-	`, prefix+"%", limit, offset)
+	query := `SELECT ` + symbolColumns + ` FROM symbols WHERE file_path LIKE ?`
+	args := []any{prefix + "%"}
+	if len(excluded) > 0 {
+		placeholders := make([]string, len(excluded))
+		for i, path := range excluded {
+			placeholders[i] = "?"
+			args = append(args, path)
+		}
+		query += " AND file_path NOT IN (" + strings.Join(placeholders, ",") + ")"
+	}
+	query += " ORDER BY file_path ASC, start_line ASC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
+	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
