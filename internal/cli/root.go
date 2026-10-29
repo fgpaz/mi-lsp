@@ -251,7 +251,7 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 		if s.ensureDaemon != nil {
 			ensureErr = s.ensureDaemon(s.repoRoot)
 		} else {
-			ensureErr = daemon.EnsureDaemonFor(s.repoRoot, request.Context.ClientName, operation)
+			ensureErr = daemon.EnsureDaemonForContext(ctx, s.repoRoot, request.Context.ClientName, operation)
 		}
 		if ensureErr != nil {
 			// Log warning but don't fail; fall back to direct mode

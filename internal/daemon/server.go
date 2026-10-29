@@ -875,32 +875,55 @@ func SpawnBackground(repoRoot string, maxWorkers int, idleTimeout time.Duration)
 }
 
 func SpawnBackgroundWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Duration, options StartOptions) (model.DaemonState, bool, error) {
+	return SpawnBackgroundWithOptionsContext(context.Background(), repoRoot, maxWorkers, idleTimeout, options)
+}
+
+// SpawnBackgroundWithOptionsContext bounds discovery/admission/readiness by the
+// caller, not the lifetime of the detached service. Manual callers retain the
+// existing per-stage limits via the Background wrapper.
+func SpawnBackgroundWithOptionsContext(ctx context.Context, repoRoot string, maxWorkers int, idleTimeout time.Duration, options StartOptions) (state model.DaemonState, started bool, resultErr error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return model.DaemonState{}, false, err
+	}
 	if err := checkDaemonStartIntegrity(); err != nil {
 		return model.DaemonState{}, false, err
 	}
 	if elasticEnabled() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		_, err := readBabelNode(ctx)
+		discoveryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		_, err := readBabelNode(discoveryCtx)
 		cancel()
 		if err != nil {
 			return model.DaemonState{}, false, err
 		}
 	}
 	options = NormalizeStartOptions(options)
-	lock, err := acquireStartLock(10 * time.Second)
+	lock, err := acquireStartReservationContext(ctx, 10*time.Second)
 	if err != nil {
 		return model.DaemonState{}, false, err
 	}
-	defer lock.Close()
+	defer func() { resultErr = errors.Join(resultErr, closeStartReservationContext(ctx, lock)) }()
+	if err := ctx.Err(); err != nil {
+		return model.DaemonState{}, false, err
+	}
 
 	probeClient := healthProbeClientName("mi-lsp", "daemon.start")
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := ensureLegacyHealth(ctx, probeClient); err == nil {
+	probeCtx, cancelProbe := context.WithTimeout(ctx, 2*time.Second)
+	probeErr := ensureLegacyHealth(probeCtx, probeClient)
+	cancelProbe()
+	if errors.Is(probeErr, ErrNegativeHealth) {
+		return model.DaemonState{}, false, probeErr
+	}
+	if probeErr == nil {
 		if state, err := loadDaemonState(); err == nil {
 			state.AlreadyRunning = true
 			return state, false, nil
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return model.DaemonState{}, false, err
 	}
 	if err := rejectExistingDaemonOwner(); err != nil {
 		return model.DaemonState{}, false, err
@@ -926,17 +949,23 @@ func SpawnBackgroundWithOptions(repoRoot string, maxWorkers int, idleTimeout tim
 	if err != nil {
 		return model.DaemonState{}, false, err
 	}
+	if err := ctx.Err(); err != nil {
+		return model.DaemonState{}, false, err
+	}
+	// Intentionally not CommandContext: caller cancellation must not kill the
+	// independently started service. Check the budget immediately before Start.
 	if err := command.Start(); err != nil {
 		return model.DaemonState{}, false, err
 	}
 	releaseStartedCommand(command)
 
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		state, probeErr := probeDaemonWithClient(ctx, probeClient)
+	readyCtx, cancelReady := context.WithTimeout(ctx, 10*time.Second)
+	defer cancelReady()
+	for readyCtx.Err() == nil {
+		probeCtx, cancel := context.WithTimeout(readyCtx, 2*time.Second)
+		state, probeErr := probeDaemonWithClient(probeCtx, probeClient)
 		cancel()
-		if probeErr == nil {
+		if probeErr == nil && readyCtx.Err() == nil {
 			if healthLock != nil {
 				writeLegacyHealth(healthDir)
 			} else {
@@ -944,13 +973,23 @@ func SpawnBackgroundWithOptions(repoRoot string, maxWorkers int, idleTimeout tim
 			}
 			return state, true, nil
 		}
-		time.Sleep(200 * time.Millisecond)
+		if errors.Is(probeErr, ErrNegativeHealth) {
+			return model.DaemonState{}, true, probeErr
+		}
+		if err := waitStartReservationContext(readyCtx, 200*time.Millisecond); err != nil {
+			break
+		}
 	}
-	state, loadErr := loadDaemonState()
-	if loadErr == nil {
-		return state, true, fmt.Errorf("daemon start timed out before health check succeeded; stale state pid=%d endpoint=%s", state.PID, state.Endpoint)
+	// Preserve manual-start stale-state diagnostics only while its caller budget
+	// remains live. Automatic startup must not read/write more state after expiry.
+	if ctx.Err() == nil {
+		if state, err := loadDaemonState(); err == nil {
+			return state, true, fmt.Errorf("daemon start timed out before health check succeeded; stale state pid=%d endpoint=%s", state.PID, state.Endpoint)
+		}
 	}
-	return model.DaemonState{}, false, errors.New("daemon start timed out before health check succeeded")
+	// Start succeeded: readiness timeout does not prove the service never started
+	// or physically joined. No subsequent probe/cache writes are scheduled.
+	return model.DaemonState{}, true, fmt.Errorf("daemon start timed out before health check succeeded: %w", readyCtx.Err())
 }
 
 func (s *Server) tryAcquireInflight() bool {
