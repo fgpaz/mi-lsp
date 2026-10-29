@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.6] - 2026-10-29
+
+### Corregido
+
+- Diagnósticos TS/JS en Windows: la raíz npm global usa stdout sin mezclar advertencias de stderr; el lector de tsserver tolera el LF adicional de CRLF y conserva errores de protocolo explícitos. Los detalles priorizan la causa sobre los argumentos sanitizados.
+- Doctor compara el prefijo de versión `v` de manera consistente; se aclaran errores de archivos ausentes o fuera del workspace. La aceptación de los diagnósticos Windows requiere humo normal-user independiente.
+
+## [0.16.5] - 2026-10-29
+
+### Añadido
+
+- Consultas de texto en worktrees enlazados sobre índice base con overlay de cambios físicos; el overlay semántico y de grafo continúa incompleto.
+- Se deduplican probes de daemon y trabajo de overview en worktrees.
+
 ## [0.16.4] - 2026-10-28
 
 ### Añadido
