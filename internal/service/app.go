@@ -1664,14 +1664,14 @@ func (a *App) symbols(ctx context.Context, request model.CommandRequest) (model.
 		return model.Envelope{}, err
 	}
 	offset := intFromAny(request.Payload["offset"], 0)
-	overlay, linkedOverlay, overlayErr := workspace.TryResolveWorktreeOverlay(registration.Root)
+	overlay, linkedOverlay, overlayErr := workspace.TryResolveWorktreeOverlayContext(ctx, registration.Root)
 	if overlayErr != nil {
 		return model.Envelope{}, overlayErr
 	}
 	indexRegistration := registration
 	baseIndexAvailable := false
 	if linkedOverlay {
-		baseRegistration, found, baseErr := workspace.RegisteredWorktreeBase(overlay)
+		baseRegistration, found, baseErr := workspace.RegisteredWorktreeBaseContext(ctx, overlay)
 		if baseErr != nil {
 			return model.Envelope{}, baseErr
 		}
@@ -1752,14 +1752,14 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 	}
 	pattern, _ := request.Payload["pattern"].(string)
 	patternSelector := shellQuoteArg(pattern)
-	overlay, linkedOverlay, overlayErr := workspace.TryResolveWorktreeOverlay(registration.Root)
+	overlay, linkedOverlay, overlayErr := workspace.TryResolveWorktreeOverlayContext(ctx, registration.Root)
 	if overlayErr != nil {
 		return model.Envelope{}, overlayErr
 	}
 	indexRegistration := registration
 	baseIndexAvailable := false
 	if linkedOverlay {
-		baseRegistration, found, baseErr := workspace.RegisteredWorktreeBase(overlay)
+		baseRegistration, found, baseErr := workspace.RegisteredWorktreeBaseContext(ctx, overlay)
 		if baseErr != nil {
 			return model.Envelope{}, baseErr
 		}
@@ -1902,14 +1902,14 @@ func (a *App) overview(ctx context.Context, request model.CommandRequest) (model
 			prefix = ""
 		}
 	}
-	overlay, linkedOverlay, overlayErr := workspace.TryResolveWorktreeOverlay(registration.Root)
+	overlay, linkedOverlay, overlayErr := workspace.TryResolveWorktreeOverlayContext(ctx, registration.Root)
 	if overlayErr != nil {
 		return model.Envelope{}, overlayErr
 	}
 	indexRegistration := registration
 	baseIndexAvailable := false
 	if linkedOverlay {
-		baseRegistration, found, baseErr := workspace.RegisteredWorktreeBase(overlay)
+		baseRegistration, found, baseErr := workspace.RegisteredWorktreeBaseContext(ctx, overlay)
 		if baseErr != nil {
 			return model.Envelope{}, baseErr
 		}

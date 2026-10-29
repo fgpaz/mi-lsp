@@ -1,18 +1,18 @@
 package workspace
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/BurntSushi/toml"
-
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 )
 
 // AutoRegisterEnvVar disables implicit workspace registration when set to a
@@ -166,79 +166,125 @@ func autoRegisterDefaultRootEligible(root string) bool {
 }
 
 func linkedWorktree(root string) (bool, string, bool) {
+	linked, commonDir, valid, _ := linkedWorktreeContext(context.Background(), root)
+	return linked, commonDir, valid
+}
+
+func linkedWorktreeContext(ctx context.Context, root string) (bool, string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, "", false, err
+	}
 	root = strings.TrimSpace(root)
 	if root == "" {
-		return false, "", false
+		return false, "", false, nil
 	}
 	root, err := filepath.Abs(root)
 	if err != nil {
-		return false, "", false
+		return false, "", false, nil
 	}
-	gitPath := func(args ...string) (string, bool) {
+	gitPath := func(args ...string) (string, bool, error) {
+		if err := ctx.Err(); err != nil {
+			return "", false, err
+		}
 		commandArgs := append([]string{"-C", root, "rev-parse"}, args...)
-		out, err := processutil.Command("git", commandArgs...).Output()
+		out, err := processutil.CommandContext(ctx, "git", commandArgs...).Output()
 		if err != nil {
-			return "", false
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return "", false, ctxErr
+			}
+			return "", false, nil
 		}
 		path := strings.TrimSpace(string(out))
 		if path == "" {
-			return "", false
+			return "", false, nil
 		}
 		if !filepath.IsAbs(path) {
 			path = filepath.Join(root, path)
 		}
 		path, err = filepath.Abs(path)
 		if err != nil {
-			return "", false
+			return "", false, nil
 		}
 		if evaluated, evalErr := filepath.EvalSymlinks(path); evalErr == nil {
 			path = evaluated
 		}
-		return filepath.Clean(path), true
+		return filepath.Clean(path), true, nil
 	}
-	gitDir, ok := gitPath("--absolute-git-dir")
+	gitDir, ok, err := gitPath("--absolute-git-dir")
+	if err != nil {
+		return false, "", false, err
+	}
 	if !ok {
-		return false, "", false
+		return false, "", false, nil
 	}
-	commonDir, ok := gitPath("--path-format=absolute", "--git-common-dir")
+	commonDir, ok, err := gitPath("--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return false, "", false, err
+	}
 	if !ok {
 		// --path-format was added after older supported Git versions; the
 		// legacy relative result is rooted at the worktree path above.
-		commonDir, ok = gitPath("--git-common-dir")
+		commonDir, ok, err = gitPath("--git-common-dir")
+		if err != nil {
+			return false, "", false, err
+		}
 	}
 	if !ok {
-		return false, "", false
+		return false, "", false, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return false, "", false, err
 	}
 	gitDir, gitDirOK := normalizeComparablePath(gitDir)
 	commonDir, commonDirOK := normalizeComparablePath(commonDir)
 	if !gitDirOK || !commonDirOK {
-		return false, "", false
+		return false, "", false, nil
 	}
-	return gitDir != commonDir, commonDir, true
+	return gitDir != commonDir, commonDir, true, nil
 }
 
 func registeredMainWorktree(commonDir string, registry model.RegistryFile) (model.WorkspaceRegistration, bool) {
+	registration, found, _ := registeredMainWorktreeContext(context.Background(), commonDir, registry)
+	return registration, found
+}
+
+func registeredMainWorktreeContext(ctx context.Context, commonDir string, registry model.RegistryFile) (model.WorkspaceRegistration, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return model.WorkspaceRegistration{}, false, err
+	}
 	lastWorkspace := registry.Defaults.LastWorkspace
 	var selected model.WorkspaceRegistration
 	selectedAlias := ""
 	for alias, registration := range registry.Workspaces {
-		linked, registeredCommon, ok := linkedWorktree(registration.Root)
+		linked, registeredCommon, ok, err := linkedWorktreeContext(ctx, registration.Root)
+		if err != nil {
+			return model.WorkspaceRegistration{}, false, err
+		}
+		if err := ctx.Err(); err != nil {
+			return model.WorkspaceRegistration{}, false, err
+		}
 		if !ok || linked || registeredCommon != commonDir {
 			continue
 		}
 		registration.Name = alias
 		if alias == lastWorkspace {
-			return registration, true
+			if err := ctx.Err(); err != nil {
+				return model.WorkspaceRegistration{}, false, err
+			}
+			return registration, true, nil
 		}
 		if selectedAlias == "" || alias < selectedAlias {
 			selected = registration
 			selectedAlias = alias
 		}
 	}
-	if selectedAlias != "" {
-		return selected, true
+	if err := ctx.Err(); err != nil {
+		return model.WorkspaceRegistration{}, false, err
 	}
-	return model.WorkspaceRegistration{}, false
+	if selectedAlias != "" {
+		return selected, true, nil
+	}
+	return model.WorkspaceRegistration{}, false, nil
 }
 
 func autoRegisterForbiddenRoot(root string) bool {
