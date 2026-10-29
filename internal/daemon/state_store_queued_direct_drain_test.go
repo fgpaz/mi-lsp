@@ -15,7 +15,7 @@ func TestQueuedDirectEventDrainsAfterAdmissionClosed(t *testing.T) {
 	s.stateMu.Unlock()
 
 	s.persistQueued(telemetryWriteRequest{
-		event: model.AccessEvent{Operation: "accepted-queued-direct"},
+		event:    model.AccessEvent{Operation: "accepted-queued-direct"},
 		isDirect: true,
 	})
 	var count int

@@ -112,7 +112,9 @@ func canonicalTelemetryDatabasePath(dbPath string) (string, error) {
 	}
 	info, err := os.Stat(parent)
 	if err != nil || !info.IsDir() {
-		if err == nil { err = errors.New("database parent is not a directory") }
+		if err == nil {
+			err = errors.New("database parent is not a directory")
+		}
 		return "", fmt.Errorf("validate telemetry database parent: %w", err)
 	}
 	return filepath.Join(parent, filepath.Base(absolute)), nil

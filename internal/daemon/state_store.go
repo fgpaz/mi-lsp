@@ -1200,11 +1200,15 @@ func (s *TelemetryStore) RecentAccesses(limit int) ([]model.AccessEvent, error) 
 			)
 			return queryErr
 		})
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		defer rows.Close()
 		for rows.Next() {
 			item, err := scanAccessEvent(rows)
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			if strings.TrimSpace(item.DecisionJSON) != "" {
 				hash := sha256.Sum256([]byte(item.DecisionJSON))
 				item.DecisionHash = hex.EncodeToString(hash[:])[:12]
@@ -1214,7 +1218,9 @@ func (s *TelemetryStore) RecentAccesses(limit int) ([]model.AccessEvent, error) 
 		}
 		return rows.Err()
 	})
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return items, nil
 }
 
@@ -1250,19 +1256,25 @@ func (s *TelemetryStore) ComputeMetrics(since time.Time) ([]metricsRow, error) {
 			)
 			return queryErr
 		})
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		defer rows.Close()
 		for rows.Next() {
 			var item metricsRow
 			var success, truncated int
-			if err := rows.Scan(&item.operation, &item.workspace, &item.clientName, &item.latencyMs, &success, &truncated); err != nil { return err }
+			if err := rows.Scan(&item.operation, &item.workspace, &item.clientName, &item.latencyMs, &success, &truncated); err != nil {
+				return err
+			}
 			item.success = success == 1
 			item.truncated = truncated == 1
 			items = append(items, item)
 		}
 		return rows.Err()
 	})
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return items, nil
 }
 

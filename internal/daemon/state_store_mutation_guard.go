@@ -40,7 +40,7 @@ func (s *TelemetryStore) withTelemetryWriteOwnershipContext(ctx context.Context,
 	})
 }
 
-type telemetryAdmissionError struct { cause error }
+type telemetryAdmissionError struct{ cause error }
 
 func (e telemetryAdmissionError) Error() string { return e.cause.Error() }
 func (e telemetryAdmissionError) Unwrap() error { return e.cause }

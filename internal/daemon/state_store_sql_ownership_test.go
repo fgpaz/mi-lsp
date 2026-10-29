@@ -49,7 +49,9 @@ func (controlledSQLDriver) Open(name string) (driver.Conn, error) {
 
 type controlledSQLConn struct{ control *controlledSQLRead }
 
-func (c controlledSQLConn) Prepare(string) (driver.Stmt, error) { return nil, errors.New("Prepare unsupported") }
+func (c controlledSQLConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("Prepare unsupported")
+}
 func (c controlledSQLConn) Close() error {
 	c.control.connOne.Do(func() { close(c.control.connClosed) })
 	return c.control.closeErr
@@ -125,10 +127,18 @@ func TestTelemetryPublicReaderOwnsRowsUntilCloseAndCloseWaits(t *testing.T) {
 	var releaseOnce sync.Once
 	defer func() {
 		releaseOnce.Do(func() { close(control.release) })
-		if readerLaunched { <-readerFinished }
-		if closeLaunched { <-closeFinished }
-		if err := s.Close(); err != nil { t.Errorf("cleanup Close: %v", err) }
-		if err := s.WaitClosed(context.Background()); err != nil { t.Errorf("cleanup WaitClosed: %v", err) }
+		if readerLaunched {
+			<-readerFinished
+		}
+		if closeLaunched {
+			<-closeFinished
+		}
+		if err := s.Close(); err != nil {
+			t.Errorf("cleanup Close: %v", err)
+		}
+		if err := s.WaitClosed(context.Background()); err != nil {
+			t.Errorf("cleanup WaitClosed: %v", err)
+		}
 		controlledSQLReads.Lock()
 		delete(controlledSQLReads.byDSN, s.dbPath)
 		controlledSQLReads.Unlock()

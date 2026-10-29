@@ -160,16 +160,22 @@ func QueryAccessEvents(store *TelemetryStore, query ExportQuery) ([]model.Access
 	items := make([]model.AccessEvent, 0, capHint)
 	err := store.withTelemetryReadOwnershipContext(store.ownedWriteContext(), func(ctx context.Context) error {
 		rows, err := store.db.QueryContext(ctx, sql, args...)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		defer rows.Close()
 		for rows.Next() {
 			item, err := scanAccessEvent(rows)
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			items = append(items, item)
 		}
 		return rows.Err()
 	})
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return items, nil
 }
 
@@ -184,16 +190,22 @@ func QueryAccessSummary(store *TelemetryStore, query ExportQuery) (ExportSummary
 	acc := newSummaryAccumulator()
 	err := store.withTelemetryReadOwnershipContext(store.ownedWriteContext(), func(ctx context.Context) error {
 		rows, err := store.db.QueryContext(ctx, sql, args...)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		defer rows.Close()
 		for rows.Next() {
 			item, err := scanAccessEvent(rows)
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			acc.add(item)
 		}
 		return rows.Err()
 	})
-	if err != nil { return ExportSummary{}, err }
+	if err != nil {
+		return ExportSummary{}, err
+	}
 	return acc.summary(), nil
 }
 
