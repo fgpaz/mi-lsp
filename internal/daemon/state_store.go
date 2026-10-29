@@ -18,6 +18,7 @@ import (
 	"modernc.org/sqlite"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/runtimeinfo"
 	"github.com/fgpaz/mi-lsp/internal/telemetry"
 )
 
@@ -142,6 +143,8 @@ type TelemetryStore struct {
 	done          chan struct{}
 	wg            sync.WaitGroup
 	admissionMu   sync.Mutex
+	ownershipOnce sync.Once
+	ownership     chan struct{}
 	stateMu       sync.RWMutex
 	closed        bool
 	health        WALHealth
@@ -149,39 +152,89 @@ type TelemetryStore struct {
 	ownerOnce     sync.Once
 	writeCtx      context.Context
 	cancelWrites  context.CancelFunc
-	closeOnce     sync.Once
+	closeMu       sync.Mutex
+	closeRunning  bool
+	closePhysical bool
+	closeAttempt  chan struct{}
+	doneOnce      sync.Once
 	drainOnce     sync.Once
 	drainTimer    *time.Timer
 	closeComplete chan struct{}
 	closeErr      error
 }
 
-func openTelemetryStore() (*TelemetryStore, error) {
+func openTelemetryStore() (opened *TelemetryStore, retErr error) {
 	path, err := daemonDatabasePath()
 	if err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", path)
+	canonicalPath, err := canonicalTelemetryDatabasePath(path)
+	if err != nil {
+		return nil, err
+	}
+	guardLease, err := runtimeinfo.AcquireFileLeaseContext(context.Background(), canonicalPath+".writer.guard")
+	if err != nil {
+		return nil, fmt.Errorf("acquire telemetry schema lease: %w", err)
+	}
+	guardReleased := false
+	defer func() {
+		if !guardReleased {
+			retErr = errors.Join(retErr, wrapTelemetryLeaseRelease(guardLease.Release()))
+		}
+	}()
+	existingDB, err := inspectTelemetryDatabaseAfterLease(path, canonicalPath)
+	if err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", canonicalPath)
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	store := &TelemetryStore{
-		dbPath:      path,
+		dbPath:      canonicalPath,
 		db:          db,
 		writeQueue:  make(chan telemetryWriteRequest, 256),
 		done:        make(chan struct{}),
 		walMaxBytes: telemetryWALMaxBytes,
 	}
+	failOpen := func(cause error) (*TelemetryStore, error) {
+		return nil, errors.Join(cause, db.Close())
+	}
+	if existingDB {
+		if err := store.admitTelemetryMutationWithLeaseHeldContext(context.Background()); err != nil {
+			return failOpen(fmt.Errorf("admit telemetry open/schema: %w", err))
+		}
+	}
 	if err := store.configureConnection(); err != nil {
-		_ = db.Close()
-		return nil, err
+		return failOpen(err)
 	}
 	if err := store.initSchema(); err != nil {
-		_ = db.Close()
-		return nil, err
+		return failOpen(err)
 	}
+	if err := guardLease.Release(); err != nil {
+		guardReleased = true // Release consumes/unlocks its handle even on error.
+		wrappedReleaseErr := wrapTelemetryLeaseRelease(err)
+		reowned, acquireErr := runtimeinfo.AcquireFileLeaseContext(context.Background(), canonicalPath+".writer.guard")
+		if acquireErr != nil {
+			// Return the live store with its error so the caller retains a handle
+			// and can retry physical cleanup; never close outside proven ownership.
+			return store, errors.Join(wrappedReleaseErr, fmt.Errorf("reacquire telemetry lease for failed-open cleanup: %w", acquireErr))
+		}
+		cleanupPath, pathErr := canonicalTelemetryDatabasePath(path)
+		if pathErr == nil && cleanupPath != canonicalPath {
+			pathErr = fmt.Errorf("telemetry database identity changed before failed-open cleanup: %q != %q", cleanupPath, canonicalPath)
+		}
+		if pathErr != nil {
+			releaseErr := reowned.Release()
+			return store, errors.Join(wrappedReleaseErr, pathErr, wrapTelemetryLeaseRelease(releaseErr))
+		}
+		closeErr := db.Close()
+		reacquireReleaseErr := reowned.Release()
+		return nil, errors.Join(wrappedReleaseErr, closeErr, wrapTelemetryLeaseRelease(reacquireReleaseErr))
+	}
+	guardReleased = true
 	// Start async write worker (PERF-06).
 	store.wg.Add(1)
 	go store.asyncWriteWorker()
@@ -365,27 +418,36 @@ func (s *TelemetryStore) asyncWriteWorker() {
 }
 
 func (s *TelemetryStore) persistQueued(req telemetryWriteRequest) {
-	s.admissionMu.Lock()
-	defer s.admissionMu.Unlock()
 	if err := s.ownedWriteContext().Err(); err != nil {
 		s.failWrite()
 		return
 	}
-	if err := s.admitWAL(); err != nil {
-		s.failWriteReason(walAdmissionReason(err))
-		return
-	}
 	if err := s.recordAccessDirectInternal(req.runID, req.event, req.isDirect); err != nil {
-		s.failWrite()
+		if isTelemetryAdmissionError(err) {
+			s.failWriteReason(walAdmissionReason(err))
+		} else {
+			s.failWrite()
+		}
 	}
 }
 
 // recordAccessDirectInternal handles the actual database write (called from async worker).
 func (s *TelemetryStore) recordAccessDirectInternal(runID int64, event model.AccessEvent, isDirect bool) error {
-	ctx := s.ownedWriteContext()
+	write := func(ctx context.Context) error {
+		return s.recordAccessDirectUnderLease(ctx, runID, event, isDirect)
+	}
+	if isDirect {
+		return s.withTelemetryMutationContext(s.ownedWriteContext(), write)
+	}
+	// Queue entries accepted before Close are internal admitted work and must
+	// drain; public writes are closed-admission checked inside the owner gate.
+	return s.withTelemetryMutationDrainContext(s.ownedWriteContext(), true, write)
+}
+
+func (s *TelemetryStore) recordAccessDirectUnderLease(ctx context.Context, runID int64, event model.AccessEvent, isDirect bool) error {
 	if event.Seq == 0 {
 		var err error
-		event.Seq, err = s.nextSeqContext(ctx, event.SessionID)
+		event.Seq, err = s.nextSeqWithOwnershipContext(ctx, event.SessionID)
 		if err != nil {
 			return err
 		}
@@ -459,6 +521,12 @@ func (s *TelemetryStore) Checkpoint() error {
 	}
 	ctx, cancel := context.WithTimeout(s.ownedWriteContext(), telemetryCheckpointTimeout)
 	defer cancel()
+	return s.withTelemetryOwnershipOnlyContext(ctx, func(ownedCtx context.Context) error {
+		return s.checkpointWithLeaseHeldContext(ownedCtx)
+	})
+}
+
+func (s *TelemetryStore) checkpointWithLeaseHeldContext(ctx context.Context) error {
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
@@ -528,13 +596,54 @@ func (s *TelemetryStore) setFailure(code string, busy bool) {
 }
 
 func (s *TelemetryStore) walSize() (int64, error) {
-	ctx, cancel := context.WithTimeout(s.ownedWriteContext(), 250*time.Millisecond)
+	ctx, cancel := context.WithTimeout(s.ownedWriteContext(), telemetryOwnershipBudget)
 	defer cancel()
-	var path string
-	if err := s.db.QueryRowContext(ctx, "PRAGMA database_list").Scan(new(int), new(string), &path); err != nil {
+	if s.dbPath != "" {
+		return s.walSizeWithContext(ctx)
+	}
+	var size int64
+	err := s.withTelemetryReadOwnershipContext(ctx, func(ownedCtx context.Context) error {
+		var measureErr error
+		size, measureErr = s.walSizeWithContext(ownedCtx)
+		return measureErr
+	})
+	return size, err
+}
+
+func (s *TelemetryStore) walSizeWithContext(ctx context.Context) (int64, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	info, err := os.Stat(path + "-wal")
+	path := s.dbPath
+	if path == "" {
+		// Compatibility for private legacy fixtures only. Production stores set
+		// their canonical path before first SQL, so measurement never opens SQLite.
+		var name string
+		if err := s.db.QueryRowContext(ctx, "PRAGMA database_list").Scan(new(int), &name, &path); err != nil {
+			return 0, err
+		}
+		if name != "main" || path == "" {
+			return 0, errors.New("telemetry database main path unavailable")
+		}
+	}
+	canonicalPath, err := canonicalTelemetryDatabasePath(path)
+	if err != nil {
+		return 0, err
+	}
+	dbInfo, err := os.Stat(canonicalPath)
+	if err != nil {
+		return 0, fmt.Errorf("stat telemetry database for WAL measurement: %w", err)
+	}
+	if !dbInfo.Mode().IsRegular() {
+		return 0, errors.New("telemetry database is not a regular file for WAL measurement")
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	info, err := os.Stat(canonicalPath + "-wal")
 	if errors.Is(err, os.ErrNotExist) {
 		return 0, nil
 	}
@@ -545,29 +654,15 @@ func (s *TelemetryStore) walSize() (int64, error) {
 }
 
 func (s *TelemetryStore) admitWAL() error {
-	maxBytes := s.walMaxBytes
-	if maxBytes <= 0 {
-		maxBytes = telemetryWALMaxBytes
+	admissionEntered := false
+	err := s.withTelemetryOwnershipOnlyContext(s.ownedWriteContext(), func(ctx context.Context) error {
+		admissionEntered = true
+		return s.admitTelemetryMutationWithLeaseHeldContext(ctx)
+	})
+	if err != nil && !admissionEntered {
+		s.reject(walAdmissionReason(err))
 	}
-	size, err := s.walSize()
-	if err != nil {
-		return err
-	}
-	// Reserve bounded headroom for admitted-but-not-yet-written queue entries.
-	reserved := int64(len(s.writeQueue)+1) * 64 * 1024
-	if size+reserved >= maxBytes {
-		if err := s.Checkpoint(); err != nil {
-			return err
-		}
-		size, err = s.walSize()
-		if err != nil {
-			return err
-		}
-		if size+reserved >= maxBytes {
-			return errTelemetryWALLimit
-		}
-	}
-	return nil
+	return err
 }
 
 func (s *TelemetryStore) WALHealth() WALHealth {
@@ -626,46 +721,100 @@ func (s *TelemetryStore) startDrainDeadline() {
 	})
 }
 
-// Close bounds the caller, not the physical driver or database lifetime.
+// Close bounds the caller, not physical ownership. A failed gate acquisition
+// leaves closeComplete open and can be retried by a later Close call.
 func (s *TelemetryStore) Close() error {
 	if s == nil || s.db == nil {
 		return nil
 	}
 	s.startDrainDeadline()
-	s.closeOnce.Do(func() {
-		s.stateMu.Lock()
-		s.closed = true
-		s.stateMu.Unlock()
-		go func() {
-			// Barrier: no admitted direct operation or late enqueue survives this point.
-			s.admissionMu.Lock()
-			if s.done != nil {
-				close(s.done)
-			}
-			s.admissionMu.Unlock()
-			if s.done != nil {
-				s.wg.Wait()
-			}
-			s.closeErr = s.db.Close()
-			s.drainTimer.Stop()
-			s.cancelWrites()
-			close(s.closeComplete)
-		}()
-	})
+	s.stateMu.Lock()
+	s.closed = true
+	s.stateMu.Unlock()
+	attempt := s.startTelemetryCloseAttempt()
 	ctx, cancel := context.WithTimeout(context.Background(), telemetryCloseDrainTimeout)
 	defer cancel()
-	return s.WaitClosed(ctx)
+	select {
+	case <-s.closeComplete:
+		return s.closeResult()
+	case <-attempt:
+		if s.isTelemetryClosePhysical() {
+			return s.closeResult()
+		}
+		return fmt.Errorf("telemetry close incomplete: %w", s.closeResult())
+	case <-ctx.Done():
+		return fmt.Errorf("telemetry close incomplete: %w", ctx.Err())
+	}
 }
 
-// WaitClosed joins the owner, including the actual driver call and DB.Close.
+func (s *TelemetryStore) startTelemetryCloseAttempt() <-chan struct{} {
+	s.closeMu.Lock()
+	defer s.closeMu.Unlock()
+	if s.closePhysical {
+		return s.closeComplete
+	}
+	if s.closeRunning {
+		return s.closeAttempt
+	}
+	attempt := make(chan struct{})
+	s.closeAttempt = attempt
+	s.closeRunning = true
+	go func() {
+		// Stop new enqueues, then join the worker and all writes it admitted.
+		s.admissionMu.Lock()
+		if s.done != nil {
+			s.doneOnce.Do(func() { close(s.done) })
+		}
+		s.admissionMu.Unlock()
+		if s.done != nil {
+			s.wg.Wait()
+		}
+		if s.drainTimer != nil {
+			s.drainTimer.Stop()
+		}
+		s.cancelWrites()
+		physicalCloseReturned := false
+		err := s.withTelemetryCloseOwnership(func() error {
+			physicalCloseReturned = true
+			return s.db.Close()
+		})
+		s.closeMu.Lock()
+		s.closeErr = err
+		s.closePhysical = physicalCloseReturned
+		s.closeRunning = false
+		if physicalCloseReturned {
+			close(s.closeComplete)
+		}
+		close(attempt)
+		s.closeMu.Unlock()
+	}()
+	return attempt
+}
+
+func (s *TelemetryStore) closeResult() error {
+	s.closeMu.Lock()
+	defer s.closeMu.Unlock()
+	return s.closeErr
+}
+
+func (s *TelemetryStore) isTelemetryClosePhysical() bool {
+	s.closeMu.Lock()
+	defer s.closeMu.Unlock()
+	return s.closePhysical
+}
+
+// WaitClosed joins the physical owner only after DB.Close has actually returned.
 func (s *TelemetryStore) WaitClosed(ctx context.Context) error {
 	if s == nil || s.db == nil {
 		return nil
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	s.ownedWriteContext()
 	select {
 	case <-s.closeComplete:
-		return s.closeErr
+		return s.closeResult()
 	case <-ctx.Done():
 		return fmt.Errorf("telemetry close incomplete: %w", ctx.Err())
 	}
@@ -781,7 +930,9 @@ func (s *TelemetryStore) initSchema() error {
 		`ALTER TABLE access_events ADD COLUMN harness TEXT`,
 		`ALTER TABLE access_events ADD COLUMN q_stages INTEGER`,
 	} {
-		_, _ = s.db.Exec(migration)
+		if _, err := s.db.Exec(migration); err != nil && !isTelemetryDuplicateColumnError(err) {
+			return fmt.Errorf("telemetry schema migration %q: %w", migration, err)
+		}
 	}
 	for _, index := range []string{
 		`CREATE INDEX IF NOT EXISTS idx_access_events_occurred_at ON access_events(occurred_at DESC)`,
@@ -798,6 +949,13 @@ func (s *TelemetryStore) initSchema() error {
 		}
 	}
 	return nil
+}
+
+func isTelemetryDuplicateColumnError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "duplicate column name")
 }
 
 func (s *TelemetryStore) StartRun(state model.DaemonState) (int64, error) {
@@ -882,6 +1040,17 @@ func (s *TelemetryStore) NextSeq(sessionID string) int {
 }
 
 func (s *TelemetryStore) nextSeqContext(ctx context.Context, sessionID string) (int, error) {
+	var seq int
+	err := s.withTelemetryReadOwnershipContext(ctx, func(ownedCtx context.Context) error {
+		var queryErr error
+		seq, queryErr = s.nextSeqWithOwnershipContext(ownedCtx, sessionID)
+		return queryErr
+	})
+	return seq, err
+}
+
+// nextSeqWithOwnershipContext is the YA-HELD form for the event writer.
+func (s *TelemetryStore) nextSeqWithOwnershipContext(ctx context.Context, sessionID string) (int, error) {
 	if sessionID == "" {
 		return 0, ctx.Err()
 	}
@@ -900,8 +1069,6 @@ func (s *TelemetryStore) RecordAccessDirect(event model.AccessEvent) error {
 	if s == nil {
 		return errors.New("telemetry store unavailable")
 	}
-	s.admissionMu.Lock()
-	defer s.admissionMu.Unlock()
 	s.stateMu.RLock()
 	closed := s.closed
 	s.stateMu.RUnlock()
@@ -913,12 +1080,10 @@ func (s *TelemetryStore) RecordAccessDirect(event model.AccessEvent) error {
 		s.reject("event_too_large")
 		return err
 	}
-	if err := s.admitWAL(); err != nil {
-		s.reject(walAdmissionReason(err))
-		return err
-	}
 	if err := s.recordAccessDirectInternal(0, event, true); err != nil {
-		s.failWrite()
+		if !isTelemetryAdmissionError(err) {
+			s.failWrite()
+		}
 		return err
 	}
 	return nil
@@ -928,8 +1093,6 @@ func (s *TelemetryStore) RecordAccess(runID int64, event model.AccessEvent) erro
 	if s == nil {
 		return errors.New("telemetry store unavailable")
 	}
-	s.admissionMu.Lock()
-	defer s.admissionMu.Unlock()
 	s.stateMu.RLock()
 	closed := s.closed
 	s.stateMu.RUnlock()
@@ -941,8 +1104,22 @@ func (s *TelemetryStore) RecordAccess(runID int64, event model.AccessEvent) erro
 		s.reject("event_too_large")
 		return err
 	}
+	// Enqueue preflight is advisory; persistQueued rechecks under the same
+	// ownership/OS lease immediately before its real SQL write.
 	if err := s.admitWAL(); err != nil {
-		s.reject(walAdmissionReason(err))
+		return err
+	}
+	s.admissionMu.Lock()
+	defer s.admissionMu.Unlock()
+	s.stateMu.RLock()
+	closed = s.closed
+	s.stateMu.RUnlock()
+	if closed {
+		s.reject("closed")
+		return errors.New("telemetry store closed")
+	}
+	if err := checkTelemetryEventSize(event); err != nil {
+		s.reject("event_too_large")
 		return err
 	}
 	select {
@@ -1011,37 +1188,33 @@ func (s *TelemetryStore) RecentAccesses(limit int) ([]model.AccessEvent, error) 
 	if limit <= 0 {
 		limit = 50
 	}
-	var rows *sql.Rows
-	ctx := s.ownedWriteContext()
-	err := retryTelemetrySQLiteContext(ctx, func() error {
-		var queryErr error
-		rows, queryErr = s.db.QueryContext(ctx,
-			`SELECT id, occurred_at, COALESCE(client_name, ''), COALESCE(session_id, ''), COALESCE(seq, 0), COALESCE(workspace, ''), COALESCE(workspace_input, ''), COALESCE(workspace_root, ''), COALESCE(workspace_alias, ''), COALESCE(repo, ''), operation, COALESCE(backend, ''), COALESCE(route, ''), COALESCE(format, ''), COALESCE(token_budget, 0), COALESCE(max_items, 0), COALESCE(max_chars, 0), COALESCE(compress, 0), success, latency_ms, COALESCE(warnings_json, '[]'), COALESCE(runtime_key, ''), COALESCE(entrypoint_id, ''), COALESCE(error_text, ''), COALESCE(error_kind, ''), COALESCE(error_code, ''), COALESCE(truncated, 0), COALESCE(result_count, 0), COALESCE(warning_count, 0), COALESCE(pattern_mode, ''), COALESCE(routing_outcome, ''), COALESCE(failure_stage, ''), COALESCE(hint_code, ''), COALESCE(truncation_reason, ''), COALESCE(decision_json, ''), COALESCE(bytes_out, 0), COALESCE(harness, ''), COALESCE(q_stages, 0) FROM access_events ORDER BY occurred_at DESC, id DESC LIMIT ?`,
-			limit,
-		)
-		return queryErr
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
 	items := make([]model.AccessEvent, 0, limit)
-	for rows.Next() {
-		item, err := scanAccessEvent(rows)
-		if err != nil {
-			return nil, err
+	err := s.withTelemetryReadOwnershipContext(s.ownedWriteContext(), func(ctx context.Context) error {
+		var rows *sql.Rows
+		err := retryTelemetrySQLiteContext(ctx, func() error {
+			var queryErr error
+			rows, queryErr = s.db.QueryContext(ctx,
+				`SELECT id, occurred_at, COALESCE(client_name, ''), COALESCE(session_id, ''), COALESCE(seq, 0), COALESCE(workspace, ''), COALESCE(workspace_input, ''), COALESCE(workspace_root, ''), COALESCE(workspace_alias, ''), COALESCE(repo, ''), operation, COALESCE(backend, ''), COALESCE(route, ''), COALESCE(format, ''), COALESCE(token_budget, 0), COALESCE(max_items, 0), COALESCE(max_chars, 0), COALESCE(compress, 0), success, latency_ms, COALESCE(warnings_json, '[]'), COALESCE(runtime_key, ''), COALESCE(entrypoint_id, ''), COALESCE(error_text, ''), COALESCE(error_kind, ''), COALESCE(error_code, ''), COALESCE(truncated, 0), COALESCE(result_count, 0), COALESCE(warning_count, 0), COALESCE(pattern_mode, ''), COALESCE(routing_outcome, ''), COALESCE(failure_stage, ''), COALESCE(hint_code, ''), COALESCE(truncation_reason, ''), COALESCE(decision_json, ''), COALESCE(bytes_out, 0), COALESCE(harness, ''), COALESCE(q_stages, 0) FROM access_events ORDER BY occurred_at DESC, id DESC LIMIT ?`,
+				limit,
+			)
+			return queryErr
+		})
+		if err != nil { return err }
+		defer rows.Close()
+		for rows.Next() {
+			item, err := scanAccessEvent(rows)
+			if err != nil { return err }
+			if strings.TrimSpace(item.DecisionJSON) != "" {
+				hash := sha256.Sum256([]byte(item.DecisionJSON))
+				item.DecisionHash = hex.EncodeToString(hash[:])[:12]
+			}
+			item.DecisionJSON = ""
+			items = append(items, item)
 		}
-		// TOK-02: Compute DecisionHash from decision_json (sha256 hex[:12]).
-		if strings.TrimSpace(item.DecisionJSON) != "" {
-			hash := sha256.Sum256([]byte(item.DecisionJSON))
-			item.DecisionHash = hex.EncodeToString(hash[:])[:12]
-		}
-		// TOK-02: Clear decision_json from response (only send hash).
-		item.DecisionJSON = ""
-		items = append(items, item)
-	}
-	return items, rows.Err()
+		return rows.Err()
+	})
+	if err != nil { return nil, err }
+	return items, nil
 }
 
 func boolToInt(value bool) int {
@@ -1061,36 +1234,35 @@ type metricsRow struct {
 }
 
 func (s *TelemetryStore) ComputeMetrics(since time.Time) ([]metricsRow, error) {
-	var rows *sql.Rows
-	ctx := s.ownedWriteContext()
-	err := retryTelemetrySQLiteContext(ctx, func() error {
-		var queryErr error
-		rows, queryErr = s.db.QueryContext(ctx,
-			`SELECT operation, COALESCE(NULLIF(workspace_root, ''), NULLIF(workspace, ''), ''), COALESCE(client_name, ''), latency_ms, success, COALESCE(truncated, 0)
-			 FROM access_events
-			 WHERE occurred_at > ?
-			   AND operation NOT LIKE 'system.%'
-			 ORDER BY operation, latency_ms`,
-			since.Unix(),
-		)
-		return queryErr
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
 	var items []metricsRow
-	for rows.Next() {
-		var item metricsRow
-		var success, truncated int
-		if err := rows.Scan(&item.operation, &item.workspace, &item.clientName, &item.latencyMs, &success, &truncated); err != nil {
-			return nil, err
+	err := s.withTelemetryReadOwnershipContext(s.ownedWriteContext(), func(ctx context.Context) error {
+		var rows *sql.Rows
+		err := retryTelemetrySQLiteContext(ctx, func() error {
+			var queryErr error
+			rows, queryErr = s.db.QueryContext(ctx,
+				`SELECT operation, COALESCE(NULLIF(workspace_root, ''), NULLIF(workspace, ''), ''), COALESCE(client_name, ''), latency_ms, success, COALESCE(truncated, 0)
+				 FROM access_events
+				 WHERE occurred_at > ?
+				   AND operation NOT LIKE 'system.%'
+				 ORDER BY operation, latency_ms`,
+				since.Unix(),
+			)
+			return queryErr
+		})
+		if err != nil { return err }
+		defer rows.Close()
+		for rows.Next() {
+			var item metricsRow
+			var success, truncated int
+			if err := rows.Scan(&item.operation, &item.workspace, &item.clientName, &item.latencyMs, &success, &truncated); err != nil { return err }
+			item.success = success == 1
+			item.truncated = truncated == 1
+			items = append(items, item)
 		}
-		item.success = success == 1
-		item.truncated = truncated == 1
-		items = append(items, item)
-	}
-	return items, rows.Err()
+		return rows.Err()
+	})
+	if err != nil { return nil, err }
+	return items, nil
 }
 
 func scanAccessEvent(rows *sql.Rows) (model.AccessEvent, error) {
