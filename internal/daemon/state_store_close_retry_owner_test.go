@@ -42,18 +42,42 @@ func TestCloseRetryOwnerBlockedDriver(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "db")
 	connector := &retryBlockedConnector{path: path, entered: make(chan struct{}), release: make(chan struct{})}
 	db := sql.OpenDB(connector)
-	if err := db.Ping(); err != nil { t.Fatal(err) }
 	s := &TelemetryStore{db: db, dbPath: path}
-	owner := make(chan error, 1)
-	closeCall := make(chan error, 1)
-	go func() { closeCall <- s.Close() }()
-	go func() { owner <- s.WaitClosed(context.Background()) }()
+	closeDone := make(chan struct{})
+	ownerDone := make(chan struct{})
+	var closeErr, ownerErr error
+	closeLaunched, ownerLaunched := false, false
+	ownerCtx, ownerCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(func() {
 		close(connector.release)
-		<-closeCall
-		<-owner
+		if closeLaunched {
+			<-closeDone
+		} else {
+			_ = s.Close()
+		}
+		if ownerLaunched {
+			<-ownerDone
+			if ownerErr != nil { t.Errorf("join blocked owner: %v", ownerErr) }
+		}
+		ownerCancel()
+		joinCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.WaitClosed(joinCtx); err != nil { t.Errorf("join physical close: %v", err) }
 	})
-	<-connector.entered
+	if err := db.Ping(); err != nil { t.Fatal(err) }
+	closeLaunched = true
+	go func() { defer close(closeDone); closeErr = s.Close() }()
+	ownerLaunched = true
+	go func() { defer close(ownerDone); ownerErr = s.WaitClosed(ownerCtx) }()
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-connector.entered:
+	case <-closeDone:
+		t.Fatalf("close returned before driver entered: %v", closeErr)
+	case <-timer.C:
+		t.Fatal("driver close did not enter")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := s.WaitClosed(ctx); !errors.Is(err, context.Canceled) { t.Fatalf("blocked close: %v", err) }
@@ -65,18 +89,26 @@ func TestCloseRetryOwnerRecoversGuardPath(t *testing.T) {
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "db"))
 	if err != nil { t.Fatal(err) }
 	s := &TelemetryStore{db: db, dbPath: filepath.Join(parent, "db")}
+	ownerDone := make(chan struct{})
+	var ownerErr error
+	closeRequested, ownerLaunched := false, false
 	t.Cleanup(func() {
-		_ = os.MkdirAll(parent, 0700)
-		_ = s.Close()
-		_ = s.WaitClosed(context.Background())
+		if err := os.MkdirAll(parent, 0700); err != nil { t.Errorf("restore guard path: %v", err) }
+		if !closeRequested { _ = s.Close() }
+		if ownerLaunched { <-ownerDone }
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.WaitClosed(ctx); err != nil { t.Errorf("join physical close: %v", err) }
 	})
+	closeRequested = true
 	if err := s.Close(); err == nil { t.Fatal("expected guard path failure") }
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	owner := make(chan error, 1)
-	go func() { owner <- s.WaitClosed(ctx) }()
+	ownerLaunched = true
+	go func() { defer close(ownerDone); ownerErr = s.WaitClosed(ctx) }()
 	if err := os.MkdirAll(parent, 0700); err != nil { t.Fatal(err) }
-	if err := <-owner; err != nil { t.Fatalf("owner did not recover: %v", err) }
+	<-ownerDone
+	if ownerErr != nil { t.Fatalf("owner did not recover: %v", ownerErr) }
 }
 
 func TestCloseRetryOwnerCancellationAndNoImplicitClose(t *testing.T) {
