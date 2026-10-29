@@ -10,9 +10,21 @@ El lock breve de bootstrap no basta para constructores concurrentes con endpoint
 
 La mitigación evita nuevos arranques cooperantes; no drena ni mata duplicados legacy. Todos los lanzadores deben consumir el binario actualizado y el supervisor realiza la recarga autorizada. No promete corregir con esto el bucle de CPU, idle de servidor ni WAL; cada uno exige evidencia separada. No cambia ACL, UAC, credenciales ni perfil global.
 
-## Candidato integrado `327e1620bee14512884c773bbfae7f3c73405dbc` — aceptación OPEN
+## Contrato de la fuente actual — UNTESTED, aceptación OPEN
 
-Esta sección describe la fuente candidata, no una release ni aceptación. `v0.16.2`, fuente `652`, es una mitigación inmutable, no una cura de CPU; no se afirma que estas capacidades estén publicadas o en main.
+La reserva física OS de vida de instancia es distinta del lease de escritura de la DB canónica: protege constructores cooperantes del mismo almacenamiento aun con endpoints diferentes. La consulta JSON de lease es conservadora y de solo lectura; no adquiere el guard de DB, no hace IPC, autospawn ni actualización y no inventa liveness del kernel ni autoridad sobre PID.
+
+Los escritores cooperantes admiten en orden lease de escritura, medición, checkpoint si corresponde, remedición y rechazo ante tamaño desconocido o umbral excedido. Una operación finita ya admitida puede exceder el umbral; no hay cota numérica física de WAL, DB principal, temporales ni escritores no cooperantes. En mantenimiento combinado el rechazo de adquisición previo a la entrada cuenta una sola vez y la entrada cerrada rechaza antes de mutar; las fases que ya poseen admisión no duplican el conteo y liberar SQL no es admisión. EVENTS purga antes de VACUUM, que corre por separado; `maxBytes` afecta solo retención legacy agresiva.
+
+`Close` acota la espera pública, no impone deadline al cierre físico. Después de solicitar Close, `WaitClosed` une y reintenta errores del guard previos al callback cada 100 ms, cancelable y conservando la última causa; hay como máximo un cierre físico. No se liberan DB, leases ni fences antes del retorno del driver y se conserva su error real.
+
+Health negativo utilizado, malformado, rechazo wire o envelope `ok=false` produce `ErrNegativeHealth`: no se cachea como sano ni se repite la operación o usa fallback después de haber usado el daemon. El negativo legacy sin warning no se registra como éxito. Se conservan cadena de contexto, TTL de health exitoso de 70 s, dial fresco y diagnóstico del llamador. La inyección privada conserva resolver y dial reales por defecto; sus fixtures Unix privadas no prueban discovery ni servicio nativo.
+
+La evidencia Go71 informada por el padre es terminal: 95 root PASS, 26 nested PASS, 5 paquetes y 504 JSON; no acredita fuente nativa, full ni aceptación global. BG70 fue dirigido sobre fuente `9d4`: 91 root y 19 nested PASS, 5 paquetes y 460 JSON; no es full. El kernel 036 acredita solo tres primitivas nativas, no el daemon servicio/Job ni CPU o techo WAL. Los 53 archivos de tests existentes y los oráculos root53/WAL5 permanecen protegidos. Owner: padre integra y verifica; Windows servicio/Job, B22 consumidor (30 asserts), S4U/supervisor, CPU global, full actual y release final siguen OPEN, con prueba nativa, asserts intactos, medición y readback propios. H9 desconectado y W sin metadata, protocolo ni autenticación confirmados no acreditan identidad ni entrega.
+
+## Registro histórico del candidato `327e1620bee14512884c773bbfae7f3c73405dbc` — no prueba de la fuente actual
+
+Esta sección histórica describe esa fuente candidata, no la fuente actual, una release ni aceptación. `v0.16.2`, fuente `652`, es una mitigación inmutable, no una cura de CPU; no se afirma que estas capacidades estén publicadas o en main.
 
 El candidato implementa `mi-lsp daemon lease --format json`; no está publicada y v0.16.2 no contiene este comando. Produce un envelope `backend: daemon-lease` con un item plano: `schema: mi-lsp-daemon-lease/v1`, `state`, `owner_pid`, `instance_id`, `liveness`, `endpoint`. En la CLI los campos están presentes aun con valores cero/vacíos; el struct interno omite opcionales vacíos. `instance_id` es SHA-256 del nonce, identidad opaca cooperativa, no credencial, autenticación ni autoridad de stop; PID y nonce tampoco son un lock OS de vida completa ni prueba fuerte frente a PID reutilizado.
 
