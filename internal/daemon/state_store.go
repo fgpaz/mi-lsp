@@ -137,32 +137,32 @@ type WALHealth struct {
 }
 
 type TelemetryStore struct {
-	dbPath        string
-	db            *sql.DB
-	writeQueue    chan telemetryWriteRequest
-	done          chan struct{}
-	wg            sync.WaitGroup
-	admissionMu   sync.Mutex
-	ownershipOnce sync.Once
-	ownership     chan struct{}
-	stateMu       sync.RWMutex
-	closed        bool
-	health        WALHealth
-	walMaxBytes   int64
-	ownerOnce     sync.Once
-	writeCtx      context.Context
-	cancelWrites  context.CancelFunc
-	closeMu       sync.Mutex
-	closeRunning  bool
-	closePhysical bool
-	closeAttempt  chan struct{}
-	doneOnce      sync.Once
-	drainOnce     sync.Once
-	drainTimer    *time.Timer
-	closeComplete chan struct{}
-	closeRequested chan struct{}
+	dbPath           string
+	db               *sql.DB
+	writeQueue       chan telemetryWriteRequest
+	done             chan struct{}
+	wg               sync.WaitGroup
+	admissionMu      sync.Mutex
+	ownershipOnce    sync.Once
+	ownership        chan struct{}
+	stateMu          sync.RWMutex
+	closed           bool
+	health           WALHealth
+	walMaxBytes      int64
+	ownerOnce        sync.Once
+	writeCtx         context.Context
+	cancelWrites     context.CancelFunc
+	closeMu          sync.Mutex
+	closeRunning     bool
+	closePhysical    bool
+	closeAttempt     chan struct{}
+	doneOnce         sync.Once
+	drainOnce        sync.Once
+	drainTimer       *time.Timer
+	closeComplete    chan struct{}
+	closeRequested   chan struct{}
 	closeRequestOnce sync.Once
-	closeErr      error
+	closeErr         error
 }
 
 func openTelemetryStore() (opened *TelemetryStore, retErr error) {
