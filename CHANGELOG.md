@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.7] - 2026-10-29
+
+### Añadido
+
+- Overlay GraphQuery de linked worktrees para topologías íntegramente Go: snapshots completos en SQLite en memoria, aislamiento por raíz y contenido, cursores ligados al snapshot y caché LRU con construcción concurrente cancelable. C#, Kotlin y topologías mixtas se rechazan explícitamente; su overlay multilenguaje queda para otra versión.
+- Contratos documentales Harness aditivos y cobertura del árbol AE en el read-model generado, conservando WIKI-CONTRACT y las disposiciones de aceptación existentes.
+
+### Corregido
+
+- La inspección de gobernanza WIKI conserva la configuración AE y publica el resultado del inspector canónico, incluidos los estados bloqueantes.
+- Los comandos CLI comparten durante 70 segundos la identidad positiva del propietario de actualización, con invalidación por estado, dial fresco y espera cancelable bajo contención, para evitar un probe completo por invocación. No se alteran los diagnósticos incompletos ni se declaran limpios sin barrera de completitud.
+
 ## [0.16.6] - 2026-10-29
 
 ### Corregido

@@ -9,6 +9,21 @@ links:
   - data-model
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: DB-SYMBOL-EDGE-GRAPH
+kind: data-model-contract
+audience: dual
+imports: [.docs/wiki/07_technical/db/DB-PHYSICAL-MODEL.md, .docs/wiki/07_technical/TECH-GRAPH-NATIVE.md, .docs/wiki/07_technical/contracts/CT-GRAPH-CLI.md]
+exports: [DB-SYMBOL-EDGE-GRAPH]
+agent_must_read: [.docs/wiki/07_technical/db/DB-SYMBOL-EDGE-GRAPH.md, internal/store/schema.go, internal/store/graph.go]
+agent_may_edit: [.docs/wiki/07_technical/db/DB-SYMBOL-EDGE-GRAPH.md]
+agent_must_not_edit: [internal/store/, .mi-lsp/index.db, .docs/wiki/_mi-lsp/read-model.toml]
+verify: ["Leer .docs/wiki/07_technical/db/DB-SYMBOL-EDGE-GRAPH.md y .docs/wiki/07_technical/db/DB-PHYSICAL-MODEL.md; cotejar las afirmaciones con la fuente publicada internal/store/schema.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Una query escriba/migre, extensión MILX obtenga write, se copie el grafo entero a RAM o se trate symbol_edges legacy como autoridad.]
+evidence: [.docs/wiki/07_technical/db/DB-SYMBOL-EDGE-GRAPH.md, .docs/wiki/07_technical/db/DB-PHYSICAL-MODEL.md, internal/store/schema.go]
+```
+
 ## Almacén
 
 Este documento reemplaza la propuesta monolítica `symbol_edges` por el schema graph-native v1 de `index.db`. `07_technical/db/DB-PHYSICAL-MODEL.md` conserva ownership y safety stance; aquí vive el mecanismo físico. El slice P0-P2 del schema v1 ya se persiste y publica en el binario vigente; `accepted-design` conserva el contrato aceptado para las extensiones que quedan fuera de ese slice.

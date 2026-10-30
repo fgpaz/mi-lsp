@@ -39,3 +39,35 @@ Home e instalación accesibles sin admin. Un pin explícito u opt-out impide apl
 ## Restricciones ADR
 
 Un único dueño runtime, sin privilegios adicionales. MCP stdio adopta la versión nueva en la sesión siguiente; un daemon compartido ajeno no se detiene. Detalle y límites: [[TECH-RUNTIME-UPDATE]], [[RF-UPD-001]], [[TP-UPD-001]].
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: FL-UPD-001
+kind: flow
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/07_technical/TECH-RUNTIME-UPDATE.md
+  - .docs/wiki/05_requirements/RF-UPD-001.md
+  - .docs/wiki/06_tests/TP-UPD-001.md
+exports:
+  - FL-UPD-001
+agent_must_read:
+  - .docs/wiki/04_flows/FL-UPD-001.md
+agent_may_edit:
+  - .docs/wiki/04_flows/FL-UPD-001.md
+agent_must_not_edit:
+  - .docs/wiki/07_technical/TECH-RUNTIME-UPDATE.md
+  - .docs/wiki/05_requirements/RF-UPD-001.md
+  - .docs/wiki/06_tests/TP-UPD-001.md
+verify:
+  - .docs/wiki/06_tests/TP-UPD-001.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - unrelated_shared_runtime_would_be_stopped
+  - flow_scope_or_acceptance_would_change
+evidence:
+  - .docs/wiki/04_flows/FL-UPD-001.md
+  - .docs/wiki/06_tests/TP-UPD-001.md
+  - .docs/wiki/05_requirements/RF-UPD-001.md
+```

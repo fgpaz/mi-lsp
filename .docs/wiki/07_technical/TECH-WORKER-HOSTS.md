@@ -1,4 +1,42 @@
+---
+wiki_contract: WIKI-CONTRACT-v1
+id: TECH-WORKER-HOSTS
+kind: technical
+status: draft
+title: Hosts de workers semánticos
+links:
+  supports: [RF-CS-001]
+  code:
+    - path: internal/worker/bootstrap.go
+      role: behavior
+    - path: internal/worker/tsserver.go
+      role: behavior
+---
+
+## Resumen
+
+Instalación y selección explícitas de workers Roslyn y localización de tsserver, sin instalación implícita.
+
+## Mapa de componentes
+
+`internal/worker/bootstrap.go` selecciona e instala; `internal/worker/tsserver.go` busca el servidor TypeScript.
+
 # Hosts de workers semánticos
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-WORKER-HOSTS
+kind: technical-operations
+audience: dual
+imports: [.docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md, .docs/wiki/07_technical/TECH-DEPENDENCY-HARDENING.md]
+exports: [TECH-WORKER-HOSTS]
+agent_must_read: [.docs/wiki/07_technical/TECH-WORKER-HOSTS.md, internal/worker/bootstrap.go, internal/worker/tsserver.go]
+agent_may_edit: [.docs/wiki/07_technical/TECH-WORKER-HOSTS.md]
+agent_must_not_edit: [internal/worker/, global-settings/, PATH]
+verify: ["Leer .docs/wiki/07_technical/TECH-WORKER-HOSTS.md y .docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md; cotejar las afirmaciones con la fuente publicada internal/worker/bootstrap.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [La propuesta descargue/instale implícitamente dependencias o declare actualización de daemon/workers por inspeccionar status.]
+evidence: [.docs/wiki/07_technical/TECH-WORKER-HOSTS.md, .docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md, internal/worker/bootstrap.go]
+```
 
 `mi-lsp worker install --mode auto` prefiere una DLL Roslyn framework-dependent compatible, ejecutada por `dotnet`; conserva el fallback self-contained. `--mode framework-dependent` exige bundle FDD y runtime compatibles, o fuentes con SDK y runtime; falla en lugar de degradar. `--mode self-contained` selecciona la distribución existente o la publica desde fuentes. `--rid` modifica el RID destino. La publicación FDD usa `--self-contained false -p:UseAppHost=false`.
 

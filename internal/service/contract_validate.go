@@ -102,7 +102,7 @@ func (a *App) validateWikiContract(ctx context.Context, request model.CommandReq
 		return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
 	}
 
-	result := compileWikiContractValidationWithIndexRecords(registration.Root, records, corpusRecords, gov)
+	result := compileWikiContractValidationInRoots(registration.Root, records, corpusRecords, gov, wikiRoots)
 	env := model.Envelope{
 		Ok:        true,
 		Workspace: registration.Name,
@@ -123,13 +123,29 @@ func compileWikiContractValidation(root string, records []model.DocRecord, gov *
 }
 
 func compileWikiContractValidationWithIndexRecords(root string, records, indexRecords []model.DocRecord, gov *docgraph.WikiContractGovernance) model.WikiContractValidationResult {
+	roots := []string{root} // Compatibility for fixture callers without a configured wiki.
+	if setup := docgraph.ResolveSetupWikiSource(root); setup.Configured {
+		roots = nil
+		if setup.State == "resolved" {
+			roots, _ = docgraph.CanonicalWikiRoots(root)
+		}
+	}
+	return compileWikiContractValidationInRoots(root, records, indexRecords, gov, roots)
+}
+
+func compileWikiContractValidationInRoots(root string, records, indexRecords []model.DocRecord, gov *docgraph.WikiContractGovernance, roots []string) model.WikiContractValidationResult {
 	language := ResolveWikiContractLanguageAtRoot(root)
 	result := model.WikiContractValidationResult{
 		WikiContract:      wikiContractProtocol,
 		ContractReadiness: "ready",
 		ContractVerdict:   "PASS",
 	}
-	indexBodies := readWikiContractIndexBodies(root, indexRecords)
+	indexBodies := readWikiContractIndexBodiesInRoots(root, indexRecords, roots)
+	for _, record := range indexRecords {
+		if _, reason := wikiContractContainedPath(root, record.Path, roots); reason == "outside_root" {
+			result.ContractWarnings = append(result.ContractWarnings, "index_body_untrusted:"+record.Path)
+		}
+	}
 	wikiIndex := wikisource.BuildContractWikiIDIndex(indexBodies)
 	for _, record := range indexRecords {
 		if strings.TrimSpace(record.DocID) == "" {
@@ -139,12 +155,19 @@ func compileWikiContractValidationWithIndexRecords(root string, records, indexRe
 		wikisource.RegisterContractWikiID(wikiIndex, record.DocID, kind)
 	}
 	anchorTargets := buildWikiAnchorTargets(indexRecords, indexBodies, language.Language)
+	lifecycleTargets := wikiContractLifecycleTargets(root, indexBodies, indexRecords, roots)
 
 	bodyByPath := make(map[string]string, len(records))
 	for _, record := range records {
-		path := docgraph.ResolveDocumentPath(root, record.Path)
-		rawBody, err := os.ReadFile(path)
+		path, reason := wikiContractContainedPath(root, record.Path, roots)
 		docLabel := harnessDocLabel(record)
+		if reason != "" {
+			warning := docLabel + ": unreadable or untrusted markdown"
+			result.ContractWarnings = append(result.ContractWarnings, warning)
+			result.Documents = append(result.Documents, model.WikiContractDocumentFinding{Path: record.Path, Warnings: []string{warning}})
+			continue
+		}
+		rawBody, err := os.ReadFile(path)
 		if err != nil {
 			warning := docLabel + ": unreadable markdown"
 			result.ContractWarnings = append(result.ContractWarnings, warning)
@@ -179,13 +202,18 @@ func compileWikiContractValidationWithIndexRecords(root string, records, indexRe
 			result.ContractWarnings = append(result.ContractWarnings, warning)
 		}
 		if header == nil {
-			if isWikiContractGovernancePath(record.Path) {
+			if isWikiContractGovernancePath(root, record.Path, language.Source) {
 				continue
 			}
 			warning := docLabel + ": missing WIKI-CONTRACT-v1 header"
 			finding.Warnings = append(finding.Warnings, warning)
 			result.ContractWarnings = append(result.ContractWarnings, warning)
 			result.Documents = append(result.Documents, finding)
+			continue
+		}
+		// Machine governance is YAML configuration, not an artifact header.
+		if isWikiContractGovernancePath(root, record.Path, language.Source) && header.Kind == "" && header.ID == "" && header.Status == "" {
+			result.ContractsReviewed++
 			continue
 		}
 		result.ContractsReviewed++
@@ -212,6 +240,9 @@ func compileWikiContractValidationWithIndexRecords(root string, records, indexRe
 		}
 		linkWarnings, linksReviewed, targetsMissing := validateWikiContractLinkDepth(root, srcID, header.Links, wikiIndex)
 		docWarnings = append(docWarnings, linkWarnings...)
+		if header.Status == "active" {
+			docWarnings = append(docWarnings, wikiContractLifecycleWarnings(srcID, header.Links, lifecycleTargets)...)
+		}
 		for _, finding := range model.ValidateWikiContractSections(header.ID, header.Kind, body, language.Language) {
 			if finding.Code == "section_missing" {
 				result.SectionsMissing++
@@ -253,13 +284,162 @@ func compileWikiContractValidationWithIndexRecords(root string, records, indexRe
 	return result
 }
 
+type wikiLifecycleTarget struct {
+	path     string
+	status   string
+	archived bool
+}
+
+// Identity and lifecycle are independent of LookupKind's presence-only index.
+func wikiContractLifecycleTargets(root string, bodies []wikisource.ContractDocBody, records []model.DocRecord, roots []string) map[string][]wikiLifecycleTarget {
+	targets := make(map[string][]wikiLifecycleTarget)
+	identity := func(path string) (string, bool) {
+		resolved, reason := wikiContractContainedPath(root, path, roots)
+		if reason != "" {
+			return "", false
+		}
+		return filepath.ToSlash(resolved), true
+	}
+	indexedIDs := make(map[string]map[string]bool)
+	for _, record := range records {
+		path, ok := identity(record.Path)
+		id := strings.ToUpper(strings.TrimSpace(record.DocID))
+		if !ok || id == "" {
+			continue
+		}
+		if indexedIDs[path] == nil {
+			indexedIDs[path] = make(map[string]bool)
+		}
+		indexedIDs[path][id] = true
+	}
+	seen := make(map[string]bool)
+	for _, body := range bodies {
+		path, ok := identity(body.Path)
+		if !ok {
+			continue
+		}
+		header, _, warnings := parseWikiContractHeader(body.Content)
+		if header == nil || len(warnings) != 0 || header.ID == "" {
+			continue
+		}
+		key := strings.ToUpper(header.ID) + "\x00" + path
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		archived := strings.Contains("/"+path+"/", "/_retired/")
+		status := header.Status
+		ids := indexedIDs[path]
+		if len(ids) > 0 && (!ids[strings.ToUpper(header.ID)] || len(ids) > 1) {
+			status = "unknown"
+		}
+		targets[strings.ToUpper(header.ID)] = append(targets[strings.ToUpper(header.ID)], wikiLifecycleTarget{path: path, status: status, archived: archived})
+	}
+	// Indexed identity without a matching, readable WIKI header is unknown,
+	// not proof of either a missing target or an active one.
+	for _, record := range records {
+		id := strings.ToUpper(strings.TrimSpace(record.DocID))
+		if id == "" {
+			continue
+		}
+		path, ok := identity(record.Path)
+		if !ok {
+			path = filepath.ToSlash(filepath.Clean(record.Path))
+		}
+		key := id + "\x00" + path
+		if !seen[key] {
+			seen[key] = true
+			targets[id] = append(targets[id], wikiLifecycleTarget{path: path, status: "unknown", archived: strings.Contains("/"+path+"/", "/_retired/")})
+		}
+	}
+	return targets
+}
+
+func wikiContractLifecycleWarnings(src string, links map[string]any, targets map[string][]wikiLifecycleTarget) []string {
+	var warnings []string
+	for linkType, raw := range links {
+		if linkType == "code" {
+			continue
+		}
+		if _, ok := wikiContractLinkTypes[linkType]; !ok {
+			continue
+		}
+		for _, target := range wikiContractStringLinkTargets(raw) {
+			candidates := targets[strings.ToUpper(strings.TrimSpace(target))]
+			var current []wikiLifecycleTarget
+			unknown := false
+			for _, candidate := range candidates {
+				if candidate.status == "unknown" {
+					unknown = true
+					continue
+				}
+				if !candidate.archived && candidate.status != "retired" {
+					if candidate.status != "active" && candidate.status != "draft" && candidate.status != "deprecated" {
+						unknown = true
+					} else {
+						current = append(current, candidate)
+					}
+				}
+			}
+			if unknown || len(current) > 1 || len(current) == 0 && len(candidates) > 1 {
+				warnings = append(warnings, fmt.Sprintf("link_target_ambiguous:%s->%s->%s", src, linkType, target))
+			} else if len(current) == 0 && len(candidates) == 1 && (candidates[0].archived || candidates[0].status == "retired") {
+				warnings = append(warnings, fmt.Sprintf("link_target_retired:%s->%s->%s", src, linkType, target))
+			}
+		}
+	}
+	return warnings
+}
+
 // wikiAnchorTarget is an indexed document with its declared H3 anchors, so a citation can name file:line.
 // readWikiContractIndexBodies reads each indexed document once, so IDs and anchors are declared from the
 // same bytes. An unreadable document is skipped; trace and validate-contract share this rule.
+// wikiContractContainedPath resolves symlinks before reading any indexed body.
+func wikiContractContainedPath(root, path string, roots []string) (string, string) {
+	logical, err := filepath.Abs(docgraph.ResolveDocumentPath(root, path))
+	if err != nil {
+		return "", "unavailable"
+	}
+	resolved, err := filepath.EvalSymlinks(logical)
+	if err != nil {
+		return "", "unavailable"
+	}
+	for _, declared := range roots {
+		logicalBase, err := filepath.Abs(docgraph.ResolveDocumentPath(root, declared))
+		if err != nil {
+			continue
+		}
+		logicalRel, err := filepath.Rel(logicalBase, logical)
+		if err != nil || filepath.IsAbs(logicalRel) || logicalRel == "." || logicalRel == ".." || strings.HasPrefix(logicalRel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		base, err := filepath.EvalSymlinks(logicalBase)
+		if err != nil {
+			continue
+		}
+		rel, err := filepath.Rel(base, resolved)
+		if err == nil && !filepath.IsAbs(rel) && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return resolved, ""
+		}
+	}
+	return "", "outside_root"
+}
+
 func readWikiContractIndexBodies(root string, indexRecords []model.DocRecord) []wikisource.ContractDocBody {
+	roots, err := docgraph.CanonicalWikiRoots(root)
+	if err != nil {
+		return nil
+	}
+	return readWikiContractIndexBodiesInRoots(root, indexRecords, roots)
+}
+
+func readWikiContractIndexBodiesInRoots(root string, indexRecords []model.DocRecord, roots []string) []wikisource.ContractDocBody {
 	indexBodies := make([]wikisource.ContractDocBody, 0, len(indexRecords))
 	for _, record := range indexRecords {
-		path := docgraph.ResolveDocumentPath(root, record.Path)
+		path, reason := wikiContractContainedPath(root, record.Path, roots)
+		if reason != "" {
+			continue
+		}
 		rawBody, err := os.ReadFile(path)
 		if err != nil {
 			continue
@@ -578,10 +758,16 @@ func countWikiContractLinks(links map[string]any) int {
 	return count
 }
 
-func isWikiContractGovernancePath(path string) bool {
-	normalized := strings.ToLower(filepath.ToSlash(path))
-	return strings.HasSuffix(normalized, "00_governance.md") ||
-		strings.HasSuffix(normalized, "00_gobierno_documental.md")
+func isWikiContractGovernancePath(root, path, selected string) bool {
+	if strings.TrimSpace(path) == "" || strings.TrimSpace(selected) == "" {
+		return false
+	}
+	actual, err := filepath.Abs(docgraph.ResolveDocumentPath(root, path))
+	if err != nil {
+		return false
+	}
+	expected, err := filepath.Abs(docgraph.ResolveDocumentPath(root, selected))
+	return err == nil && filepath.Clean(actual) == filepath.Clean(expected)
 }
 
 func stringField(raw map[string]any, key string) string {

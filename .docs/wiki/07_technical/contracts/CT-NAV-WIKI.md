@@ -21,6 +21,21 @@ links:
   - RF-ROADMAP-001
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: CT-NAV-WIKI
+kind: documentation-cli-contract
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-WIKI-001.md, .docs/wiki/07_technical/TECH-WIKI-AWARE-SEARCH.md]
+exports: [CT-NAV-WIKI]
+agent_must_read: [.docs/wiki/07_technical/contracts/CT-NAV-WIKI.md, internal/service/harness_validate.go, internal/docgraph/canonical_navigation.go]
+agent_may_edit: [.docs/wiki/07_technical/contracts/CT-NAV-WIKI.md]
+agent_must_not_edit: [internal/service/, internal/docgraph/, .docs/wiki/_mi-lsp/read-model.toml]
+verify: ["Leer .docs/wiki/07_technical/contracts/CT-NAV-WIKI.md y .docs/wiki/07_technical/TECH-WIKI-001.md; cotejar las afirmaciones con la fuente publicada internal/service/harness_validate.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Un doc fuera del root gobernado gane autoridad, roots/path escapes se acepten o un PASS/WARN/BLOCKED se afirme sin validación ejecutada.]
+evidence: [.docs/wiki/07_technical/contracts/CT-NAV-WIKI.md, .docs/wiki/07_technical/TECH-WIKI-001.md, internal/service/harness_validate.go]
+```
+
 ## Consumidor
 
 CLI, agentes y consumidores locales de las operaciones descritas; no se amplía la autoridad del consumidor.

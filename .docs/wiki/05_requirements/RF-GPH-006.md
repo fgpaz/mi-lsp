@@ -101,3 +101,35 @@ Antes de resolver seeds, `nav.affected` revisa solo los paths explícitos y, si 
 - Comparacion simultanea contra RF-QRY-017 previo y Graphify fijado, 30 repeticiones.
 - Cero mutaciones del índice y paridad direct/daemon.
 - `TP-GPH / TP-GPH-005 / TC-GPH-031..035`.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-GPH-006
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-GPH-02.md
+exports:
+- RF-GPH-006
+- RF-GPH-006 - Calcular impacto explicable sin inflar falsos positivos
+agent_must_read:
+- .docs/wiki/05_requirements/RF-GPH-006.md
+- .docs/wiki/04_flows/FL-GPH-02.md
+- .docs/wiki/06_tests/TP-GPH.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-GPH-006.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/app.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-GPH.md, ejecutar el
+  comando publicado: go test ./internal/model/... ./internal/indexer/... ./internal/service/...
+  ./internal/daemon/... (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-GPH-006.
+evidence:
+- .docs/wiki/05_requirements/RF-GPH-006.md
+- .docs/wiki/06_tests/TP-GPH.md
+```

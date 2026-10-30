@@ -36,3 +36,40 @@ Los avisos de idioma, secciones y diagramas son advisory. No se suprimen los che
 3. Falta de C4Context/C4Container en ARCH y sequenceDiagram en FL produce findings diagram_missing con blocking=false; los checks anteriores siguen activos.
 4. Un scope sin documentos es ADVISORY, nunca PASS vacuo; fuentes inválidas o esquema Setup desconocido no abren una raíz alternativa.
 5. El registro de retiros admite `entries` y el YAML previo `retirements`: filas con `id`, `old_path`, `archived_path`, `reason`, `terminal` y `superseded_by` según el contrato técnico. La ausencia explícita y válida no inventa filas; filas inválidas, ambigüedad o contradicción permanecen ADVISORY.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-WGRAPH-002
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-WGRAPH-001.md
+exports:
+- RF-WGRAPH-002
+- '"Comprobar secciones, criterios e ilustraciones según governance"'
+agent_must_read:
+- .docs/wiki/05_requirements/RF-WGRAPH-002.md
+- .docs/wiki/04_flows/FL-WGRAPH-001.md
+- .docs/wiki/06_tests/TP-GPH.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-WGRAPH-002.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/model/wiki_contract.go
+- internal/service/wiki_contract_validate.go
+- internal/service/contract_validate.go
+- internal/service/wiki_graph.go
+- internal/service/wiki_views.go
+- internal/docgraph/wiki_views.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-GPH.md, ejecutar el
+  comando publicado: go test ./internal/model/... ./internal/indexer/... ./internal/service/...
+  ./internal/daemon/... (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-WGRAPH-002.
+evidence:
+- .docs/wiki/05_requirements/RF-WGRAPH-002.md
+- .docs/wiki/06_tests/TP-GPH.md
+```

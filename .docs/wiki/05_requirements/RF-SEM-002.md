@@ -132,3 +132,36 @@ Scenario: Caer a fallback si backend no responde
 - Positivo: `TP-SEM / TC-SEM-004`
 - Positivo: `TP-SEM / TC-SEM-005`
 - Negativo: `TP-SEM / TC-SEM-006`
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-SEM-002
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-SEM-01.md
+exports:
+- RF-SEM-002
+- RF-SEM-002 - Indexar y embeber semanticamente chunks de markdown por heading, incremental
+  por hash
+agent_must_read:
+- .docs/wiki/05_requirements/RF-SEM-002.md
+- .docs/wiki/04_flows/FL-SEM-01.md
+- .docs/wiki/06_tests/TP-SEM.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-SEM-002.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/app.go
+verify:
+- Validar el contrato y sus referencias con `mi-lsp nav wiki validate-harness --workspace
+  <alias>`; contrastar los casos de .docs/wiki/06_tests/TP-SEM.md sin inferir que
+  fueron ejecutados.
+stop_if:
+- 'Detenerse y escalar si el cambio contradice el límite documentado: - Supuestos
+  prohibidos:'
+evidence:
+- .docs/wiki/05_requirements/RF-SEM-002.md
+- .docs/wiki/06_tests/TP-SEM.md
+```

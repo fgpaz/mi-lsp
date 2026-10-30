@@ -9,6 +9,21 @@ links:
   - data-model
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: DB-PHYSICAL-MODEL
+kind: data-model
+audience: dual
+imports: [.docs/wiki/07_technical/db/DB-DOC-INDEX.md, .docs/wiki/07_technical/db/DB-SYMBOL-EDGE-GRAPH.md, .docs/wiki/07_technical/db/DB-STATE-Y-TELEMETRIA.md]
+exports: [DB-PHYSICAL-MODEL]
+agent_must_read: [.docs/wiki/07_technical/db/DB-PHYSICAL-MODEL.md, internal/store/schema.go, internal/store/db.go]
+agent_may_edit: [.docs/wiki/07_technical/db/DB-PHYSICAL-MODEL.md]
+agent_must_not_edit: [internal/store/, .mi-lsp/index.db, ~/.mi-lsp/daemon/daemon.db]
+verify: ["Leer .docs/wiki/07_technical/db/DB-PHYSICAL-MODEL.md y .docs/wiki/07_technical/db/DB-DOC-INDEX.md; cotejar las afirmaciones con la fuente publicada internal/store/schema.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [La propuesta toque DB compartidas o cree una autoridad nueva/migración durante esta edición documental.]
+evidence: [.docs/wiki/07_technical/db/DB-PHYSICAL-MODEL.md, .docs/wiki/07_technical/db/DB-DOC-INDEX.md, internal/store/schema.go]
+```
+
 ## Almacén
 
 Este documento resume los stores fisicos de `mi-lsp`, su ownership y el ciclo de vida de los datos.

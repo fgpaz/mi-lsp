@@ -386,3 +386,44 @@ Los aliases heredados que apunten a la misma raíz física siguen siendo válido
 7. `mi-lsp probe` puede ejecutarse sin daemon y sin DB. Si existe una DB, solo puede abrirla en modo SQLite `ro` real; si no existe, debe reportar evidencia ausente sin crear directorios ni archivos. El probe no inicializa schema, no aplica migraciones, no escribe registry, no crea snapshots, no envía telemetría y devuelve `side_effects:false` en salida estructurada.
 8. Los estados son diagnósticos, no instrucciones implícitas de reparación. La salida incluye evidencia mínima, migration status, resolución del workspace y provenance reutilizable de `mi-lsp version` cuando corresponda.
 9. Las pruebas cubren snapshots antes/después de parent, worktree, home y fixtures temporales, alias inexistente y stale, resolución contextual sin selector, casing por plataforma, symlink/junction cuando el host lo permite, DB inexistente y apertura read-only sin WAL/SHM. Toda prueba que observe una mutación del filesystem o registry hace fallar el batch. La única oracle de formato para todos los Go tocados es la orden dinámica y no mutante declarada en `verify`: descubre el conjunto completo desde Git, no usa listas manuales y nunca escribe archivos.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-WKS-007
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-BOOT-01.md
+exports:
+- RF-WKS-007
+- RF-WKS-007 - Identidad fail-closed, estado híbrido y probe no mutante
+agent_must_read:
+- .docs/wiki/05_requirements/RF-WKS-007.md
+- .docs/wiki/04_flows/FL-BOOT-01.md
+- .docs/wiki/06_tests/TP-WKS-PROBE.md
+- .docs/wiki/06_tests/TP-WKS.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-WKS-007.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/cli/root.go
+- internal/cli/workspace.go
+- internal/service/app.go
+- internal/service/auto_register.go
+- internal/service/probe.go
+- internal/service/workspace_ops.go
+- internal/workspace/autoregister.go
+- internal/workspace/registry.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-WKS-PROBE.md, ejecutar
+  el comando publicado: go test ./internal/workspace ./internal/store ./internal/service
+  ./internal/cli (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-WKS-007.
+evidence:
+- .docs/wiki/05_requirements/RF-WKS-007.md
+- .docs/wiki/06_tests/TP-WKS-PROBE.md
+- .docs/wiki/06_tests/TP-WKS.md
+```

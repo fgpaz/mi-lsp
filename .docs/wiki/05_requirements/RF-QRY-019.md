@@ -140,3 +140,39 @@ Los 17 casos de `TP-QRY-PREPARATION` cubren aceptación positiva, rechazo fail-c
 - **review**: 541bd2bf
 - **head**: a449abf
 - **authority**: evidence_never_authorizes_writes_or_promotions
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-QRY-019
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-QRY-01.md
+exports:
+- RF-QRY-019
+- RF-QRY-019 — Ciclo de preparación portable
+agent_must_read:
+- .docs/wiki/05_requirements/RF-QRY-019.md
+- .docs/wiki/04_flows/FL-QRY-01.md
+- .docs/wiki/06_tests/TP-QRY-PREPARATION.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-QRY-019.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/cli/prepare.go
+- internal/model/preparation.go
+- internal/service/preparation_packet.go
+- internal/service/prepare.go
+- internal/skills/preparation_receipt.go
+verify:
+- Validar el contrato y sus referencias con `mi-lsp nav wiki validate-harness --workspace
+  <alias>`; contrastar los casos de .docs/wiki/06_tests/TP-QRY-PREPARATION.md sin
+  inferir que fueron ejecutados.
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-QRY-019.
+evidence:
+- .docs/wiki/05_requirements/RF-QRY-019.md
+- .docs/wiki/06_tests/TP-QRY-PREPARATION.md
+```

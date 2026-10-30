@@ -58,6 +58,29 @@ links:
     role: behavior
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-RUNTIME-UPDATE
+kind: technical-contract
+audience: dual
+imports: [.docs/wiki/07_technical.md]
+exports: [TECH-RUNTIME-UPDATE]
+agent_must_read: [.docs/wiki/07_technical/TECH-RUNTIME-UPDATE.md, internal/selfupdate/engine.go, internal/selfupdate/transaction.go]
+agent_may_edit: [.docs/wiki/07_technical/TECH-RUNTIME-UPDATE.md]
+agent_must_not_edit: [internal/selfupdate/, internal/daemon/, .docs/wiki/_mi-lsp/read-model.toml]
+verify: ["Leer .docs/wiki/07_technical/TECH-RUNTIME-UPDATE.md y .docs/wiki/07_technical.md; cotejar las afirmaciones con la fuente publicada internal/selfupdate/engine.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [La propuesta permita origen externo configurable, limpie backup antes de readback o afirme rollback/actualización sin evidencia.]
+evidence: [.docs/wiki/07_technical/TECH-RUNTIME-UPDATE.md, .docs/wiki/07_technical.md, internal/selfupdate/engine.go]
+```
+
+## Resumen
+
+RF-UPD-001 define un updater único en el runtime; los consumidores consultan estado y notifican. Este documento no acredita las pruebas o el cierre pendientes en TP-UPD-001.
+
+## Mapa de componentes
+
+`internal/selfupdate/` contiene estado, política, fuente y promoción; `internal/cli/` expone update; `internal/daemon/` coordina el ciclo del daemon y sus consumidores.
+
 ## Decisión y autoridad
 
 RF-UPD-001 define un único updater en el runtime. Los consumidores consultan el estado y notifican; no implementan otra descarga. Este documento es contrato de BUILD: no acredita pruebas o cierre aún pendientes en TP-UPD-001.

@@ -71,6 +71,11 @@ func TestFindFilesGitIgnoreRankingBudgetAndCache(t *testing.T) {
 		"src/no.log": "", "src/kept.log": "", "src/local.go": "", "src/localkeep.go": "",
 		"src/a b.go": "", "src/café.go": "", "-draft.go": "", "tracked.tmp": "",
 	}
+	// Ensure the wildcard response exceeds both tested byte budgets, even
+	// when Git returns a short listing and cache metadata uses fewer digits.
+	for _, suffix := range []string{"a", "b", "c", "d"} {
+		files["budget-fixture-"+strings.Repeat(suffix, 48)+".txt"] = ""
+	}
 	for name, body := range files {
 		writeFindFixture(t, root, name, body)
 	}

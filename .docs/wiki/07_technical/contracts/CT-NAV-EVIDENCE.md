@@ -9,6 +9,21 @@ links:
   - RF-QRY-019
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: CT-NAV-EVIDENCE
+kind: cli-contract
+audience: llm-first
+imports: [.docs/wiki/07_technical/TECH-EVIDENCE-INVENTORY.md]
+exports: [CT-NAV-EVIDENCE]
+agent_must_read: [.docs/wiki/07_technical/contracts/CT-NAV-EVIDENCE.md, internal/service/evidence_inventory.go]
+agent_may_edit: [.docs/wiki/07_technical/contracts/CT-NAV-EVIDENCE.md]
+agent_must_not_edit: [internal/service/evidence_inventory.go, .docs/auditoria/, .docs/raw/]
+verify: ["Leer .docs/wiki/07_technical/contracts/CT-NAV-EVIDENCE.md y .docs/wiki/07_technical/TECH-EVIDENCE-INVENTORY.md; cotejar las afirmaciones con la fuente publicada internal/service/evidence_inventory.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [La propuesta exponga prompts/transcripts/logs/OCR/secretos/PHI o promueva evidencia a fuente canónica.]
+evidence: [.docs/wiki/07_technical/contracts/CT-NAV-EVIDENCE.md, .docs/wiki/07_technical/TECH-EVIDENCE-INVENTORY.md, internal/service/evidence_inventory.go]
+```
+
 ## Consumidor
 
 CLI, agentes y consumidores locales de las operaciones descritas; no se amplía la autoridad del consumidor.

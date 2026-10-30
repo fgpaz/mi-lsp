@@ -10,6 +10,21 @@ links:
   - RF-WKS-008
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: CT-NAV-WIKI-ROOT
+kind: cli-contract
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-DOCUMENTARY-GOVERNANCE.md]
+exports: [CT-NAV-WIKI-ROOT]
+agent_must_read: [.docs/wiki/07_technical/contracts/CT-NAV-WIKI-ROOT.md, internal/service/wiki_root.go]
+agent_may_edit: [.docs/wiki/07_technical/contracts/CT-NAV-WIKI-ROOT.md]
+agent_must_not_edit: [internal/service/wiki_root.go, .docs/wiki/_mi-lsp/read-model.toml, ../wiki-repo/]
+verify: ["Leer .docs/wiki/07_technical/contracts/CT-NAV-WIKI-ROOT.md y .docs/wiki/07_technical/TECH-DOCUMENTARY-GOVERNANCE.md; cotejar las afirmaciones con la fuente publicada internal/service/wiki_root.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Se invente governance_doc, se haga fallback con Setup pending o se muten canon/proyección al resolver raíces.]
+evidence: [.docs/wiki/07_technical/contracts/CT-NAV-WIKI-ROOT.md, .docs/wiki/07_technical/TECH-DOCUMENTARY-GOVERNANCE.md, internal/service/wiki_root.go]
+```
+
 ## Consumidor
 
 CLI, agentes y consumidores locales de las operaciones descritas; no se amplía la autoridad del consumidor.

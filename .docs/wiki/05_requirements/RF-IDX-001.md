@@ -176,3 +176,47 @@ CLI `mi-lsp`, con operaciones y selectores detallados en el comportamiento del r
 - Positivo: `TP-QRY / TC-QRY-173`
 - Positivo: `TP-QRY / TC-QRY-174`
 - Negativo: `TP-IDX / TC-IDX-003`
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-IDX-001
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-IDX-01.md
+exports:
+- RF-IDX-001
+- RF-IDX-001 - Construir y refrescar el indice repo-local
+agent_must_read:
+- .docs/wiki/05_requirements/RF-IDX-001.md
+- .docs/wiki/04_flows/FL-IDX-01.md
+- .docs/wiki/06_tests/TP-IDX.md
+- .docs/wiki/06_tests/TP-QRY.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-IDX-001.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/cli/index.go
+- internal/indexer/extractor_go.go
+- internal/indexer/graph_pipeline.go
+- internal/indexer/incremental.go
+- internal/indexer/indexer.go
+- internal/service/autoindex.go
+- internal/service/index_jobs.go
+- internal/store/index_jobs.go
+- internal/store/index_lock.go
+- internal/store/index_publish.go
+- internal/store/schema.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-IDX.md, ejecutar el
+  comando publicado: go test ./internal/model ./internal/service ./internal/cli ./internal/indexer
+  (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-IDX-001.
+evidence:
+- .docs/wiki/05_requirements/RF-IDX-001.md
+- .docs/wiki/06_tests/TP-IDX.md
+- .docs/wiki/06_tests/TP-QRY.md
+```

@@ -25,3 +25,32 @@ Agentes en pi, Claude Code, Codex y PiG.
 Sin hooks nuevos, nuevos modelos, segunda fuente argv/schema, compra de servicios ni retiro de APIs legacy.
 
 [[FL-ALLHARNESS-001]] · [[RF-ALLHARNESS-001]]
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RS-ALLHARNESS-001
+kind: outcome
+audience: dual
+imports:
+  - .docs/wiki/04_flows/FL-ALLHARNESS-001.md
+  - .docs/wiki/05_requirements/RF-ALLHARNESS-001.md
+exports:
+  - RS-ALLHARNESS-001
+agent_must_read:
+  - .docs/wiki/02_outcomes/RS-ALLHARNESS-001.md
+agent_may_edit:
+  - .docs/wiki/02_outcomes/RS-ALLHARNESS-001.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-ALLHARNESS-001.md
+  - .docs/wiki/06_tests/TP-ALLHARNESS-001.md
+verify:
+  - "Lectura/cotejo: comprobar cada criterio del outcome contra RF-ALLHARNESS-001 y FL-ALLHARNESS-001, y cotejar sus casos/disposiciones con TP-ALLHARNESS-001; conservar estados pendientes y no inferir ejecución desde el plan."
+stop_if:
+  - harness_verdict=BLOCKED
+  - linked_source_missing
+  - outcome_acceptance_or_status_would_change
+evidence:
+  - .docs/wiki/05_requirements/RF-ALLHARNESS-001.md
+  - .docs/wiki/04_flows/FL-ALLHARNESS-001.md
+  - .docs/wiki/06_tests/TP-ALLHARNESS-001.md
+```

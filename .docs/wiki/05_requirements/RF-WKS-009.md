@@ -125,3 +125,36 @@ Scenario: Rechazar un workspace explicito no registrado
 - Positivo: `TP-WKS / TC-WKS-045`
 - Positivo: `TP-WKS / TC-WKS-046`
 - Negativo: `TP-WKS / TC-WKS-047` (documentado en código; ver Special Cases del cierre de wiki, sin test Go nombrado que cubra ambas ramas de error)
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-WKS-009
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-BOOT-01.md
+exports:
+- RF-WKS-009
+- RF-WKS-009 - Resolver workspace y ejecutable en uso con `workspace which`
+agent_must_read:
+- .docs/wiki/05_requirements/RF-WKS-009.md
+- .docs/wiki/04_flows/FL-BOOT-01.md
+- .docs/wiki/06_tests/TP-WKS.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-WKS-009.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/cli/workspace.go
+- internal/cli/workspace_which.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-WKS.md, ejecutar el
+  comando publicado: go test -count=1 ./internal/service -run ''^TestExecuteAutoRegisterSkipsIndexWithoutCommits$''
+  (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- 'Detenerse y escalar si el cambio contradice el límite documentado: - Supuestos
+  prohibidos:'
+evidence:
+- .docs/wiki/05_requirements/RF-WKS-009.md
+- .docs/wiki/06_tests/TP-WKS.md
+```

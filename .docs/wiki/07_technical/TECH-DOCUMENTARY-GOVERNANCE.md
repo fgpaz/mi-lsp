@@ -16,6 +16,21 @@ links:
     role: implementation
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-DOCUMENTARY-GOVERNANCE
+kind: technical-governance
+audience: dual
+imports: [.docs/wiki/07_technical/contracts/CT-GOVERNANCE-AE-KERNEL-V2.md, .docs/wiki/07_technical/TECH-GOVERNANCE-PROFILES.md]
+exports: [TECH-DOCUMENTARY-GOVERNANCE]
+agent_must_read: [.docs/wiki/07_technical/TECH-DOCUMENTARY-GOVERNANCE.md, .docs/wiki/00_governance.md]
+agent_may_edit: [.docs/wiki/07_technical/TECH-DOCUMENTARY-GOVERNANCE.md]
+agent_must_not_edit: [.docs/wiki/00_governance.md, .docs/wiki/_mi-lsp/read-model.toml, .docs/ae/repo-policy.yaml]
+verify: ["Leer .docs/wiki/07_technical/TECH-DOCUMENTARY-GOVERNANCE.md y .docs/wiki/07_technical/contracts/CT-GOVERNANCE-AE-KERNEL-V2.md; cotejar las afirmaciones con la fuente publicada internal/docgraph/wiki_contract_governance.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [La interpretación contradiga el canon externo o requiera mutar governance, read-model o policy fuera de esta ficha.]
+evidence: [.docs/wiki/07_technical/TECH-DOCUMENTARY-GOVERNANCE.md, .docs/wiki/07_technical/contracts/CT-GOVERNANCE-AE-KERNEL-V2.md, internal/docgraph/wiki_contract_governance.go]
+```
+
 ## Resumen
 
 `.docs/wiki/` es autoridad documental; governance machine-YAML declara traits y la proyección versionada deriva de traits + kind. README, skills y policy no redefinen el canon. Los nombres y las capas son los de WIKI-CONTRACT-v1; no hay índices normativos en disco.

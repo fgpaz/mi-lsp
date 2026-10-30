@@ -358,3 +358,41 @@ Las entradas, salidas, enums y límites forman parte del contrato de comportamie
 - Precision/recall por relation; `negative_violations=0` es gate independiente.
 - Validación de orden, deduplicacion, cross-RID y cero dangling edges en 30 reruns.
 - `TP-GPH / TP-GPH-003 / TC-GPH-015..018`.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-GPH-003
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-GPH-01.md
+exports:
+- RF-GPH-003
+- RF-GPH-003 - Persistir aristas tipadas con evidencia y unresolved explicito
+agent_must_read:
+- .docs/wiki/05_requirements/RF-GPH-003.md
+- .docs/wiki/04_flows/FL-GPH-01.md
+- .docs/wiki/06_tests/TP-GPH.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-GPH-003.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/docgraph/docgraph.go
+- internal/model/doc_binding_source.go
+- internal/model/wiki_code_binding.go
+- internal/service/wiki_code_bindings.go
+- internal/store/queries_doc_binding_sources.go
+- internal/store/schema.go
+- internal/wikisource/parser.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-GPH.md, ejecutar el
+  comando publicado: go test ./internal/model/... ./internal/indexer/... ./internal/service/...
+  ./internal/daemon/... (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-GPH-003.
+evidence:
+- .docs/wiki/05_requirements/RF-GPH-003.md
+- .docs/wiki/06_tests/TP-GPH.md
+```

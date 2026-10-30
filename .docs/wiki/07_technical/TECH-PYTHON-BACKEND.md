@@ -6,6 +6,21 @@ status: active
 title: TECH-PYTHON-BACKEND
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-PYTHON-BACKEND
+kind: technical-backend
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-TS-BACKEND.md, .docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md]
+exports: [TECH-PYTHON-BACKEND]
+agent_must_read: [.docs/wiki/07_technical/TECH-PYTHON-BACKEND.md, internal/indexer/extractor_python.go, internal/worker/pyright.go]
+agent_may_edit: [.docs/wiki/07_technical/TECH-PYTHON-BACKEND.md]
+agent_must_not_edit: [internal/indexer/extractor_python.go, internal/worker/pyright.go, .docs/wiki/_mi-lsp/read-model.toml]
+verify: ["Leer .docs/wiki/07_technical/TECH-PYTHON-BACKEND.md y .docs/wiki/07_technical/TECH-TS-BACKEND.md; cotejar las afirmaciones con la fuente publicada internal/indexer/extractor_python.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [La propuesta convierte fallback en éxito semántico o atribuye disponibilidad de Pyright sin comprobación.]
+evidence: [.docs/wiki/07_technical/TECH-PYTHON-BACKEND.md, .docs/wiki/07_technical/TECH-TS-BACKEND.md, internal/indexer/extractor_python.go]
+```
+
 ## Resumen
 
 Define la estrategia técnica del backend Python en `mi-lsp`: indexación repo-local lexical acotada y backend semántico opcional via `pyright-langserver` (cliente LSP generico reutilizable).

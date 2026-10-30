@@ -116,3 +116,35 @@ Las entradas, salidas, enums y límites forman parte del contrato de comportamie
 - Tests de selector ambiguo/ausente, generation retired/invalid, cursor stale y cada budget.
 - Prueba de solo lectura por hash/mtime lógico de tablas antes/despues.
 - `TP-GPH / TP-GPH-004 / TC-GPH-023..030`.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-GPH-005
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-GPH-02.md
+exports:
+- RF-GPH-005
+- RF-GPH-005 - Navegar el grafo publicado con consultas bounded
+agent_must_read:
+- .docs/wiki/05_requirements/RF-GPH-005.md
+- .docs/wiki/04_flows/FL-GPH-02.md
+- .docs/wiki/06_tests/TP-GPH.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-GPH-005.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/app.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-GPH.md, ejecutar el
+  comando publicado: go test ./internal/model/... ./internal/indexer/... ./internal/service/...
+  ./internal/daemon/... (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-GPH-005.
+evidence:
+- .docs/wiki/05_requirements/RF-GPH-005.md
+- .docs/wiki/06_tests/TP-GPH.md
+```

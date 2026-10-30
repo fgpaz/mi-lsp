@@ -147,3 +147,37 @@ Se aplican las condiciones de rechazo y los warnings descritos en el comportamie
   - mi-lsp nav wiki trace RF-WIKI-006 --workspace mi-lsp --format toon
 - **Evidencia referenciada**:
   - .docs/wiki/06_tests/TP-WIKI.md
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-WIKI-006
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-WIKI-01.md
+exports:
+- RF-WIKI-006
+- RF-WIKI-006 - Publicar un mapa compacto de hubs de una wiki de conocimiento
+agent_must_read:
+- .docs/wiki/05_requirements/RF-WIKI-006.md
+- .docs/wiki/04_flows/FL-WIKI-01.md
+- .docs/wiki/06_tests/TP-WIKI.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-WIKI-006.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/cli/nav.go
+- internal/service/wiki_map.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-WIKI.md, ejecutar el
+  comando publicado: go test ./internal/service ./internal/cli ./internal/docgraph
+  ./internal/indexer -count=1 -run ''TestClassifyWikiMapHubDefaultsRemainLocked|TestGroupWikiMapDocsUsesDefaultOrCustomDeclarationOrder|TestTrimWikiMapHubs|TestWalkWikiMapDocs|TestNavWikiMapUsesDirectExecution|TestKnowledgeWikiRoots|TestDocumentGraph''
+  (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-WIKI-006.
+evidence:
+- .docs/wiki/05_requirements/RF-WIKI-006.md
+- .docs/wiki/06_tests/TP-WIKI.md
+```

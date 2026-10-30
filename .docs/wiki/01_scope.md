@@ -91,7 +91,7 @@ flowchart TD
 
 ## Áreas funcionales
 
-- Gestion de workspaces: alta, inicializacion corta, descubrimiento, aliases, estado y warmup. `workspace which` resuelve el alias o root y el ejecutable en uso sin mutar el registry. Ver [[RF-WKS-009]]. `nav suggest` sugiere un comando `nav` que la CLI ya expone. Ver [[RF-QRY-020]]. La puerta MCP local que las exponía por stdio fue retirada; ver [[RF-QRY-021]] (retirado).
+- Gestion de workspaces: alta, inicializacion corta, descubrimiento, aliases, estado y warmup. `workspace which` resuelve el alias o root y el ejecutable en uso sin mutar el registry. Ver [[RF-WKS-009]]. `nav suggest` sugiere un comando `nav` que la CLI ya expone. Ver [[RF-QRY-020]]. La puerta MCP local que las exponía por stdio fue retirada; ver [[00_retirements]] (entrada RF-QRY-021, retirado).
 - Navegacion y discovery: símbolos, referencias, outline, overview, contexto, dependencias, exploracion `nav wiki`, preguntas docs-first, reading packs canónicos, busqueda por intención y resumen de servicios. En workspaces `container`, `find/search/intent` pueden acotar por `--repo` sin perder el modo directo. Federacion wiki: `nav wiki-root` resuelve raíces `&#91;&#91;canon&#93;&#93;` externas o el default `.docs/wiki`; `--all-workspaces` recorre wikis de multiples espacios en una sola máquina con fan-out controlado. Ver [[FL-WIKI-01]] y [[RF-WKS-008]].
 - Indexación repo-local: catálogo liviano de símbolos, archivos, metadatos del workspace y grafo documental; el grafo nativo se genera y publica con [[FL-GPH-01]].
 - El grafo nativo agrega consultas para consultar, explicar e impactar. Ver [[FL-GPH-02]].
@@ -99,7 +99,7 @@ flowchart TD
 - Enrutamiento semántico: Roslyn para semántica profunda C#; tree-sitter/ripgrep para TS/Next y texto; Pyright para Python cuando este disponible; extractor AST nativo para Go con enriquecimiento `gopls` opcional; fallback catalog/text visible cuando la semántica profunda no esta disponible.
 - Formateo de salida: envelopes JSON compactos, truncación determinista y warnings explicitos.
 - Operación runtime: daemon opcional, worker install explícito y fallback cuando faltan dependencias.
-- Puerta MCP: retirada el 2026-10-15. `mi-lsp mcp` ya no existe; `mi-mcp` invoca el CLI por llamada. Histórico en [[TECH-MCP-ADAPTER]].
+- Puerta MCP: retirada el 2026-10-15. `mi-lsp mcp` ya no existe; `mi-mcp` invoca el CLI por llamada. Histórico en [[00_retirements]] (entrada TECH-MCP-ADAPTER).
 
 ## Fuera de alcance
 
@@ -110,3 +110,44 @@ flowchart TD
 - Persistencia semántica completa de referencias y jerarquias C# en SQLite.
 - Embeddings, reranking externo o servicios remotos para `nav ask`.
 - Mutación del grafo desde extensiones; `MILX-v1` queda limitado a ejecución aislada y resultados declarativos en este corte.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: 01_scope
+kind: scope
+audience: dual
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/02_outcomes/RS-MILSP-GRAPH.md
+  - .docs/wiki/02_outcomes/RS-MILSP-NAVIGATION.md
+exports:
+  - 01_scope
+agent_must_read:
+  - .docs/wiki/01_scope.md
+agent_may_edit:
+  - .docs/wiki/01_scope.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/
+  - .docs/ae/repo-policy.yaml
+verify:
+  - "Lectura/cotejo: contrastar los resultados observables y límites de este resumen con RS-MILSP-GRAPH, RS-MILSP-NAVIGATION, RF-ALLHARNESS-001, RF-WIKI-001, RF-WKS-008, RF-QRY-023, RF-GPH-008, RF-UPD-001, RF-HOST-001 y los flujos/planes citados; conservar el alcance vigente sin inferir ejecuciones ni cambiar status o autoridad WIKI."
+stop_if:
+  - harness_verdict=BLOCKED
+  - scope_or_outcome_status_would_change
+evidence:
+  - .docs/wiki/02_outcomes/RS-MILSP-GRAPH.md
+  - .docs/wiki/02_outcomes/RS-MILSP-NAVIGATION.md
+  - .docs/wiki/05_requirements/RF-ALLHARNESS-001.md
+  - .docs/wiki/05_requirements/RF-WIKI-001.md
+  - .docs/wiki/05_requirements/RF-WKS-008.md
+  - .docs/wiki/05_requirements/RF-QRY-023.md
+  - .docs/wiki/05_requirements/RF-GPH-008.md
+  - .docs/wiki/05_requirements/RF-UPD-001.md
+  - .docs/wiki/05_requirements/RF-HOST-001.md
+  - .docs/wiki/04_flows/FL-ALLHARNESS-001.md
+  - .docs/wiki/04_flows/FL-WIKI-01.md
+  - .docs/wiki/04_flows/FL-GPH-01.md
+  - .docs/wiki/06_tests/TP-ALLHARNESS-001.md
+  - .docs/wiki/04_flows/FL-UPD-001.md
+  - .docs/wiki/04_flows/FL-HOST-001.md
+```

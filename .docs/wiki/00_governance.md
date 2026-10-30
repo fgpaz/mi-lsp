@@ -1,3 +1,4 @@
+```yaml
 wiki_contract: WIKI-CONTRACT-v1
 model_revision: 1.1
 version: 1
@@ -17,3 +18,30 @@ ae_canon:
   mode: kernel_v2
   source: <kernel_home>/canon
   repo_policy: .docs/ae/repo-policy.yaml
+```
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: 00_governance
+kind: governance
+audience: llm-first
+imports: []
+exports:
+  - 00_governance
+agent_must_read:
+  - .docs/wiki/00_governance.md
+agent_may_edit:
+  - .docs/wiki/00_governance.md
+agent_must_not_edit:
+  - .docs/ae/repo-policy.yaml
+  - <kernel_home>/canon/AE-KERNEL-V2.md
+verify:
+  - mi-lsp nav governance --workspace <alias> --format toon
+  - mi-lsp nav wiki validate-harness --workspace <alias> --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+  - canon_authority_or_policy_would_change
+evidence:
+  - .docs/wiki/00_governance.md
+```

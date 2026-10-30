@@ -6,6 +6,21 @@ status: active
 title: TECH-SERVICE-EXPLORATION
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-SERVICE-EXPLORATION
+kind: technical-contract
+audience: dual
+imports: [.docs/wiki/07_technical/contracts/CT-TECHNICAL-BASELINE.md]
+exports: [TECH-SERVICE-EXPLORATION]
+agent_must_read: [.docs/wiki/07_technical/TECH-SERVICE-EXPLORATION.md, internal/service/]
+agent_may_edit: [.docs/wiki/07_technical/TECH-SERVICE-EXPLORATION.md]
+agent_must_not_edit: [internal/service/, .docs/wiki/_mi-lsp/read-model.toml]
+verify: ["Leer .docs/wiki/07_technical/TECH-SERVICE-EXPLORATION.md y .docs/wiki/07_technical/contracts/CT-TECHNICAL-BASELINE.md; cotejar las afirmaciones con la fuente publicada internal/model/types.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [La propuesta agregue score de completitud o vuelva obligatorio Roslyn o fan-out multi-repo.]
+evidence: [.docs/wiki/07_technical/TECH-SERVICE-EXPLORATION.md, .docs/wiki/07_technical/contracts/CT-TECHNICAL-BASELINE.md, internal/model/types.go]
+```
+
 ## Resumen
 
 Define el perfil técnico de `nav service`: un agregador evidence-first que combina catálogo repo-local y busqueda textual scoped a un path para resumir la superficie observable de un servicio.

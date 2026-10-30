@@ -179,3 +179,42 @@ Scenario: Exportar telemetria para un harness agente
 - Negativo: `TP-DAE / TC-DAE-006`
 - Positivo: `TP-DAE / TC-DAE-007`
 - Positivo: `TP-DAE / TC-DAE-024`
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-DAE-002
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-DAE-01.md
+exports:
+- RF-DAE-002
+- RF-DAE-002 - Compartir runtimes, governance UI y telemetria local
+agent_must_read:
+- .docs/wiki/05_requirements/RF-DAE-002.md
+- .docs/wiki/04_flows/FL-DAE-01.md
+- .docs/wiki/06_tests/TP-DAE.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-DAE-002.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/daemon/admin.go
+- internal/daemon/export.go
+- internal/daemon/log_tail.go
+- internal/daemon/perf_smoke.go
+- internal/daemon/server.go
+- internal/service/app.go
+- internal/service/autoindex.go
+- internal/telemetry/access_diagnostics.go
+verify:
+- Validar el contrato y sus referencias con `mi-lsp nav wiki validate-harness --workspace
+  <alias>`; contrastar los casos de .docs/wiki/06_tests/TP-DAE.md sin inferir que
+  fueron ejecutados.
+stop_if:
+- 'Detenerse y escalar si el cambio contradice el límite documentado: - Supuestos
+  prohibidos:'
+evidence:
+- .docs/wiki/05_requirements/RF-DAE-002.md
+- .docs/wiki/06_tests/TP-DAE.md
+```

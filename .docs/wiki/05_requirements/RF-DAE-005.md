@@ -83,3 +83,37 @@ Se aplican las condiciones de rechazo y los warnings descritos en el comportamie
 3. Un valor `--days` menor o igual a cero se rechaza antes de consultar `daemon.db`.
 4. Un error al abrir o consultar `daemon.db` se informa explícitamente y no se representa como cero actividad.
 5. Los agregados no exponen patrones, texto, argv, errores crudos, paths ni contenido de archivos; los eventos de fallback se cuentan solo cuando `route=direct_fallback` o `routing_outcome` indica fallback.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-DAE-005
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-DAE-01.md
+exports:
+- RF-DAE-005
+- Estadísticas de telemetría local por cliente
+agent_must_read:
+- .docs/wiki/05_requirements/RF-DAE-005.md
+- .docs/wiki/04_flows/FL-DAE-01.md
+- .docs/wiki/06_tests/TP-DAE.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-DAE-005.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/cli/stats.go
+- internal/daemon/export.go
+- internal/daemon/state_store.go
+verify:
+- Validar el contrato y sus referencias con `mi-lsp nav wiki validate-harness --workspace
+  <alias>`; contrastar los casos de .docs/wiki/06_tests/TP-DAE.md sin inferir que
+  fueron ejecutados.
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-DAE-005.
+evidence:
+- .docs/wiki/05_requirements/RF-DAE-005.md
+- .docs/wiki/06_tests/TP-DAE.md
+```

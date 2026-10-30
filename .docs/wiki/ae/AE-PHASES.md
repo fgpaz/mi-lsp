@@ -9,14 +9,14 @@ id: "AE-PHASES"
 kind: "support-doc"
 audience: "llm-first"
 imports:
-  - '[[00_gobierno_documental]]'
+  - '[[00_governance]]'
   - '[[AE-HARNESS-MANIFEST]]'
   - '[[AE-SESSION-CONTRACT]]'
   - '[[AE-EVIDENCE-POLICY]]'
 exports:
   - 'AE-PHASES'
 agent_must_read:
-  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/00_governance.md
   - .docs/wiki/ae/AE-PHASES.md
   - .docs/wiki/ae/AE-HARNESS-MANIFEST.md
 agent_may_edit:

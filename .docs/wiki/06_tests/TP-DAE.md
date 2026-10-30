@@ -136,3 +136,35 @@ RF-DAE-001, RF-DAE-002, RF-DAE-003, RF-DAE-004, RF-DAE-005. Se conserva el inven
   - internal/cli/stats.go
   - internal/daemon/state_store.go
   - .docs/wiki/06_tests/TP-DAE.md
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TP-DAE
+kind: test-plan
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/05_requirements/RF-DAE-001.md
+exports:
+  - TP-DAE
+agent_must_read:
+  - .docs/wiki/06_tests/TP-DAE.md
+agent_may_edit:
+  - .docs/wiki/06_tests/TP-DAE.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-DAE-001.md
+  - internal/daemon/state_store.go
+verify:
+  - .docs/wiki/06_tests/TP-DAE.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - test_oracle_or_acceptance_would_change
+  - evidence_not_presented_in_the_source
+evidence:
+  - .docs/wiki/06_tests/TP-DAE.md
+  - .docs/wiki/05_requirements/RF-DAE-001.md
+  - .docs/wiki/05_requirements/RF-DAE-002.md
+  - .docs/wiki/05_requirements/RF-DAE-003.md
+  - .docs/wiki/05_requirements/RF-DAE-004.md
+  - .docs/wiki/05_requirements/RF-DAE-005.md
+```

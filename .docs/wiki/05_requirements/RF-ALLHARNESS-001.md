@@ -38,3 +38,34 @@ Después de editar, la skill guía diagnostics sin hook nuevo; un backend ausent
 2. Un mismo contenido de skill se distribuye mediante mecanismos existentes a los cuatro harness; no InstallAll ni escritura de caches durante BUILD.
 
 Verifica [[TP-ALLHARNESS-001]]. Contrato [[CT-ALLHARNESS-001]].
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-ALLHARNESS-001
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-ALLHARNESS-001.md
+exports:
+- RF-ALLHARNESS-001
+- RF-ALLHARNESS-001
+agent_must_read:
+- .docs/wiki/05_requirements/RF-ALLHARNESS-001.md
+- .docs/wiki/04_flows/FL-ALLHARNESS-001.md
+- .docs/wiki/06_tests/TP-ALLHARNESS-001.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-ALLHARNESS-001.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+verify:
+- Validar el contrato y sus referencias con `mi-lsp nav wiki validate-harness --workspace
+  <alias>`; contrastar los casos de .docs/wiki/06_tests/TP-ALLHARNESS-001.md sin inferir
+  que fueron ejecutados.
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-ALLHARNESS-001.
+evidence:
+- .docs/wiki/05_requirements/RF-ALLHARNESS-001.md
+- .docs/wiki/06_tests/TP-ALLHARNESS-001.md
+```

@@ -27,6 +27,21 @@ links:
     role: implementation
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-DOC-ROUTER
+kind: technical
+audience: dual
+imports: [.docs/wiki/07_technical/contracts/CT-NAV-ROUTE.md]
+exports: [TECH-DOC-ROUTER]
+agent_must_read: [.docs/wiki/07_technical/TECH-DOC-ROUTER.md, internal/docgraph/route.go]
+agent_may_edit: [.docs/wiki/07_technical/TECH-DOC-ROUTER.md]
+agent_must_not_edit: [internal/docgraph/route.go, .docs/wiki/_mi-lsp/read-model.toml]
+verify: ["Leer .docs/wiki/07_technical/TECH-DOC-ROUTER.md y .docs/wiki/07_technical/contracts/CT-NAV-ROUTE.md; cotejar las afirmaciones con la fuente publicada internal/docgraph/route.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [La propuesta eleve discovery advisory a autoridad canónica o altere el fallback de gobernanza descrito.]
+evidence: [.docs/wiki/07_technical/TECH-DOC-ROUTER.md, .docs/wiki/07_technical/contracts/CT-NAV-ROUTE.md, internal/docgraph/route.go]
+```
+
 ## Resumen
 
 Describe el diseño técnico del motor de routing de documentos de bajo token para `mi-lsp`. Este router alimenta `nav route`, `nav ask` y `nav pack` desde una única fuente de verdad canonica.

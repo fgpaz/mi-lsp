@@ -11,6 +11,21 @@ links:
   - RF-IDX-004
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: CT-INDEX-JOB-OWNERSHIP
+kind: data-lifecycle-contract
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-GRAPH-NATIVE.md]
+exports: [CT-INDEX-JOB-OWNERSHIP]
+agent_must_read: [.docs/wiki/07_technical/contracts/CT-INDEX-JOB-OWNERSHIP.md, internal/store/index_jobs.go, internal/indexer/indexer.go]
+agent_may_edit: [.docs/wiki/07_technical/contracts/CT-INDEX-JOB-OWNERSHIP.md]
+agent_must_not_edit: [internal/store/, internal/indexer/, .mi-lsp/index.db]
+verify: ["Leer .docs/wiki/07_technical/contracts/CT-INDEX-JOB-OWNERSHIP.md y .docs/wiki/07_technical/TECH-GRAPH-NATIVE.md; cotejar las afirmaciones con la fuente publicada internal/store/index_jobs.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Un writer stale/cancelado pueda publicar, o un control-plane adquiera owner/fence/capacidad de publicación.]
+evidence: [.docs/wiki/07_technical/contracts/CT-INDEX-JOB-OWNERSHIP.md, .docs/wiki/07_technical/TECH-GRAPH-NATIVE.md, internal/store/index_jobs.go]
+```
+
 ## Consumidor
 
 CLI, agentes y consumidores locales de las operaciones descritas; no se amplía la autoridad del consumidor.

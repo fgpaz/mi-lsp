@@ -156,3 +156,35 @@ Scenario: Diferenciar route de formula
 - Positivo: `TP-SEM / TC-SEM-007`
 - Positivo: `TP-SEM / TC-SEM-008`
 - Negativo: `TP-SEM / TC-SEM-009`
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-SEM-003
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-SEM-01.md
+exports:
+- RF-SEM-003
+- RF-SEM-003 - Recuperar secciones por significado con nav recall (ungated, knowledge-wiki)
+agent_must_read:
+- .docs/wiki/05_requirements/RF-SEM-003.md
+- .docs/wiki/04_flows/FL-SEM-01.md
+- .docs/wiki/06_tests/TP-SEM.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-SEM-003.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/app.go
+verify:
+- Validar el contrato y sus referencias con `mi-lsp nav wiki validate-harness --workspace
+  <alias>`; contrastar los casos de .docs/wiki/06_tests/TP-SEM.md sin inferir que
+  fueron ejecutados.
+stop_if:
+- 'Detenerse y escalar si el cambio contradice el límite documentado: - Supuestos
+  prohibidos:'
+evidence:
+- .docs/wiki/05_requirements/RF-SEM-003.md
+- .docs/wiki/06_tests/TP-SEM.md
+```

@@ -8,7 +8,7 @@ id: "AE-SESSION-CONTRACT"
 kind: "support-doc"
 audience: "llm-first"
 imports:
-  - '[[00_gobierno_documental]]'
+  - '[[00_governance]]'
   - '[[AE-PHASES]]'
   - '[[AE-EVIDENCE-POLICY]]'
 exports:

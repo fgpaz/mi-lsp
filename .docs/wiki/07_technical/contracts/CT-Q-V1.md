@@ -12,6 +12,21 @@ links:
   - RF-QRY-025
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: CT-Q-V1
+kind: frozen-query-contract
+audience: dual
+imports: [.docs/wiki/07_technical/contracts/CT-TECHNICAL-BASELINE.md]
+exports: [CT-Q-V1]
+agent_must_read: [.docs/wiki/07_technical/contracts/CT-Q-V1.md, internal/query/parser_test.go, internal/service/primitives_q_test.go]
+agent_may_edit: [.docs/wiki/07_technical/contracts/CT-Q-V1.md]
+agent_must_not_edit: [internal/query/, internal/service/, mi-mcp/]
+verify: ["Leer .docs/wiki/07_technical/contracts/CT-Q-V1.md y .docs/wiki/07_technical/contracts/CT-TECHNICAL-BASELINE.md; cotejar la gramática con internal/query/parser.go y los casos publicados de parser_test.go. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Se cambie identidad/revisión/gramática/paginación/error semantics q-v1 o se toque consumidor mi-mcp desde este ámbito.]
+evidence: [.docs/wiki/07_technical/contracts/CT-Q-V1.md, .docs/wiki/07_technical/contracts/CT-TECHNICAL-BASELINE.md, internal/query/parser.go, internal/query/parser_test.go]
+```
+
 ## Consumidor
 
 CLI, agentes y consumidores locales de las operaciones descritas; no se amplía la autoridad del consumidor.

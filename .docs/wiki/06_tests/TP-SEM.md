@@ -54,3 +54,34 @@ RF-SEM-001, RF-SEM-002, RF-SEM-003, RF-SEM-004. Se conserva el inventario de esc
   - RF-SEM-004 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: índices duplicados o fuera de rango se rechazan y preservan el orden semántico original. No acredita una ejecución de esta migración.
 - **Caso**: TC-SEM-014; **Tipo**: negativo; **RF**: RF-SEM-004; **Descripción**: warnings/logs no exponen query, snippets, stdin/stdout completos, provider responses, tokens ni secretos
   - RF-SEM-004 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: warnings/logs no exponen query, snippets, stdin/stdout completos, provider responses, tokens ni secretos. No acredita una ejecución de esta migración.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TP-SEM
+kind: test-plan
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/05_requirements/RF-SEM-001.md
+exports:
+  - TP-SEM
+agent_must_read:
+  - .docs/wiki/06_tests/TP-SEM.md
+agent_may_edit:
+  - .docs/wiki/06_tests/TP-SEM.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/
+  - internal/
+verify:
+  - .docs/wiki/06_tests/TP-SEM.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - manual_evidence_pending_is_reported_as_pass
+  - test_oracle_or_acceptance_would_change
+evidence:
+  - .docs/wiki/06_tests/TP-SEM.md
+  - .docs/wiki/05_requirements/RF-SEM-001.md
+  - .docs/wiki/05_requirements/RF-SEM-002.md
+  - .docs/wiki/05_requirements/RF-SEM-003.md
+  - .docs/wiki/05_requirements/RF-SEM-004.md
+```

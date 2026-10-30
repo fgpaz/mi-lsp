@@ -20,6 +20,21 @@ links:
     - path: internal/service/contract_retirements.go
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-WIKI-001
+kind: technical-architecture
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-GRAPH-NATIVE.md, .docs/wiki/07_technical/contracts/CT-ROADMAP-001.md]
+exports: [TECH-WIKI-001]
+agent_must_read: [.docs/wiki/07_technical/TECH-WIKI-001.md, internal/indexer/graph_staging.go, internal/service/wiki_graph.go]
+agent_may_edit: [.docs/wiki/07_technical/TECH-WIKI-001.md]
+agent_must_not_edit: [internal/indexer/graph_staging.go, internal/service/wiki_graph.go, .docs/wiki/_mi-lsp/read-model.toml]
+verify: ["Leer .docs/wiki/07_technical/TECH-WIKI-001.md y .docs/wiki/07_technical/TECH-GRAPH-NATIVE.md; cotejar las afirmaciones con la fuente publicada internal/indexer/graph_staging.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [La propuesta persista proyecciones, copie relaciones inversas como autoría o declare conversión de candidatos a observaciones.]
+evidence: [.docs/wiki/07_technical/TECH-WIKI-001.md, .docs/wiki/07_technical/TECH-GRAPH-NATIVE.md, internal/indexer/graph_staging.go]
+```
+
 ## Resumen
 Las relaciones v1 entran en el kernel existente durante indexación. No existían todas como relaciones tipadas antes de v0.14.0: había navegación documental y puente wiki/código parcial. La generación publica docs y observaciones de código; doc_generation_id y code_generation_id identifican sus fuentes, no prometen cadenas de ID iguales entre subsistemas. La coherencia se determina por la generación activa del grafo.
 

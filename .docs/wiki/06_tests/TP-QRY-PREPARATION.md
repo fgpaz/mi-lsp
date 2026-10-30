@@ -177,3 +177,31 @@ Cada caso conserva exactamente el nombre recibido en el handoff. El oráculo com
 - **review**: 541bd2bf
 - **head**: a449abf
 - **authority**: evidence_never_authorizes_writes_or_promotions
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TP-QRY-PREPARATION
+kind: test-plan
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/05_requirements/RF-QRY-019.md
+exports:
+  - TP-QRY-PREPARATION
+agent_must_read:
+  - .docs/wiki/06_tests/TP-QRY-PREPARATION.md
+agent_may_edit:
+  - .docs/wiki/06_tests/TP-QRY-PREPARATION.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-QRY-019.md
+  - internal/
+verify:
+  - .docs/wiki/06_tests/TP-QRY-PREPARATION.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - preparation_evidence_is_treated_as_authorization
+  - test_oracle_or_acceptance_would_change
+evidence:
+  - .docs/wiki/06_tests/TP-QRY-PREPARATION.md
+  - .docs/wiki/05_requirements/RF-QRY-019.md
+```

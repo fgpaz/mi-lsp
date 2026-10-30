@@ -74,3 +74,37 @@ CLI `mi-lsp`, con operaciones y selectores detallados en el comportamiento del r
 5. Por defecto indexa automaticamente.
 6. Devuelve un resultado resumido con `next_steps` centrados en `nav ask`.
 7. Como `init` pertenece a la superficie AXI-default, los `next_steps` deben privilegiar reruns utiles sin repetir `--axi`; solo los caminos hacia superficies classic-default deben agregar `--axi` explicitamente.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-WKS-003
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-BOOT-01.md
+exports:
+- RF-WKS-003
+- RF-WKS-003 - Inicializar el workspace actual y dejarlo listo para `nav ask`
+agent_must_read:
+- .docs/wiki/05_requirements/RF-WKS-003.md
+- .docs/wiki/04_flows/FL-BOOT-01.md
+- .docs/wiki/06_tests/TP-WKS.md
+- .docs/wiki/06_tests/TP-WKS-PROBE.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-WKS-003.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/app.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-WKS.md, ejecutar el
+  comando publicado: go test -count=1 ./internal/service -run ''^TestExecuteAutoRegisterSkipsIndexWithoutCommits$''
+  (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-WKS-003.
+evidence:
+- .docs/wiki/05_requirements/RF-WKS-003.md
+- .docs/wiki/06_tests/TP-WKS.md
+- .docs/wiki/06_tests/TP-WKS-PROBE.md
+```

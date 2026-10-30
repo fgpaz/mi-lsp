@@ -6,7 +6,28 @@ status: draft
 title: Host Windows sin ventana y protocolo execsafe-host/v1
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-WINDOWS-HOST
+kind: technical-security-contract
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-WINDOWS-BUILD.md]
+exports: [TECH-WINDOWS-HOST]
+agent_must_read: [.docs/wiki/07_technical/TECH-WINDOWS-HOST.md, .docs/wiki/05_requirements/RF-HOST-001.md, .docs/wiki/04_flows/FL-HOST-001.md, .docs/wiki/06_tests/TP-HOST-001.md]
+agent_may_edit: [.docs/wiki/07_technical/TECH-WINDOWS-HOST.md]
+agent_must_not_edit: [internal/, scripts/release/, .docs/wiki/06_tests/]
+verify: ["Leer .docs/wiki/07_technical/TECH-WINDOWS-HOST.md y .docs/wiki/07_technical/TECH-WINDOWS-BUILD.md; cotejar las afirmaciones con la fuente publicada .docs/wiki/06_tests/TP-HOST-001.md y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Se proponga ampliar herencia de handles, terminar procesos ajenos, cambiar ACL/UAC o propagar éxito del transporte como éxito del payload.]
+evidence: [.docs/wiki/07_technical/TECH-WINDOWS-HOST.md, .docs/wiki/07_technical/TECH-WINDOWS-BUILD.md, .docs/wiki/06_tests/TP-HOST-001.md]
+```
+
+## Resumen
+
 Esta especificación describe el contrato del productor, no certifica conformidad ni admisión de un consumidor. [[RF-HOST-001]] define requisitos, [[FL-HOST-001]] el flujo y [[TP-HOST-001]] los oráculos. El consumidor B comparte framing, no necesariamente política de ciclo de vida; su conexión y admisión requieren evidencia independiente.
+
+## Mapa de componentes
+
+El consumidor o caller invoca `mi-lsp-host`, que gestiona un job privado con root y descendientes. Control y resultado son privados y están separados de los streams. Ver [[RF-HOST-001]], [[FL-HOST-001]] y [[TP-HOST-001]].
 
 ## Invocación, control y streams
 

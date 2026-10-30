@@ -316,3 +316,49 @@ Este objeto da a consumidores como `ps-contexto` y `live-graph-vs-diff.mjs` los 
 - Mismo primary doc con y sin graph enrichment; menor token count solo si conserva cadena obligatoria.
 - Precision/recall de links wiki-code y 30 repeticiones de determinismo/token budget.
 - `TP-GPH / TP-GPH-005 / TC-GPH-036..038`.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-GPH-007
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-GPH-02.md
+exports:
+- RF-GPH-007
+- RF-GPH-007 - Integrar evidencia wiki-codigo sin invertir autoridad
+agent_must_read:
+- .docs/wiki/05_requirements/RF-GPH-007.md
+- .docs/wiki/04_flows/FL-GPH-02.md
+- .docs/wiki/06_tests/TP-GPH.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-GPH-007.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/cli/git_frontier.go
+- internal/cli/nav.go
+- internal/livecontext/overlay.go
+- internal/model/wiki_code_context.go
+- internal/model/wiki_code_source_projection.go
+- internal/service/app.go
+- internal/service/wiki_code_bindings.go
+- internal/service/wiki_code_context.go
+- internal/service/wiki_code_enrich.go
+- internal/service/wiki_code_sources.go
+- internal/docgraph/route.go
+- internal/service/prepare.go
+- internal/service/trace.go
+- internal/service/wiki_root.go
+- internal/service/workspace_ops.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-GPH.md, ejecutar el
+  comando publicado: go test ./internal/model/... ./internal/indexer/... ./internal/service/...
+  ./internal/daemon/... (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-GPH-007.
+evidence:
+- .docs/wiki/05_requirements/RF-GPH-007.md
+- .docs/wiki/06_tests/TP-GPH.md
+```

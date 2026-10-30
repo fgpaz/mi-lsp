@@ -14,6 +14,21 @@ links:
   - RF-QRY-025
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: CT-NAV-INTENT
+kind: cli-contract
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-DOC-ROUTER.md, .docs/wiki/07_technical/contracts/CT-GRAPH-CLI.md]
+exports: [CT-NAV-INTENT]
+agent_must_read: [.docs/wiki/07_technical/contracts/CT-NAV-INTENT.md, internal/service/intent.go]
+agent_may_edit: [.docs/wiki/07_technical/contracts/CT-NAV-INTENT.md]
+agent_must_not_edit: [internal/service/intent.go, internal/cli/nav.go, .docs/wiki/_mi-lsp/read-model.toml]
+verify: ["Leer .docs/wiki/07_technical/contracts/CT-NAV-INTENT.md y .docs/wiki/07_technical/TECH-DOC-ROUTER.md; cotejar las afirmaciones con la fuente publicada internal/service/intent.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Se altere precedence de selectores, ruta directa o seguridad de paths sin contrato/evidencia correspondiente.]
+evidence: [.docs/wiki/07_technical/contracts/CT-NAV-INTENT.md, .docs/wiki/07_technical/TECH-DOC-ROUTER.md, internal/service/intent.go]
+```
+
 ## Consumidor
 
 CLI, agentes y consumidores locales de las operaciones descritas; no se amplía la autoridad del consumidor.

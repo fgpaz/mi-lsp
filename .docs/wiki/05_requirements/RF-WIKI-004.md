@@ -127,3 +127,36 @@ Scenario: Modo summary sin evidencia
 - Positivo: `TP-WIKI / TC-WIKI-011`
 - Positivo: `TP-WIKI / TC-WIKI-012`
 - Negativo: `TP-WIKI / TC-WIKI-013`
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-WIKI-004
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-WIKI-01.md
+exports:
+- RF-WIKI-004
+- RF-WIKI-004 - Trazar evidencia de requisito a especificacion en todos los workspaces
+agent_must_read:
+- .docs/wiki/05_requirements/RF-WIKI-004.md
+- .docs/wiki/04_flows/FL-WIKI-01.md
+- .docs/wiki/06_tests/TP-WIKI.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-WIKI-004.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/app.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-WIKI.md, ejecutar el
+  comando publicado: go test ./internal/service ./internal/cli ./internal/docgraph
+  ./internal/indexer -count=1 -run ''TestClassifyWikiMapHubDefaultsRemainLocked|TestGroupWikiMapDocsUsesDefaultOrCustomDeclarationOrder|TestTrimWikiMapHubs|TestWalkWikiMapDocs|TestNavWikiMapUsesDirectExecution|TestKnowledgeWikiRoots|TestDocumentGraph''
+  (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- 'Detenerse y escalar si el cambio contradice el límite documentado: - Supuestos
+  prohibidos:'
+evidence:
+- .docs/wiki/05_requirements/RF-WIKI-004.md
+- .docs/wiki/06_tests/TP-WIKI.md
+```

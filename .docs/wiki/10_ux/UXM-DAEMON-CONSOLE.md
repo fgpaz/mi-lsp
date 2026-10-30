@@ -28,3 +28,37 @@ Los controles de la implementación se llaman Search, Backend, Client, Window, P
 ## Decisiones y preguntas abiertas
 
 Los tokens y componentes se toman de internal/daemon/admin_ui.html, descritos por DESIGN.md; no se duplican valores. No se rediseña ni se añaden acciones en esta migración. La revisión visual y de comportamiento queda a cargo del owner de FINAL_VERIFY.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: UXM-DAEMON-CONSOLE
+kind: ux-module
+audience: human
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/05_requirements/RF-DAE-002.md
+  - .docs/wiki/05_requirements/RF-DAE-004.md
+  - .docs/wiki/05_requirements/RF-DAE-005.md
+exports:
+  - UXM-DAEMON-CONSOLE
+agent_must_read:
+  - .docs/wiki/10_ux/UXM-DAEMON-CONSOLE.md
+agent_may_edit:
+  - .docs/wiki/10_ux/UXM-DAEMON-CONSOLE.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/
+  - internal/daemon/admin_ui.html
+verify:
+  - "Lectura/cotejo: comparar pantallas, literales, estados y acciones con RF-DAE-002, FL-DAE-01, TP-DAE, DESIGN.md e internal/daemon/admin_ui.html; comprobar que los tokens siguen viniendo de la implementación y que la revisión visual continúa pendiente si no hubo observación."
+stop_if:
+  - harness_verdict=BLOCKED
+  - visual_review_is_claimed_without_observation
+  - journey_or_acceptance_would_change
+evidence:
+  - .docs/wiki/05_requirements/RF-DAE-002.md
+  - .docs/wiki/04_flows/FL-DAE-01.md
+  - .docs/wiki/06_tests/TP-DAE.md
+  - DESIGN.md
+  - internal/daemon/admin_ui.html
+  - internal/daemon/admin_ui.go
+```

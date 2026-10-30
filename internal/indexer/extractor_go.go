@@ -366,6 +366,21 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 		if p.ImportPath == "" || p.Module == nil || p.Module.Path != modulePath || !goGraphResolvedInside(moduleRoot, moduleRootReal, p.Dir) || goGraphSkippedPath(p.Dir) {
 			continue
 		}
+		packageRel, relErr := filepath.Rel(moduleRoot, p.Dir)
+		if relErr != nil {
+			builder.partial = true
+			builder.addPartialOmissions(project, "source_directory_unresolved")
+			continue
+		}
+		issues, scanErr := goGraphPackageSymlinkIssues(moduleRoot, moduleRootReal, p.Dir)
+		if scanErr != nil {
+			builder.partial = true
+			builder.addFileIssue(filepath.ToSlash(packageRel), "source_directory_unreadable")
+		}
+		for _, issue := range issues {
+			builder.partial = true
+			builder.addFileIssue(issue.path, issue.reason)
+		}
 		// `go list ./...` includes test-only directories that have XTestGoFiles
 		// but no buildable package sources. They contribute no declarations to
 		// this build, so do not mark an otherwise complete observation partial.
@@ -377,15 +392,27 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 		sort.Strings(names)
 		for _, name := range uniqueStrings(names) {
 			full := filepath.Join(p.Dir, name)
-			if !goGraphResolvedInside(moduleRoot, moduleRootReal, full) || goGraphSkippedPath(full) {
+			if goGraphSkippedPath(full) {
 				continue
 			}
 			rel, e := filepath.Rel(moduleRoot, full)
-			if e != nil {
+			if e != nil || !goGraphInside(moduleRoot, full) {
 				builder.partial = true
+				builder.addFileIssue(filepath.ToSlash(name), "source_path_outside_root")
 				continue
 			}
 			rel = filepath.ToSlash(rel)
+			resolved, resolveErr := filepath.EvalSymlinks(full)
+			if resolveErr != nil {
+				builder.partial = true
+				builder.addFileIssue(rel, "source_path_unresolved")
+				continue
+			}
+			if !goGraphInside(moduleRootReal, resolved) {
+				builder.partial = true
+				builder.addFileIssue(rel, "external_target")
+				continue
+			}
 			data, e := os.ReadFile(full)
 			if e != nil {
 				builder.partial = true
@@ -536,6 +563,58 @@ func mustEvalSymlinks(path string) string {
 
 func goGraphResolvedInside(lexicalRoot, resolvedRoot, path string) bool {
 	return goGraphInside(lexicalRoot, path) && goGraphInside(resolvedRoot, mustEvalSymlinks(path))
+}
+
+type goGraphSourcePathIssue struct {
+	path   string
+	reason string
+}
+
+// goGraphPackageSymlinkIssues catches symlink .go entries that go list may
+// omit (notably dangling links), as well as links resolving outside the module.
+// It only inspects immediate package entries; go list supplies package dirs.
+func goGraphPackageSymlinkIssues(moduleRoot, moduleRootReal, packageDir string) ([]goGraphSourcePathIssue, error) {
+	entries, err := os.ReadDir(packageDir)
+	if err != nil {
+		return nil, err
+	}
+	issues := make([]goGraphSourcePathIssue, 0)
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+			continue
+		}
+		full := filepath.Join(packageDir, name)
+		if goGraphSkippedPath(full) {
+			continue
+		}
+		info, err := os.Lstat(full)
+		if err != nil {
+			rel, relErr := filepath.Rel(moduleRoot, full)
+			if relErr != nil {
+				rel = name
+			}
+			issues = append(issues, goGraphSourcePathIssue{path: filepath.ToSlash(rel), reason: "source_path_unresolved"})
+			continue
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+		rel, relErr := filepath.Rel(moduleRoot, full)
+		if relErr != nil || !goGraphInside(moduleRoot, full) {
+			issues = append(issues, goGraphSourcePathIssue{path: filepath.ToSlash(name), reason: "source_path_outside_root"})
+			continue
+		}
+		resolved, resolveErr := filepath.EvalSymlinks(full)
+		if resolveErr != nil {
+			issues = append(issues, goGraphSourcePathIssue{path: filepath.ToSlash(rel), reason: "source_path_unresolved"})
+			continue
+		}
+		if !goGraphInside(moduleRootReal, resolved) {
+			issues = append(issues, goGraphSourcePathIssue{path: filepath.ToSlash(rel), reason: "external_target"})
+		}
+	}
+	return issues, nil
 }
 
 func uniqueStrings(values []string) []string {

@@ -153,3 +153,35 @@ Scenario: Forzar full index por cambios documentales
 - Positivo: `TP-IDX / TC-IDX-008`
 - Manual pendiente: `TP-IDX / TC-IDX-028` (contadores y punteros públicos; memoria interna no acreditada)
 - Positivo: `TP-IDX / TC-IDX-009`
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-IDX-002
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-IDX-01.md
+exports:
+- RF-IDX-002
+- RF-IDX-002 - Indexar incrementalmente usando git status para detectar archivos modificados
+agent_must_read:
+- .docs/wiki/05_requirements/RF-IDX-002.md
+- .docs/wiki/04_flows/FL-IDX-01.md
+- .docs/wiki/06_tests/TP-IDX.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-IDX-002.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/app.go
+verify:
+- Validar el contrato y sus referencias con `mi-lsp nav wiki validate-harness --workspace
+  <alias>`; contrastar los casos de .docs/wiki/06_tests/TP-IDX.md sin inferir que
+  fueron ejecutados.
+stop_if:
+- 'Detenerse y escalar si el cambio contradice el límite documentado: - Supuestos
+  prohibidos:'
+evidence:
+- .docs/wiki/05_requirements/RF-IDX-002.md
+- .docs/wiki/06_tests/TP-IDX.md
+```

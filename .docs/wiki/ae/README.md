@@ -9,7 +9,7 @@ id: "AE-README"
 kind: "support-doc"
 audience: "llm-first"
 imports:
-  - '[[00_gobierno_documental]]'
+  - '[[00_governance]]'
   - '[[AE-PHASES]]'
   - '[[AE-HARNESS-MANIFEST]]'
   - '[[AE-HARNESS-ORCHESTRATION]]'
@@ -21,7 +21,7 @@ imports:
 exports:
   - 'AE-README'
 agent_must_read:
-  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/00_governance.md
   - .docs/wiki/ae/README.md
   - .docs/wiki/ae/AE-HARNESS-MANIFEST.md
   - .docs/wiki/ae/AE-PHASES.md

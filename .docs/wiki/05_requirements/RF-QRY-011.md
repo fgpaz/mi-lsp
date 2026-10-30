@@ -99,3 +99,39 @@ CLI `mi-lsp`, con operaciones y selectores detallados en el comportamiento del r
 - Positivo: `TP-QRY / TC-QRY-181`
 - Negativo: `TP-QRY / TC-QRY-041`
 - Negativo: `TP-QRY / TC-QRY-180`
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-QRY-011
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-QRY-01.md
+exports:
+- RF-QRY-011
+- RF-QRY-011 - Resolver intencion en modo hibrido docs|code con scope opcional de
+  repo
+agent_must_read:
+- .docs/wiki/05_requirements/RF-QRY-011.md
+- .docs/wiki/04_flows/FL-QRY-01.md
+- .docs/wiki/06_tests/TP-QRY.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-QRY-011.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/app.go
+- internal/service/doc_query_context.go
+- internal/service/intent.go
+- internal/service/affected.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-QRY.md, ejecutar el
+  comando publicado: go test ./internal/model ./internal/service ./internal/cli ./internal/indexer
+  (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-QRY-011.
+evidence:
+- .docs/wiki/05_requirements/RF-QRY-011.md
+- .docs/wiki/06_tests/TP-QRY.md
+```

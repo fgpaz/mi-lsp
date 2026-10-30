@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/wikisource"
 	"gopkg.in/yaml.v3"
 )
@@ -15,6 +16,11 @@ import (
 func validateWikiContractRetirements(root, docPath, body string, index wikisource.ContractWikiIDIndex) []string {
 	var warnings []string
 	warn := func(message string) { warnings = append(warnings, docPath+": "+message) }
+	cleaned, metadataFindings := model.WikiContractWithoutHarnessMetadata(body)
+	for range metadataFindings {
+		warn("invalid_harness_metadata")
+	}
+	body = cleaned
 	blocks := candidateHarnessYAMLBlocks(body)
 	if len(blocks) == 0 {
 		blocks = []string{body}

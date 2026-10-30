@@ -9,6 +9,21 @@ links:
   - RF-WKS-008
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: CT-GOVERNANCE-AE-KERNEL-V2
+kind: governance-binding
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-DOCUMENTARY-GOVERNANCE.md, .docs/wiki/00_governance.md]
+exports: [CT-GOVERNANCE-AE-KERNEL-V2]
+agent_must_read: [.docs/wiki/07_technical/contracts/CT-GOVERNANCE-AE-KERNEL-V2.md, .docs/ae/repo-policy.yaml]
+agent_may_edit: [.docs/wiki/07_technical/contracts/CT-GOVERNANCE-AE-KERNEL-V2.md]
+agent_must_not_edit: [.docs/ae/repo-policy.yaml, <kernel_home>/canon, .docs/wiki/00_governance.md]
+verify: ["Leer .docs/wiki/07_technical/contracts/CT-GOVERNANCE-AE-KERNEL-V2.md y .docs/wiki/07_technical/TECH-DOCUMENTARY-GOVERNANCE.md; cotejar las afirmaciones con la fuente publicada internal/docgraph/governance.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [La edición altere seguridad, binding, política repo-local o interpretación de imports vacíos fuera de la excepción de raíz validada.]
+evidence: [.docs/wiki/07_technical/contracts/CT-GOVERNANCE-AE-KERNEL-V2.md, .docs/wiki/07_technical/TECH-DOCUMENTARY-GOVERNANCE.md, internal/docgraph/governance.go]
+```
+
 ## Consumidor
 
 CLI, agentes y consumidores locales de las operaciones descritas; no se amplía la autoridad del consumidor.

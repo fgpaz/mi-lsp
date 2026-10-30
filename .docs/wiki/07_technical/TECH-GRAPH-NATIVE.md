@@ -46,6 +46,8 @@ links:
     role: implementation
   - path: internal/model/graph_observation.go
     role: implementation
+  - path: internal/model/graph_query.go
+    role: implementation
   - path: internal/service/app.go
     role: implementation
   - path: internal/service/graph_impact.go
@@ -57,6 +59,8 @@ links:
   - path: internal/service/wiki_code_context.go
     role: implementation
   - path: internal/service/trace.go
+    role: implementation
+  - path: internal/store/db.go
     role: implementation
   - path: internal/store/doc_artifact_state.go
     role: implementation
@@ -74,9 +78,28 @@ links:
     role: implementation
   - path: internal/workspace/repository_identity.go
     role: implementation
+  - path: internal/workspace/worktree_overlay.go
+    role: implementation
+  - path: internal/worker/graph_runtime_fingerprint.go
+    role: implementation
   - path: internal/docgraph/governance.go
     role: implementation
 ---
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-GRAPH-NATIVE
+kind: technical-architecture
+audience: dual
+imports: [.docs/wiki/07_technical/contracts/CT-GRAPH-CLI.md, .docs/wiki/07_technical/db/DB-SYMBOL-EDGE-GRAPH.md]
+exports: [TECH-GRAPH-NATIVE]
+agent_must_read: [.docs/wiki/07_technical/TECH-GRAPH-NATIVE.md, .docs/wiki/06_tests/TP-GPH.md]
+agent_may_edit: [.docs/wiki/07_technical/TECH-GRAPH-NATIVE.md]
+agent_must_not_edit: [internal/store/, .docs/wiki/_mi-lsp/read-model.toml, .docs/wiki/06_tests/TP-GPH.md]
+verify: ["Leer .docs/wiki/07_technical/TECH-GRAPH-NATIVE.md y .docs/wiki/07_technical/contracts/CT-GRAPH-CLI.md; cotejar las afirmaciones con la fuente publicada .docs/wiki/06_tests/TP-GPH.md y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Se proponga afirmar admisión, frescura, completitud o PASS runtime sin oráculo/evidencia correspondiente, o cambiar canon externo/policy.]
+evidence: [.docs/wiki/07_technical/TECH-GRAPH-NATIVE.md, .docs/wiki/07_technical/contracts/CT-GRAPH-CLI.md, .docs/wiki/06_tests/TP-GPH.md]
+```
 
 ## Resumen
 
@@ -426,6 +449,41 @@ En un container, el módulo Go se observa una sola vez desde el checkout y usa e
   - .docs/wiki/05_requirements/RF-WKS-007.md
 
 `unavailable` nunca equivale a éxito: los consumidores comparan solo datos observados y fallan cerrado si el digest, una generación o la frescura requerida no está disponible. Los oráculos y casos negativos están en [[TP-GPH]].
+
+### GraphQuery de linked worktrees dirty
+
+- **Marcador estable**: TECH-GRAPH-NATIVE.worktree-graph-query-overlay
+- **Estado del comportamiento**: implemented_slice
+- **Alcance de la entrega Go-only**: solo topologías íntegramente Go; C#, Kotlin y cualquier mezcla se rechazan con `GPH_QUERY_BACKEND_UNAVAILABLE`. El código multilenguaje experimental y sus humos históricos quedan diferidos a otra versión; no forman parte de la entrega candidata 0.16.7, todavía no publicada.
+- **applies_to**: GraphQuery sobre un linked worktree explícito con cambios físicos frente a su HEAD
+- **not_applies_to**: `nav.refs` y `nav.affected`; sus contratos permanecen separados
+- **snapshot**:
+  - **workspace**: raíz física seleccionada, sin fallback al worktree principal
+  - **storage**: SQLite en memoria, solo lectura para el DB base
+  - **registration**: no auto-registro ni escritura de configuración/índice
+  - **publication**: batches completos bajo una identidad común y una generación atómica
+  - **entrypoints**: el default de otro lenguaje no oculta los módulos Go declarados ni el `go.mod` raíz; un default Go explícito prevalece
+  - **admission**: `ReadyForStaging` estricto; observación parcial o backend no disponible rechaza la consulta completa
+- **fingerprint**: común de Git, HEAD base, raíz física, delta de paths/contenido y configuración/runtime seleccionados; raíz incluida para separar branches con deltas equivalentes
+- **cache**: LRU en proceso, máximo cuatro snapshots, claveado por fingerprint, identidad, selecciones, caller semántico y fingerprint de runtime de observadores (entorno/toolchains/artefactos); el fingerprint de runtime es read-only y no expone configuración cruda. Solo reutiliza generaciones completas e idénticas
+- **concurrency**: mutex global limitado a lookup, referencias, publicación LRU y coordinación; observar, validar freshness y publicar ocurren fuera del lock; singleflight cancelable por fingerprint, y una entrada en uso no se desaloja. DB desalojadas se cierran fuera del mutex
+- **freshness**: validar antes de publicar y después de consultar; cambios concurrentes no se reportan como current
+- **cursor**: ligado al fingerprint del overlay además de operación/selectores/generación; continuación en la misma branch, rechazo como `GPH_QUERY_CURSOR_STALE` al cruzar snapshot o branch
+- **degradation**: un observer gated, parcial o ausente devuelve error tipado (`GPH_QUERY_BACKEND_UNAVAILABLE` cuando no puede producirse un grafo admitible); nunca se publica un grafo parcial ni se atribuye soporte Kotlin estable
+- **Kotlin**: conserva el gate experimental de [[RF-GPH-008]] y [[ADR-KOTLIN-GRAPH-ADMISSION-V1]]; no se relaja `ReadyForStaging`
+- **Comprobación prevista**:
+  - `.docs/wiki/06_tests/TP-GPH.md::TC-GPH-081`
+  - `.docs/wiki/06_tests/TP-GPH.md::TC-GPH-082`
+  - `.docs/wiki/06_tests/TP-GPH.md::TC-GPH-083`
+  - `.docs/wiki/06_tests/TP-GPH.md::TC-GPH-084`
+  - `.docs/wiki/06_tests/TP-GPH.md::TC-GPH-086`
+- **Caso futuro excluido de esta verificación**: `TC-GPH-085` conserva el objetivo histórico Go+C# de selección de entrypoint; sigue `manual_evidence_pending`, fuera de la admisión 0.16.7 y no constituye evidencia de aceptación.
+- **Evidencia referenciada**:
+  - `internal/model/graph_query.go`
+  - `internal/service/app.go`
+  - `internal/service/graph_query.go`
+  - `internal/store/db.go`
+  - `internal/workspace/worktree_overlay.go`
 
 ### Observacion Roslyn, sellado y normalización de unresolved
 

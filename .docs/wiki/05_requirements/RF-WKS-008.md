@@ -132,3 +132,39 @@ Se aplican las condiciones de rechazo y los warnings descritos en el comportamie
   - mi-lsp nav wiki trace RF-WKS-008 --workspace mi-lsp --format toon
 - **Evidencia referenciada**:
   - .docs/wiki/06_tests/TP-WKS.md
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-WKS-008
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-BOOT-01.md
+exports:
+- RF-WKS-008
+- RF-WKS-008 - Declarar raíces de wiki externas con `[[RF-WKS-008|canon]]`
+agent_must_read:
+- .docs/wiki/05_requirements/RF-WKS-008.md
+- .docs/wiki/04_flows/FL-BOOT-01.md
+- .docs/wiki/06_tests/TP-WKS.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-WKS-008.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/cli/workspace.go
+- internal/docgraph/docgraph.go
+- internal/model/types.go
+- internal/workspace/canon.go
+- internal/workspace/canon_link.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-WKS.md, ejecutar el
+  comando publicado: go test -count=1 ./internal/service -run ''^TestExecuteAutoRegisterSkipsIndexWithoutCommits$''
+  (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-WKS-008.
+evidence:
+- .docs/wiki/05_requirements/RF-WKS-008.md
+- .docs/wiki/06_tests/TP-WKS.md
+```

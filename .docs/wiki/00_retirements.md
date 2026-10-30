@@ -949,3 +949,28 @@
   terminal: true
   reason: Ruta legacy retirada; semántica trasladada a .docs/wiki/07_technical/contracts/CT-WORKSPACE-PROBE.md bajo WIKI-CONTRACT-v1; snapshot
     previo exclusivamente histórico.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: 00_retirements
+kind: retirement-register
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+exports:
+  - 00_retirements
+agent_must_read:
+  - .docs/wiki/00_retirements.md
+agent_may_edit:
+  - .docs/wiki/00_retirements.md
+agent_must_not_edit:
+  - .docs/wiki/_retired/
+  - .docs/wiki/07_technical/
+verify:
+  - mi-lsp nav wiki validate-harness --workspace <alias> --format toon
+stop_if:
+  - harness_verdict=BLOCKED
+  - retired_history_or_replacement_authority_would_change
+evidence:
+  - .docs/wiki/00_retirements.md
+```

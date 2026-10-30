@@ -6,6 +6,21 @@ status: active
 title: CT-NAV-ASK
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: CT-NAV-ASK
+kind: cli-contract
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-DOC-ROUTER.md]
+exports: [CT-NAV-ASK]
+agent_must_read: [.docs/wiki/07_technical/contracts/CT-NAV-ASK.md, internal/service/ask.go]
+agent_may_edit: [.docs/wiki/07_technical/contracts/CT-NAV-ASK.md]
+agent_must_not_edit: [internal/service/ask.go, .docs/wiki/_mi-lsp/read-model.toml]
+verify: ["Leer .docs/wiki/07_technical/contracts/CT-NAV-ASK.md y .docs/wiki/07_technical/TECH-DOC-ROUTER.md; cotejar las afirmaciones con la fuente publicada internal/service/ask.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Se eleve README o artefactos raw a primary_doc o se interprete ausencia de evidence como estado de código limpio.]
+evidence: [.docs/wiki/07_technical/contracts/CT-NAV-ASK.md, .docs/wiki/07_technical/TECH-DOC-ROUTER.md, internal/service/ask.go]
+```
+
 ## Consumidor
 
 CLI, agentes y consumidores locales de las operaciones descritas; no se amplía la autoridad del consumidor.

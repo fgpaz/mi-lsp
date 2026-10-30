@@ -12,6 +12,21 @@ links:
   - RF-WKS-007
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: CT-TECHNICAL-BASELINE
+kind: technical-contract-index
+audience: dual
+imports: [.docs/wiki/07_technical.md]
+exports: [CT-TECHNICAL-BASELINE]
+agent_must_read: [.docs/wiki/07_technical/contracts/CT-TECHNICAL-BASELINE.md]
+agent_may_edit: [.docs/wiki/07_technical/contracts/CT-TECHNICAL-BASELINE.md]
+agent_must_not_edit: [.docs/wiki/07_technical/contracts/, .docs/wiki/07_technical.md, .docs/wiki/_mi-lsp/read-model.toml]
+verify: ["Leer .docs/wiki/07_technical/contracts/CT-TECHNICAL-BASELINE.md y .docs/wiki/07_technical.md; cotejar las afirmaciones con la fuente publicada internal/cli/nav.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Un cambio altere semántica de un contrato dueño, readiness, requisito, acceptance o política externa desde este índice.]
+evidence: [.docs/wiki/07_technical/contracts/CT-TECHNICAL-BASELINE.md, .docs/wiki/07_technical.md, internal/cli/nav.go]
+```
+
 ## Consumidor
 
 CLI, agentes y consumidores locales de las operaciones descritas; no se amplía la autoridad del consumidor.
@@ -24,7 +39,7 @@ El detalle por frontera vive en `07_technical/contracts/`; contratos `accepted-d
 
 ### Boundaries y ownership
 
-- La CLI publica es la frontera estable para humanos, skills y wrappers. La puerta `mi-lsp mcp` fue retirada el 2026-10-15: `mi-mcp` invoca esa misma CLI por llamada de herramienta. Las puertas de host en `integrations/` son opcionales. El histórico vive en [[TECH-MCP-ADAPTER]] y el inventario de comandos en [[CT-CLI-DAEMON-ADMIN]]. El protocolo sigue siendo `mi-lsp-v1.1`.
+- La CLI publica es la frontera estable para humanos, skills y wrappers. La puerta `mi-lsp mcp` fue retirada el 2026-10-15: `mi-mcp` invoca esa misma CLI por llamada de herramienta. Las puertas de host en `integrations/` son opcionales. El histórico vive en [[00_retirements]] (entrada TECH-MCP-ADAPTER) y el inventario de comandos en [[CT-CLI-DAEMON-ADMIN]]. El protocolo sigue siendo `mi-lsp-v1.1`.
 - AXI es parte de la CLI publica como overlay selectivo por superficie: no todo comando entra en AXI por default.
 - El repo publica una skill curada en `skills/mi-lsp/` para herramientas compatibles con skills; esa skill documenta buenas practicas de uso, pero no redefine la semántica del CLI.
 - La instalación publica vive fuera del contrato runtime: `scripts/install/install.ps1|sh` instala/actualiza la CLI desde GitHub `releases/latest`, y `scripts/install/install-agent.ps1|sh` agrega la skill via `npx skills add`.
@@ -245,7 +260,7 @@ La lista de documentos se obtiene con `mi-lsp nav wiki index <kind>`; no se mant
 - `nav governance`: diagnostica perfil efectivo, sync, stale index con timestamps comparados y pasos de reparación de gobernanza
 - `nav service`: resume evidencia observable de un servicio en un único summary estructurado; si el catálogo del path es Go, devuelve `profile=go-package`, no ejecuta scans .NET de endpoints/event bus y puede detectar rutas Go (`net/http`, chi/gin/fiber-style), Cobra y workers.
 - `nav context`: acepta `nav context <file> <line>` y `nav context <file>:<line>`; devuelve `slice_text` y metadatos opcionales de catálogo o backend semántico para la línea pedida; ante fallas runtime de worker/proceso conserva `slice_text`, degrada a catalog/text cuando sea posible y emite warning `backend_runtime/<code>`
-- `nav refs <symbol> [--file F --line N] [--context 0-5]`: referencias por el backend del lenguaje del símbolo (catálogo, luego primer hit de texto, luego lenguajes registrados; Roslyn solo para C#; ancla de definición inyectada para `gopls`/`tsserver`). Ante error del backend o resultado vacío, cae a texto con límites de palabra y devuelve `degraded=true` con `reason` (`lsp_unavailable`, `lsp_error`, `semantic_empty_text_hits`, `language_unsupported` o `no_matches`). Items con `origin` y, cuando el catálogo lo conoce, `caller {name, kind, line}`; `--context N` agrega N líneas antes y después. La herramienta `nav_refs` de la puerta MCP retirada aceptaba `context`; ese argumento deja de tener superficie vigente (retirado, ver [[TECH-MCP-ADAPTER]]).
+- `nav refs <symbol> [--file F --line N] [--context 0-5]`: referencias por el backend del lenguaje del símbolo (catálogo, luego primer hit de texto, luego lenguajes registrados; Roslyn solo para C#; ancla de definición inyectada para `gopls`/`tsserver`). Ante error del backend o resultado vacío, cae a texto con límites de palabra y devuelve `degraded=true` con `reason` (`lsp_unavailable`, `lsp_error`, `semantic_empty_text_hits`, `language_unsupported` o `no_matches`). Items con `origin` y, cuando el catálogo lo conoce, `caller {name, kind, line}`; `--context N` agrega N líneas antes y después. La herramienta `nav_refs` de la puerta MCP retirada aceptaba `context`; ese argumento deja de tener superficie vigente (retirado, ver [[00_retirements]], entrada TECH-MCP-ADAPTER).
 - `nav.find|intent|symbols|overview`: lecturas SQL-backed repo-locales; aceptan `--offset` para pedir la pagina siguiente sin cambiar el envelope base. En workspaces `container`, `find/intent` aceptan `--repo` y el offset se aplica después del filtro de repo. `nav.find` sin catálogo publicado, ilegible o con esquema roto responde `ok=true` desde texto (`backend=text`, `degraded=true`, `reason=index_not_ready|index_schema_broken`, items `origin=text`) y lanza un único reindex completo en segundo plano (`MI_LSP_AUTOINDEX=0` lo desactiva; `MI_LSP_AUTOINDEX_TIMEOUT`, default `10m`; `GOMAXPROCS=2` y `nice 19`; backoff de 10 min tras fallo vía `<root>/.mi-lsp/autoindex.last`; nunca escribe el registry). Un `index.db` corrupto se pone en cuarentena como `index.db.corrupt-<ts>` y se conservan como máximo 2.
 - `nav.search|outline|multi-read`: lecturas directas repo-locales sin contrato `--offset`; `search` sigue siendo text/rg-backed y puede exponer hints de refinamiento, pero no cursor SQL. Cada item de `nav search` trae `origin=text` y `col`; en formato agent implícito el tope por defecto es 20 items (AXI conserva 5) y el renderer muestra snippets de 160 runas centrados en la coincidencia, agrupa hits consecutivos del mismo archivo y, si `degraded=true`, anota `backend`, `reason` y `fallback_used` en el encabezado.
 - `worker install`: instala o refresca el worker por RID desde un bundle adjunto o, en desarrollo, desde `worker-dotnet/`

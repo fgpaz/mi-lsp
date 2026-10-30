@@ -9,6 +9,21 @@ links:
   - RF-QRY-018
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: CT-NAV-EDIT-PLAN
+kind: cli-contract
+audience: dual
+imports: [.docs/wiki/07_technical.md]
+exports: [CT-NAV-EDIT-PLAN]
+agent_must_read: [.docs/wiki/07_technical/contracts/CT-NAV-EDIT-PLAN.md, internal/service/edit_plan.go]
+agent_may_edit: [.docs/wiki/07_technical/contracts/CT-NAV-EDIT-PLAN.md]
+agent_must_not_edit: [internal/service/edit_plan.go, .docs/wiki/06_tests/]
+verify: ["Leer .docs/wiki/07_technical/contracts/CT-NAV-EDIT-PLAN.md y .docs/wiki/07_technical.md; cotejar las afirmaciones con la fuente publicada internal/service/edit_plan.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Apply se habilita sin ambos flags, el lenguaje carece de backend AST real o target/evidencia/scope no valida.]
+evidence: [.docs/wiki/07_technical/contracts/CT-NAV-EDIT-PLAN.md, .docs/wiki/07_technical.md, internal/service/edit_plan.go]
+```
+
 ## Consumidor
 
 CLI, agentes y consumidores locales de las operaciones descritas; no se amplía la autoridad del consumidor.

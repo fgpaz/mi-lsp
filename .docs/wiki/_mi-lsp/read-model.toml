@@ -7,7 +7,7 @@ version = 1
 
 [[agent_surface]]
   kind = "governance"
-  read_globs = [".docs/wiki/00_governance.md", ".docs/wiki/00_retirements.md"]
+  read_globs = [".docs/wiki/00_governance.md", ".docs/wiki/00_retirements.md", ".docs/wiki/ae/**"]
   edit_globs = [".docs/wiki/00_governance.md", ".docs/wiki/00_retirements.md"]
 
 [[agent_surface]]
@@ -93,7 +93,7 @@ version = 1
 [[family]]
   name = "functional"
   intent_keywords = ["scope", "outcome", "result", "resultado", "solucion", "solution", "flow", "feature", "behavior", "rs", "rf", "fl", "test", "workflow", "governance"]
-  paths = [".docs/wiki/00_governance.md", ".docs/wiki/00_retirements.md", ".docs/wiki/01_scope.md", ".docs/wiki/02_outcomes/RS-*.md", ".docs/wiki/03_architecture.md", ".docs/wiki/03_architecture/ADR-*.md", ".docs/wiki/04_flows/FL-*.md", ".docs/wiki/05_requirements/RF-*.md", ".docs/wiki/05_requirements/data-model.md", ".docs/wiki/05_requirements/data-model/DM-*.md", ".docs/wiki/06_tests/TP-*.md"]
+  paths = [".docs/wiki/00_governance.md", ".docs/wiki/00_retirements.md", ".docs/wiki/ae/**", ".docs/wiki/01_scope.md", ".docs/wiki/02_outcomes/RS-*.md", ".docs/wiki/03_architecture.md", ".docs/wiki/03_architecture/ADR-*.md", ".docs/wiki/04_flows/FL-*.md", ".docs/wiki/05_requirements/RF-*.md", ".docs/wiki/05_requirements/data-model.md", ".docs/wiki/05_requirements/data-model/DM-*.md", ".docs/wiki/06_tests/TP-*.md"]
 
 [[family]]
   name = "technical"

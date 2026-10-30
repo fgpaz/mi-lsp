@@ -83,3 +83,31 @@ La secuencia contractual es el único diagrama de `## Secuencia`, derivado de lo
 ## Restricciones ADR
 
 Confiabilidad, rendimiento, memoria, portabilidad y experiencia de desarrollo, en ese orden. La admisión Kotlin sigue limitada por ADR-KOTLIN-GRAPH-ADMISSION-V1; no concede promoción runtime.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: FL-BOOT-01
+kind: flow
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/02_outcomes/RS-MILSP-RUNTIME.md
+exports:
+  - FL-BOOT-01
+agent_must_read:
+  - .docs/wiki/04_flows/FL-BOOT-01.md
+agent_may_edit:
+  - .docs/wiki/04_flows/FL-BOOT-01.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-WKS-001.md
+  - .docs/wiki/06_tests/TP-WKS.md
+verify:
+  - .docs/wiki/06_tests/TP-WKS.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - flow_scope_or_acceptance_would_change
+evidence:
+  - .docs/wiki/04_flows/FL-BOOT-01.md
+  - .docs/wiki/06_tests/TP-WKS.md
+  - .docs/wiki/05_requirements/RF-WKS-001.md
+```

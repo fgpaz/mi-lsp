@@ -6,6 +6,21 @@ status: active
 title: TECH-AXI-DISCOVERY
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-AXI-DISCOVERY
+kind: technical
+audience: dual
+imports: [.docs/wiki/07_technical.md]
+exports: [TECH-AXI-DISCOVERY]
+agent_must_read: [.docs/wiki/07_technical/TECH-AXI-DISCOVERY.md]
+agent_may_edit: [.docs/wiki/07_technical/TECH-AXI-DISCOVERY.md]
+agent_must_not_edit: [internal/cli/axi_mode.go, internal/model/types.go, .docs/wiki/_mi-lsp/read-model.toml]
+verify: ["Leer .docs/wiki/07_technical/TECH-AXI-DISCOVERY.md y .docs/wiki/07_technical.md; cotejar las afirmaciones con la fuente publicada internal/cli/axi_mode.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Una corrección editorial implicase cambiar defaults, routing o semántica de una operación.]
+evidence: [.docs/wiki/07_technical/TECH-AXI-DISCOVERY.md, .docs/wiki/07_technical.md, internal/cli/axi_mode.go]
+```
+
 ## Resumen
 
 Describir la capa técnica del modo AXI selectivo por superficie para onboarding y discovery del CLI.

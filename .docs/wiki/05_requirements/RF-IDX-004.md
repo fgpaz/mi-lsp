@@ -186,3 +186,42 @@ Se aplican las condiciones de rechazo y los warnings descritos en el comportamie
 16. un batch del watcher realiza tres reintentos inmediatos y como máximo una reintentada diferida; un evento nuevo rearma el ciclo sin storm. Evidencia esperada: cuatro intentos totales por ciclo, una sola diferida y ningún timer duplicado para el mismo evento coalescido.
 17. un lock stale se pone en quarantine antes de reclamarlo; la limpieza compara PID, owner_token y started_at y nunca retira un owner reemplazado. Evidencia esperada: el owner replacement sobrevive a cualquier callback stale, incluso después de quarantine.
 18. RemoveWorkspaceIndexLockForPID nunca retira un PID vivo y trata PID0 moderno y legacy como no verificables hasta contar con evidencia segura. Evidencia esperada: un PID0 o PID vivo conserva el lock y devuelve contención/diagnóstico, no eliminación.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-IDX-004
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-IDX-01.md
+exports:
+- RF-IDX-004
+- RF-IDX-004 — Ownership y fencing de index jobs
+agent_must_read:
+- .docs/wiki/05_requirements/RF-IDX-004.md
+- .docs/wiki/04_flows/FL-IDX-01.md
+- .docs/wiki/06_tests/TP-IDX-OWNERSHIP.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-IDX-004.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/daemon/file_watcher.go
+- internal/indexer/incremental.go
+- internal/indexer/indexer.go
+- internal/service/index_jobs.go
+- internal/service/recall.go
+- internal/store/index_jobs.go
+- internal/store/index_lock.go
+- internal/store/index_publish.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-IDX-OWNERSHIP.md, ejecutar
+  el comando publicado: go test -v -count=1 -p 1 ./internal/store -run ''^Test(MarkIndexJobProgressUpdatesCountersStageAndTimestamp|CancelIndexJobForceTimeoutRetainsReservation|CancelIndexJobForceTerminatesProcessAndMarksCanceled|AcquireWithTimeoutReportsContentionAndPreservesLiveLock|IndexJobCancellationWinsOverStaleFailureWriter)$''
+  (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-IDX-004.
+evidence:
+- .docs/wiki/05_requirements/RF-IDX-004.md
+- .docs/wiki/06_tests/TP-IDX-OWNERSHIP.md
+```

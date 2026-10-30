@@ -10,6 +10,21 @@ links:
   - RF-QRY-002
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: CT-DAEMON-WORKER
+kind: worker-contract
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-DAEMON-GOBERNANZA.md, .docs/wiki/07_technical/TECH-WORKER-HOSTS.md]
+exports: [CT-DAEMON-WORKER]
+agent_must_read: [.docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md, internal/worker/lsp_client.go, internal/daemon/client.go]
+agent_may_edit: [.docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md]
+agent_must_not_edit: [internal/worker/, internal/daemon/, .docs/wiki/_mi-lsp/read-model.toml]
+verify: ["Leer .docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md y .docs/wiki/07_technical/TECH-DAEMON-GOBERNANZA.md; cotejar las afirmaciones con la fuente publicada internal/worker/lsp_client.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Se reenvíen errores después de conectar, se presente un backend parcial como limpio o se cambie lifecycle sin evidencia/oráculo.]
+evidence: [.docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md, .docs/wiki/07_technical/TECH-DAEMON-GOBERNANZA.md, internal/worker/lsp_client.go]
+```
+
 ## Consumidor
 
 CLI, agentes y consumidores locales de las operaciones descritas; no se amplía la autoridad del consumidor.

@@ -39,6 +39,21 @@ links:
     role: implementation
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-KOTLIN-BACKEND
+kind: technical-backend
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-GRAPH-NATIVE.md, .docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md]
+exports: [TECH-KOTLIN-BACKEND]
+agent_must_read: [.docs/wiki/07_technical/TECH-KOTLIN-BACKEND.md, internal/worker/kotlin.go, worker-kotlin/README.md]
+agent_may_edit: [.docs/wiki/07_technical/TECH-KOTLIN-BACKEND.md]
+agent_must_not_edit: [internal/worker/kotlin.go, internal/store/, worker-kotlin/build.sh, .docs/wiki/_mi-lsp/read-model.toml]
+verify: ["Leer .docs/wiki/07_technical/TECH-KOTLIN-BACKEND.md y .docs/wiki/07_technical/TECH-GRAPH-NATIVE.md; cotejar las afirmaciones con la fuente publicada internal/worker/kotlin.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [La propuesta arranque Kotlin, publique batch o afirme resolución/coverage sin los oráculos explícitos aquí descritos.]
+evidence: [.docs/wiki/07_technical/TECH-KOTLIN-BACKEND.md, .docs/wiki/07_technical/TECH-GRAPH-NATIVE.md, internal/worker/kotlin.go]
+```
+
 ## Resumen
 
 TECH-KOTLIN-BACKEND

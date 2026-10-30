@@ -228,3 +228,57 @@ CLI `mi-lsp`, con operaciones y selectores detallados en el comportamiento del r
 12. Resolver busquedas exactas por `doc_id`, `block_id` y `record_id` desde las tablas typed antes del ranking textual normal
 13. Para harnesses que consultan identificadores C#/TS/Python/Go, la guia agent-first de busqueda debe recomendar `nav find --exact`, luego `nav related`, y recien después `nav context` o `nav search` textual según la evidencia disponible.
 14. Si `nav search` recibe un literal symbol-like, debe emitir `coach.trigger=symbol_query_detected` y priorizar declaraciones/implementaciones fuente antes que docs, tests, backups o generados, sin ocultar esos matches secundarios.
+
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-QRY-016
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-QRY-01.md
+exports:
+- RF-QRY-016
+- RF-QRY-016 - Explorar la wiki con una superficie dedicada para agentes
+agent_must_read:
+- .docs/wiki/05_requirements/RF-QRY-016.md
+- .docs/wiki/04_flows/FL-QRY-01.md
+- .docs/wiki/06_tests/TP-QRY.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-QRY-016.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/cli/axi_mode.go
+- internal/cli/nav.go
+- internal/cli/root.go
+- internal/docgraph/docgraph.go
+- internal/model/types.go
+- internal/model/wiki_code_context.go
+- internal/service/app.go
+- internal/service/ask.go
+- internal/service/change_pack.go
+- internal/service/coach.go
+- internal/service/harness_validate.go
+- internal/service/pack.go
+- internal/service/prepare.go
+- internal/service/related.go
+- internal/service/route.go
+- internal/service/search.go
+- internal/service/source_validate.go
+- internal/service/trace.go
+- internal/service/wiki_compat.go
+- internal/service/wiki_search.go
+- internal/store/queries_docs.go
+- internal/store/schema.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-QRY.md, ejecutar el
+  comando publicado: go test ./internal/model ./internal/service ./internal/cli ./internal/indexer
+  (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-QRY-016.
+evidence:
+- .docs/wiki/05_requirements/RF-QRY-016.md
+- .docs/wiki/06_tests/TP-QRY.md
+```

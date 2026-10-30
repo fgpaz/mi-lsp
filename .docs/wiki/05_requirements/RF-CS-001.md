@@ -82,3 +82,35 @@ CLI `mi-lsp`, con operaciones y selectores detallados en el comportamiento del r
 5. El core envia la request al worker por `stdio` con framing length-prefixed.
 6. El worker carga o reutiliza el entrypoint Roslyn correcto y devuelve metadatos semánticos compactos.
 7. El core arma el envelope final con `backend=roslyn`, preserva el slice y superpone los metadatos semánticos cuando existen.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-CS-001
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-CS-01.md
+exports:
+- RF-CS-001
+- RF-CS-001 - Ejecutar consulta semantica C# via Roslyn worker
+agent_must_read:
+- .docs/wiki/05_requirements/RF-CS-001.md
+- .docs/wiki/04_flows/FL-CS-01.md
+- .docs/wiki/06_tests/TP-CS.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-CS-001.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/app.go
+verify:
+- Validar el contrato y sus referencias con `mi-lsp nav wiki validate-harness --workspace
+  <alias>`; contrastar los casos de .docs/wiki/06_tests/TP-CS.md sin inferir que fueron
+  ejecutados.
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-CS-001.
+evidence:
+- .docs/wiki/05_requirements/RF-CS-001.md
+- .docs/wiki/06_tests/TP-CS.md
+```

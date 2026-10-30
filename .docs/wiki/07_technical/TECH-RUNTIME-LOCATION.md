@@ -1,4 +1,41 @@
+---
+wiki_contract: WIKI-CONTRACT-v1
+id: TECH-RUNTIME-LOCATION
+kind: technical
+status: draft
+title: Ubicación del runtime y recibos
+links:
+  code:
+    - path: internal/runtimeinfo/location.go
+      role: behavior
+    - path: internal/runtimeinfo/receipts.go
+      role: behavior
+---
+
+## Resumen
+
+Ubicación recomendada y recibos del runtime, sin atribuir causa a una ausencia.
+
+## Mapa de componentes
+
+`internal/runtimeinfo/` calcula rutas y gestiona recibos; repair los consume.
+
 # Ubicación del runtime y recibos
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-RUNTIME-LOCATION
+kind: technical-operations
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-REPAIR.md]
+exports: [TECH-RUNTIME-LOCATION]
+agent_must_read: [.docs/wiki/07_technical/TECH-RUNTIME-LOCATION.md, internal/runtimeinfo/location.go]
+agent_may_edit: [.docs/wiki/07_technical/TECH-RUNTIME-LOCATION.md]
+agent_must_not_edit: [internal/runtime/, ~/.mi-lsp/repair/installations.json]
+verify: ["Leer .docs/wiki/07_technical/TECH-RUNTIME-LOCATION.md y .docs/wiki/07_technical/TECH-REPAIR.md; cotejar las afirmaciones con la fuente publicada internal/runtimeinfo/location.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Una modificación cree archivos durante consultas de ubicación o trate recibos inválidos como autorizados para reemplazo.]
+evidence: [.docs/wiki/07_technical/TECH-RUNTIME-LOCATION.md, .docs/wiki/07_technical/TECH-REPAIR.md, internal/runtimeinfo/location.go]
+```
 
 `version --format json` informa en `items[0].runtime` la ruta real del ejecutable, la raíz gestionada recomendada, la ruta del ejecutable gestionado y la ruta de recibos. No registra ni instala nada. `capabilities` incluye `repair-v1` en la integración que incorpora repair; no implica que releases anteriores la tengan.
 

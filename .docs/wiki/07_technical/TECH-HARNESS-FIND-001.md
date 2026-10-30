@@ -15,6 +15,21 @@ links:
       role: behavior
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-HARNESS-FIND-001
+kind: technical-contract
+audience: dual
+imports: [.docs/wiki/07_technical.md]
+exports: [TECH-HARNESS-FIND-001]
+agent_must_read: [.docs/wiki/07_technical/TECH-HARNESS-FIND-001.md, internal/service/find_files.go]
+agent_may_edit: [.docs/wiki/07_technical/TECH-HARNESS-FIND-001.md]
+agent_must_not_edit: [internal/cli/root.go, internal/cli/nav.go, internal/cli/provider_manifest.go, .docs/wiki/06_tests/]
+verify: ["Leer .docs/wiki/07_technical/TECH-HARNESS-FIND-001.md y .docs/wiki/07_technical.md; cotejar las afirmaciones con la fuente publicada internal/service/find_files.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Un cambio requiere shell con args de usuario, prometer atomicidad de inventario o suprimir fallos de enumeración.]
+evidence: [.docs/wiki/07_technical/TECH-HARNESS-FIND-001.md, .docs/wiki/07_technical.md, internal/service/find_files.go]
+```
+
 ## Resumen
 `newFindFilesCommand(state *rootState) *cobra.Command` es el constructor de la lane. La superficie raíz registra ese comando y publica su manifiesto; no se cambia `root.go`, `nav.go` ni `provider_manifest.go` desde esta implementación.
 

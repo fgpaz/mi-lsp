@@ -9,6 +9,21 @@ links:
   - RF-QRY-019
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: CT-NAV-PREPARATION
+kind: cli-security-contract
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-SEMANTIC-PREPARATION.md]
+exports: [CT-NAV-PREPARATION]
+agent_must_read: [.docs/wiki/07_technical/contracts/CT-NAV-PREPARATION.md, .docs/wiki/05_requirements/RF-QRY-019.md, .docs/wiki/06_tests/TP-QRY-PREPARATION.md]
+agent_may_edit: [.docs/wiki/07_technical/contracts/CT-NAV-PREPARATION.md]
+agent_must_not_edit: [internal/service/prepare.go, .docs/auditoria/mi-lsp-portable-preparation-v1/, .docs/wiki/06_tests/]
+verify: ["Leer .docs/wiki/07_technical/contracts/CT-NAV-PREPARATION.md y .docs/wiki/07_technical/TECH-SEMANTIC-PREPARATION.md; cotejar las afirmaciones con la fuente publicada internal/service/prepare.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [El paquete autorice/promueva escritura, permita escape de evidence root o su verificación requiera actualizar aceptación fuera del alcance.]
+evidence: [.docs/wiki/07_technical/contracts/CT-NAV-PREPARATION.md, .docs/wiki/07_technical/TECH-SEMANTIC-PREPARATION.md, internal/service/prepare.go]
+```
+
 ## Consumidor
 
 CLI, agentes y consumidores locales de las operaciones descritas; no se amplía la autoridad del consumidor.

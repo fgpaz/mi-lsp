@@ -86,3 +86,32 @@ Confiabilidad, rendimiento, memoria, portabilidad y experiencia de desarrollo, e
 3. Las capabilities se validan antes de iniciar; timeout, crash, salida inválida o exceso de salida solo afectan a la extension.
 4. El cleanup de proceso y recursos ocurre aun cuando la extension falle; la generación activa permanece sin cambios.
 5. Toda respuesta es bounded, generation-aware y provenance-bearing; no se afirma completitud, impacto ni performance sin evidencia reproducible.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: FL-GPH-03
+kind: flow
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/02_outcomes/RS-MILSP-GRAPH.md
+exports:
+  - FL-GPH-03
+agent_must_read:
+  - .docs/wiki/04_flows/FL-GPH-03.md
+agent_may_edit:
+  - .docs/wiki/04_flows/FL-GPH-03.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-GPH-003.md
+  - .docs/wiki/06_tests/TP-GPH.md
+verify:
+  - .docs/wiki/06_tests/TP-GPH.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - flow_invariants_or_acceptance_would_change
+  - partial_extension_output_is_called_complete
+evidence:
+  - .docs/wiki/04_flows/FL-GPH-03.md
+  - .docs/wiki/06_tests/TP-GPH.md
+  - .docs/wiki/05_requirements/RF-GPH-003.md
+```

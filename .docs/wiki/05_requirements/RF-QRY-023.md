@@ -86,3 +86,38 @@ Se aplican las condiciones de rechazo y los warnings descritos en el comportamie
 - Bytes medidos sobre el envelope serializado; ítems completos; clipping UTF-8 y marcador/razón tipados.
 - Recetas iniciales y los trece alias se resuelven de forma determinista; cada pipeline fuente está versionada en `internal/query/recipes/*.q`.
 - Casos: TP-QRY-197 a TP-QRY-200 y TC-QRY-204.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-QRY-023
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-QRY-01.md
+exports:
+- RF-QRY-023
+- RF-QRY-023 — Componer consultas q-v1 por CLI, daemon y proveedor mi-mcp con recetas
+  versionadas
+agent_must_read:
+- .docs/wiki/05_requirements/RF-QRY-023.md
+- .docs/wiki/04_flows/FL-QRY-01.md
+- .docs/wiki/06_tests/TP-QRY.md
+- .docs/wiki/06_tests/TP-QRY-PREPARATION.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-QRY-023.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/app.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-QRY.md, ejecutar el
+  comando publicado: go test ./internal/model ./internal/service ./internal/cli ./internal/indexer
+  (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-QRY-023.
+evidence:
+- .docs/wiki/05_requirements/RF-QRY-023.md
+- .docs/wiki/06_tests/TP-QRY.md
+- .docs/wiki/06_tests/TP-QRY-PREPARATION.md
+```

@@ -22,6 +22,36 @@ links:
     role: implementation
 ---
 
+## Contrato aditivo de ejecución documental
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-BASELINE
+kind: technical-baseline
+audience: dual
+imports:
+  - .docs/wiki/07_technical/TECH-DOC-ROUTER.md
+exports:
+  - TECH-BASELINE
+agent_must_read:
+  - .docs/wiki/07_technical.md
+agent_may_edit:
+  - .docs/wiki/07_technical.md
+agent_must_not_edit:
+  - internal/
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - .docs/ae/repo-policy.yaml
+verify:
+  - Leer .docs/wiki/07_technical.md y .docs/wiki/07_technical/TECH-DOC-ROUTER.md; cotejar las afirmaciones con la fuente publicada internal/service/ask.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución.
+stop_if:
+  - La modificación requiriese cambiar código, política AE, requisitos o aceptación fuera del alcance autorizado.
+evidence:
+  - .docs/wiki/07_technical.md
+  - .docs/wiki/07_technical/TECH-DOC-ROUTER.md
+  - internal/service/ask.go
+
+```
+
 ## Resumen
 
 Este documento resume la base técnica operativa de `mi-lsp` y el target graph-native aceptado para las olas G1-G10.
@@ -46,7 +76,7 @@ El detalle operativo y de subsistemas vive en `07_technical/`; `accepted-design`
 - `workspace list` y `workspace status` deben salir desde registry + `project.toml` normalizado cuando la topología cacheada ya tiene `repo[]` y `entrypoint[]`, sin redescubrir child repos en el hot path; preservan todos los aliases registrados aunque compartan root fisico. La redeteccion pesada queda como fallback para bootstrap o `project.toml` incompleto.
 - `workspace list --group-by-root` agrupa aliases por root exacto y expone `root`, `alias_count`, `aliases`, `canonical_alias`, `selection_reason`, `kind` y warnings sin mutar registry.
 - `workspace doctor` es no mutante y diagnostica aliases que comparten root exacto, familias de worktrees por `git common dir`, paths stale, readiness documental/gobernanza de aliases vivos, colisiones case-insensitive en el tree Git, shadowing de binario, `health`, `next_actions` y comandos sugeridos.
-- `workspace which` es el resolver de solo lectura (workspace efectivo y ejecutable en uso). `MI_LSP_BIN`, si está definido, debe apuntar al ejecutable real (`mi-lsp.exe` en Windows); un shim `.cmd` no es válido. `nav suggest` no reemplaza a `nav intent`. La puerta `mi-lsp mcp` fue retirada el 2026-10-15; `mi-mcp` invoca el CLI por llamada. Histórico en [[TECH-MCP-ADAPTER]].
+- `workspace which` es el resolver de solo lectura (workspace efectivo y ejecutable en uso). `MI_LSP_BIN`, si está definido, debe apuntar al ejecutable real (`mi-lsp.exe` en Windows); un shim `.cmd` no es válido. `nav suggest` no reemplaza a `nav intent`. La puerta `mi-lsp mcp` fue retirada el 2026-10-15; `mi-mcp` invoca el CLI por llamada. Histórico en [[00_retirements]] (entrada TECH-MCP-ADAPTER).
 - `workspace hygiene` reutiliza diagnósticos de doctor y la poda segura existente para una superficie agent-first: por default no muta; con `--apply-safe` solo limpia aliases stale/defaults invalidos del registry. Nunca borra worktrees, roots, índices, ramas ni procesos; aliases vivos con gobernanza bloqueada, `docs_ready=false` o `doc_count=0` quedan como `workspace_readiness_issues` con acciones manuales.
 - `workspace prune --stale --dry-run|--apply` limpia solamente entradas del `registry.toml` cuyo root ya no existe; nunca borra worktrees, directorios ni índices repo-locales.
 - `workspace status --no-auto-sync` permite diagnóstico read-only para smokes cross-workspace: reporta la proyección stale/bloqueada sin escribir `read-model.toml` en repos externos.

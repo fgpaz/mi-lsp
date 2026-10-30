@@ -11,6 +11,21 @@ links:
   - RF-WKS-005
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: CT-NAV-GOVERNANCE
+kind: cli-contract
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-DOCUMENTARY-GOVERNANCE.md, .docs/wiki/07_technical/TECH-GOVERNANCE-PROFILES.md]
+exports: [CT-NAV-GOVERNANCE]
+agent_must_read: [.docs/wiki/07_technical/contracts/CT-NAV-GOVERNANCE.md, internal/docgraph/wiki_contract_projection.go]
+agent_may_edit: [.docs/wiki/07_technical/contracts/CT-NAV-GOVERNANCE.md]
+agent_must_not_edit: [internal/docgraph/, .docs/wiki/_mi-lsp/read-model.toml, .docs/ae/repo-policy.yaml]
+verify: ["Leer .docs/wiki/07_technical/contracts/CT-NAV-GOVERNANCE.md y .docs/wiki/07_technical/TECH-DOCUMENTARY-GOVERNANCE.md; cotejar las afirmaciones con la fuente publicada internal/docgraph/wiki_contract_projection.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [La propuesta impida diagnosis cuando está bloqueado, escriba en raíz canon read-only o haga que ask/pack continúen con governance inválida.]
+evidence: [.docs/wiki/07_technical/contracts/CT-NAV-GOVERNANCE.md, .docs/wiki/07_technical/TECH-DOCUMENTARY-GOVERNANCE.md, internal/docgraph/wiki_contract_projection.go]
+```
+
 ## Consumidor
 
 CLI, agentes y consumidores locales de las operaciones descritas; no se amplía la autoridad del consumidor.
