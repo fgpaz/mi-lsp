@@ -196,6 +196,8 @@ func NewRootCommand() *cobra.Command {
 		newNativeEventCommand(),
 		newUsageReportCommand(),
 	)
+	// Root-level aliases are separate Cobra instances from the nav aliases.
+	root.AddCommand(newNativeVerbCommands(state)...)
 	return root
 }
 
@@ -774,10 +776,10 @@ func shouldUseDaemon(operation string, requested bool) bool {
 	}
 }
 
-// shouldAutoStartDaemon returns true for heavy operations that benefit from warm runtimes.
+// shouldAutoStartDaemon returns true for semantic operations that benefit from warm runtimes.
 func shouldAutoStartDaemon(operation string) bool {
 	switch operation {
-	case "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch", "nav.diagnostics":
+	case "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch", "nav.diagnostics", "rename_symbol":
 		return true
 	case "nav.workspace-map":
 		return false

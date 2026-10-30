@@ -17,10 +17,13 @@
     "diagnostics": "diagnostics/v1",
     "doctor": "mi-lsp-doctor/v0",
     "find-files": "find-files/v1",
+    "find_symbol": "find_symbol/v0",
+    "get_errors": "get_errors/v0",
     "intent": "mi-lsp-nav-intent/v0",
     "multi-read": "mi-lsp-nav-multi-read/v0",
     "q": "q-v1",
     "refs": "mi-lsp-refs/v0",
+    "rename_symbol": "rename_symbol/v0",
     "repair": "mi-lsp-repair/v1",
     "schema": "mi-lsp-schema/v0",
     "search": "mi-lsp-search/v0",
@@ -1108,6 +1111,981 @@
             "symbol": {
               "position": 0,
               "source": "argument"
+            },
+            "token_budget": {
+              "flag": "--token-budget",
+              "source": "option"
+            },
+            "workspace": {
+              "flag": "--workspace",
+              "source": "option"
+            }
+          }
+        },
+        "output": "json"
+      }
+    },
+    {
+      "model_alias": {
+        "namespace": "lsp",
+        "name": "find_symbol"
+      },
+      "name": "find_symbol",
+      "description": "Find a symbol with bounded intent, definition, semantic references, and source ranges; cold/catalog results are approximate. Qualified or Unicode Go names may use approximate intent rather than exact-name lookup",
+      "effect": "read",
+      "contract": "find_symbol/v0",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "max_items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "query": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "repo": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "token_budget": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workspace": {
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "description": "Response governed by find_symbol/v0; item status and partial/detail fields distinguish checked results from incomplete results",
+        "properties": {
+          "backend": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "contract_version": {
+            "const": "find_symbol/v0",
+            "type": "string"
+          },
+          "degraded": {
+            "type": "boolean"
+          },
+          "diagnostics": {
+            "properties": {
+              "backends": {
+                "type": "object"
+              },
+              "errors": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "files_checked": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "files_requested": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "hints": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "information": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "returned": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "warnings": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "error": {
+            "properties": {
+              "code": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "kind": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "message": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "reason_code": {
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "items": {
+            "properties": {
+              "ambiguity": {
+                "type": "boolean"
+              },
+              "approximate": {
+                "type": "boolean"
+              },
+              "definitions": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "query": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "ranges": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "semantic_status": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "source": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "usage_candidates": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "usages": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "next_hint": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "omissions": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "reason": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "minLength": 0,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "workspace": {
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "invocation": {
+        "kind": "cli",
+        "command": "mi-lsp",
+        "fixed_args": [
+          "--format",
+          "json",
+          "--client-name",
+          "mi-mcp",
+          "--no-auto-register",
+          "--token-budget",
+          "2000",
+          "--max-items",
+          "20",
+          "nav",
+          "find_symbol"
+        ],
+        "input_mapping": {
+          "fields": {
+            "max_items": {
+              "flag": "--max-items",
+              "source": "option"
+            },
+            "query": {
+              "position": 0,
+              "source": "argument"
+            },
+            "repo": {
+              "flag": "--repo",
+              "source": "option"
+            },
+            "token_budget": {
+              "flag": "--token-budget",
+              "source": "option"
+            },
+            "workspace": {
+              "flag": "--workspace",
+              "source": "option"
+            }
+          }
+        },
+        "output": "json"
+      }
+    },
+    {
+      "model_alias": {
+        "namespace": "lsp",
+        "name": "rename_symbol"
+      },
+      "name": "rename_symbol",
+      "description": "Apply a versioned gopls rename after live prepareRename confirmation. Bare symbol names never auto-select because workspace/symbol completeness is unproven; select a prepareRename-validated opaque candidate.symbol and retry using the same symbol input field. Candidate lists are bounded and candidates_complete=false; file/line/column remain optional all-or-none selectors. Compilation remains unchecked. change_signature is unavailable without a semantic backend plan",
+      "effect": "write",
+      "contract": "rename_symbol/v0",
+      "input_schema": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "anyOf": [
+                {
+                  "required": [
+                    "file"
+                  ]
+                },
+                {
+                  "required": [
+                    "line"
+                  ]
+                },
+                {
+                  "required": [
+                    "column"
+                  ]
+                }
+              ]
+            },
+            "then": {
+              "required": [
+                "file",
+                "line",
+                "column"
+              ]
+            }
+          }
+        ],
+        "properties": {
+          "column": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "entrypoint": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "file": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "line": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "max_items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "new_name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "project_path": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "repo": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "solution": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "symbol": {
+            "description": "Bare Go identifier requests a bounded candidate list and never auto-renames; or pass a returned opaque candidate.symbol selector in this same field",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "token_budget": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workspace": {
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "new_name"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "description": "Response governed by rename_symbol/v0; item status and partial/detail fields distinguish checked results from incomplete results",
+        "properties": {
+          "backend": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "contract_version": {
+            "const": "rename_symbol/v0",
+            "type": "string"
+          },
+          "degraded": {
+            "type": "boolean"
+          },
+          "diagnostics": {
+            "properties": {
+              "backends": {
+                "type": "object"
+              },
+              "errors": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "files_checked": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "files_requested": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "hints": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "information": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "returned": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "warnings": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "error": {
+            "properties": {
+              "code": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "kind": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "message": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "reason_code": {
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "items": {
+            "properties": {
+              "application": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "candidates": {
+                "items": {
+                  "properties": {
+                    "column": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "container_name": {
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "default_entrypoint": {
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "file": {
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "kind": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "line": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "match_reason": {
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "name": {
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "repo": {
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "repo_id": {
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "root": {
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "symbol": {
+                      "description": "Versioned opaque mi-lsp-symbol:v1 selector; untrusted and valid only after workspace, repo, path, snapshot, and live prepareRename checks",
+                      "maxLength": 4096,
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "candidates_complete": {
+                "type": "boolean"
+              },
+              "compilation_state": {
+                "enum": [
+                  "not_checked"
+                ],
+                "type": "string"
+              },
+              "diagnostics": {
+                "properties": {
+                  "compilation_state": {
+                    "enum": [
+                      "not_checked"
+                    ],
+                    "type": "string"
+                  },
+                  "details_complete": {
+                    "type": "boolean"
+                  },
+                  "diagnostics": {
+                    "items": {
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "error_count_complete": {
+                    "type": "boolean"
+                  },
+                  "errors_observed": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "files_checked": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "files_requested": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "next_hint": {
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  "not_checked_files": {
+                    "items": {
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "status": {
+                    "enum": [
+                      "checked",
+                      "partial",
+                      "not_checked"
+                    ],
+                    "type": "string"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              },
+              "diagnostics_status": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "files_touched": {
+                "items": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "mutation_state": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "new_name": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "partial_mutation": {
+                "type": "boolean"
+              },
+              "recovery_artifacts": {
+                "items": {
+                  "properties": {
+                    "detail": {
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "file": {
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "kind": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "path": {
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "state": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "status": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "symbol": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "uniqueness": {
+                "enum": [
+                  "not_proven"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "next_hint": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "omissions": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "reason": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "minLength": 0,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "workspace": {
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "invocation": {
+        "kind": "cli",
+        "command": "mi-lsp",
+        "fixed_args": [
+          "--format",
+          "json",
+          "--client-name",
+          "mi-mcp",
+          "--no-auto-register",
+          "--token-budget",
+          "2000",
+          "--max-items",
+          "20",
+          "nav",
+          "rename_symbol"
+        ],
+        "input_mapping": {
+          "fields": {
+            "column": {
+              "flag": "--column",
+              "source": "option"
+            },
+            "entrypoint": {
+              "flag": "--entrypoint",
+              "source": "option"
+            },
+            "file": {
+              "flag": "--file",
+              "source": "option"
+            },
+            "line": {
+              "flag": "--line",
+              "source": "option"
+            },
+            "max_items": {
+              "flag": "--max-items",
+              "source": "option"
+            },
+            "new_name": {
+              "flag": "--new-name",
+              "source": "option"
+            },
+            "project_path": {
+              "flag": "--project",
+              "source": "option"
+            },
+            "repo": {
+              "flag": "--repo",
+              "source": "option"
+            },
+            "solution": {
+              "flag": "--solution",
+              "source": "option"
+            },
+            "symbol": {
+              "position": 0,
+              "source": "argument"
+            },
+            "token_budget": {
+              "flag": "--token-budget",
+              "source": "option"
+            },
+            "workspace": {
+              "flag": "--workspace",
+              "source": "option"
+            }
+          }
+        },
+        "output": "json"
+      }
+    },
+    {
+      "model_alias": {
+        "namespace": "lsp",
+        "name": "get_errors"
+      },
+      "name": "get_errors",
+      "description": "Semantic diagnostics for up to 64 canonical explicit paths (repeat --file or positional), or changed source paths; partial/not_checked is not clean and diagnostics do not prove compilation",
+      "effect": "read",
+      "contract": "get_errors/v0",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 256,
+            "type": "array"
+          },
+          "max_files": {
+            "maximum": 64,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "max_items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "token_budget": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workspace": {
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "output_schema": {
+        "description": "Response governed by get_errors/v0; item status and partial/detail fields distinguish checked results from incomplete results",
+        "properties": {
+          "backend": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "contract_version": {
+            "const": "get_errors/v0",
+            "type": "string"
+          },
+          "degraded": {
+            "type": "boolean"
+          },
+          "diagnostics": {
+            "properties": {
+              "backends": {
+                "type": "object"
+              },
+              "errors": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "files_checked": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "files_requested": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "hints": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "information": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "returned": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "warnings": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "error": {
+            "properties": {
+              "code": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "kind": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "message": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "reason_code": {
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "items": {
+            "properties": {
+              "compilation_state": {
+                "enum": [
+                  "not_checked"
+                ],
+                "type": "string"
+              },
+              "details_complete": {
+                "type": "boolean"
+              },
+              "diagnostics": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "error_count_complete": {
+                "type": "boolean"
+              },
+              "errors_observed": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "files_checked": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "files_requested": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "files_touched": {
+                "items": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "next_hint": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "not_checked_files": {
+                "items": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "status": {
+                "enum": [
+                  "checked",
+                  "partial",
+                  "not_checked"
+                ],
+                "type": "string"
+              },
+              "truncated": {
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "next_hint": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "omissions": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "reason": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "minLength": 0,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "workspace": {
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "invocation": {
+        "kind": "cli",
+        "command": "mi-lsp",
+        "fixed_args": [
+          "--format",
+          "json",
+          "--client-name",
+          "mi-mcp",
+          "--no-auto-register",
+          "--token-budget",
+          "2000",
+          "--max-items",
+          "20",
+          "nav",
+          "get_errors"
+        ],
+        "input_mapping": {
+          "fields": {
+            "base": {
+              "flag": "--base",
+              "source": "option"
+            },
+            "files": {
+              "flag": "--file",
+              "repeat": true,
+              "source": "option"
+            },
+            "max_files": {
+              "flag": "--max-files",
+              "source": "option"
+            },
+            "max_items": {
+              "flag": "--max-items",
+              "source": "option"
             },
             "token_budget": {
               "flag": "--token-budget",

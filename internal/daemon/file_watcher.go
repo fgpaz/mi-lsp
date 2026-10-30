@@ -121,8 +121,21 @@ func NewFileWatcher(registration model.WorkspaceRegistration, debounceDur time.D
 
 // Start begins watching the workspace for file changes.
 func (fw *FileWatcher) Start(ctx context.Context) error {
-	// Admission and Add share Stop's mutex: Wait can never race a new Add.
-	fw.mu.Lock()
+	return fw.StartWithContexts(ctx, ctx)
+}
+
+// StartWithContexts bounds initial directory traversal by admissionCtx while
+// keeping the watcher loop owned by the manager lifetime context.
+func (fw *FileWatcher) StartWithContexts(admissionCtx, lifetimeCtx context.Context) error {
+	if admissionCtx == nil {
+		admissionCtx = context.Background()
+	}
+	if lifetimeCtx == nil {
+		lifetimeCtx = context.Background()
+	}
+	if err := lockWatcherContext(admissionCtx, &fw.mu); err != nil {
+		return err
+	}
 	if fw.isStoppedLocked() {
 		fw.mu.Unlock()
 		return errors.New("watcher stopped")
@@ -130,11 +143,32 @@ func (fw *FileWatcher) Start(ctx context.Context) error {
 	fw.wg.Add(1)
 	fw.mu.Unlock()
 
-	if err := fw.addWatchRecursive(fw.workspaceRoot); err != nil {
+	if err := fw.addWatchRecursiveContexts(admissionCtx, lifetimeCtx, fw.workspaceRoot); err != nil {
 		fw.wg.Done()
 		return err
 	}
-	go fw.watchLoop(ctx)
+	if err := admissionCtx.Err(); err != nil {
+		fw.wg.Done()
+		return err
+	}
+	if err := lifetimeCtx.Err(); err != nil {
+		fw.wg.Done()
+		return err
+	}
+	go fw.watchLoop(lifetimeCtx)
+	return nil
+}
+
+func lockWatcherContext(ctx context.Context, mu *sync.Mutex) error {
+	for !mu.TryLock() {
+		timer := time.NewTimer(5 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 	return nil
 }
 
@@ -757,7 +791,21 @@ func (fw *FileWatcher) updateDiagnosticLocked(path string, diagnostic watcherDia
 }
 
 func (fw *FileWatcher) addWatchRecursive(root string) error {
+	return fw.addWatchRecursiveContext(context.Background(), root)
+}
+
+func (fw *FileWatcher) addWatchRecursiveContext(ctx context.Context, root string) error {
+	return fw.addWatchRecursiveContexts(ctx, ctx, root)
+}
+
+func (fw *FileWatcher) addWatchRecursiveContexts(admissionCtx, lifetimeCtx context.Context, root string) error {
 	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if ctxErr := admissionCtx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if ctxErr := lifetimeCtx.Err(); ctxErr != nil {
+			return ctxErr
+		}
 		if err != nil {
 			return nil // skip errors
 		}
@@ -765,23 +813,33 @@ func (fw *FileWatcher) addWatchRecursive(root string) error {
 			if shouldSkipWatchDir(fw.workspaceRoot, path) {
 				return filepath.SkipDir
 			}
-			fw.mu.Lock()
-			if fw.watchedDirs >= fw.maxWatchedDirs {
-				fw.mu.Unlock()
+			if err := lockWatcherContext(admissionCtx, &fw.mu); err != nil {
+				return err
+			}
+			overLimit := fw.watchedDirs >= fw.maxWatchedDirs
+			fw.mu.Unlock()
+			if overLimit {
 				if fw.verbose {
 					log.Printf("[mi-lsp:watcher] reached max watched dirs (%d) during recursive add", fw.maxWatchedDirs)
 				}
 				return filepath.SkipDir
 			}
-			fw.mu.Unlock()
 
+			if ctxErr := admissionCtx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+			if ctxErr := lifetimeCtx.Err(); ctxErr != nil {
+				return ctxErr
+			}
 			if watchErr := fw.watcher.Add(path); watchErr != nil {
 				// Log but don't fail — some dirs may not be watchable
 				if fw.verbose {
 					log.Printf("[mi-lsp:watcher] skip dir %s: %v", path, watchErr)
 				}
 			} else {
-				fw.mu.Lock()
+				if err := lockWatcherContext(admissionCtx, &fw.mu); err != nil {
+					return err
+				}
 				fw.watchedDirs++
 				fw.mu.Unlock()
 			}

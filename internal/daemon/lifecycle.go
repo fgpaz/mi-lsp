@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -59,6 +60,31 @@ func (fc *failureCache) set(key string, err error, ttl time.Duration) {
 	}
 }
 
+func (fc *failureCache) getContext(ctx context.Context, key string) (error, bool, error) {
+	if err := lockManagerContext(ctx, &fc.mu); err != nil {
+		return nil, false, err
+	}
+	defer fc.mu.Unlock()
+	entry, ok := fc.entries[key]
+	if !ok {
+		return nil, false, nil
+	}
+	if time.Now().After(entry.expiresAt) {
+		delete(fc.entries, key)
+		return nil, false, nil
+	}
+	return entry.err, true, nil
+}
+
+func (fc *failureCache) setContext(ctx context.Context, key string, err error, ttl time.Duration) error {
+	if err := lockManagerContext(ctx, &fc.mu); err != nil {
+		return err
+	}
+	fc.entries[key] = failureCacheEntry{err: err, expiresAt: time.Now().Add(ttl)}
+	fc.mu.Unlock()
+	return nil
+}
+
 // isDeterministicSolutionFailure returns true if the error is a deterministic
 // solution/project configuration failure (not transient like network/timeout).
 func isDeterministicSolutionFailure(err error) bool {
@@ -74,12 +100,13 @@ func isDeterministicSolutionFailure(err error) bool {
 }
 
 type managedRuntime struct {
-	workspace   model.WorkspaceRegistration
-	request     model.WorkerRequest
-	client      worker.RuntimeClient
-	status      model.WorkerStatus
-	memCachedAt time.Time
-	activeCalls int
+	workspace    model.WorkspaceRegistration
+	request      model.WorkerRequest
+	client       worker.RuntimeClient
+	status       model.WorkerStatus
+	memCachedAt  time.Time
+	activeCalls  atomic.Int64
+	lastUsedUnix atomic.Int64
 }
 
 type Manager struct {
@@ -103,7 +130,7 @@ type Manager struct {
 	reapDone           chan struct{}
 	reapRequest        chan struct{}
 	reapHook           func()
-	watcherTransitions int
+	watcherTransitions atomic.Int64
 }
 
 // UpdateIdleSnapshot is conservative: existing runtimes or watchers can own
@@ -114,7 +141,7 @@ func (m *Manager) UpdateIdleSnapshot() bool {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.runtimes != nil && m.watchers != nil && len(m.runtimes) == 0 && len(m.watchers) == 0 && m.watcherTransitions == 0
+	return m.runtimes != nil && m.watchers != nil && len(m.runtimes) == 0 && len(m.watchers) == 0 && m.watcherTransitions.Load() == 0
 }
 
 func NewManager(repoRoot string, maxWorkers int, idleTimeout time.Duration) *Manager {
@@ -154,26 +181,36 @@ func NewManagerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dur
 
 func (m *Manager) Call(ctx context.Context, workspace model.WorkspaceRegistration, request model.WorkerRequest) (model.WorkerResponse, error) {
 	request.BackendType = normalizeBackendType(request.BackendType)
-	m.EnsureFileWatcher(workspace)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	callCtx, cancel := context.WithTimeout(ctx, m.callTimeout)
+	defer cancel()
+	if err := m.EnsureFileWatcherContext(callCtx, workspace); err != nil && callCtx.Err() != nil {
+		return model.WorkerResponse{}, callCtx.Err()
+	}
+	if err := callCtx.Err(); err != nil {
+		return model.WorkerResponse{}, err
+	}
 
 	// Check failure cache for this runtime
 	rk := runtimeKey(workspace, request)
-	if cachedErr, ok := m.failureCache.get(rk); ok {
+	cachedErr, cached, cacheErr := m.failureCache.getContext(callCtx, rk)
+	if cacheErr != nil {
+		return model.WorkerResponse{}, cacheErr
+	}
+	if cached {
 		return model.WorkerResponse{}, fmt.Errorf("cached backend failure: %w", cachedErr)
 	}
 
-	managed, err := m.getOrCreate(workspace, request, true)
+	managed, err := m.getOrCreateContext(callCtx, workspace, request, true)
 	if err != nil {
 		return model.WorkerResponse{}, err
 	}
 	defer m.releaseRuntime(managed)
 
-	// Wrap context with per-call timeout
-	callCtx, cancel := context.WithTimeout(ctx, m.callTimeout)
-	defer cancel()
-
 	response, err := managed.client.Call(callCtx, request)
-	m.updateStatus(managed)
+	m.updateStatusContext(callCtx, managed)
 	if err != nil && request.BackendType == worker.KotlinBackend {
 		m.mu.Lock()
 		if m.runtimes[rk] == managed {
@@ -184,8 +221,8 @@ func (m *Manager) Call(ctx context.Context, workspace model.WorkspaceRegistratio
 	}
 
 	// Cache deterministic solution-load failures to avoid repeated long timeouts
-	if err != nil && isDeterministicSolutionFailure(err) {
-		m.failureCache.set(rk, err, 5*time.Minute)
+	if err != nil && callCtx.Err() == nil && isDeterministicSolutionFailure(err) {
+		_ = m.failureCache.setContext(callCtx, rk, err, 5*time.Minute)
 	}
 
 	return response, err
@@ -213,6 +250,9 @@ func (m *Manager) Status() []model.WorkerStatus {
 		if now.Sub(managed.memCachedAt) > memCacheTTL {
 			managed.status.MemoryBytes = processMemoryBytes(managed.status.PID)
 			managed.memCachedAt = now
+		}
+		if lastUsed := managed.lastUsedUnix.Load(); lastUsed != 0 {
+			managed.status.LastUsedAt = time.Unix(0, lastUsed)
 		}
 		items = append(items, managed.status)
 	}
@@ -250,16 +290,12 @@ func (m *Manager) Shutdown() {
 }
 
 func (m *Manager) beginUpdateWatcherTransition() func() {
-	m.mu.Lock()
-	m.watcherTransitions++
-	m.mu.Unlock()
+	m.watcherTransitions.Add(1)
 	var once sync.Once
 	return func() { once.Do(m.endUpdateWatcherTransition) }
 }
 func (m *Manager) endUpdateWatcherTransition() {
-	m.mu.Lock()
-	m.watcherTransitions--
-	m.mu.Unlock()
+	m.watcherTransitions.Add(-1)
 }
 
 // StartFileWatchers initializes and starts file watchers for registered workspaces.
@@ -273,49 +309,53 @@ func (m *Manager) StartFileWatchers(registrations []model.WorkspaceRegistration)
 }
 
 func (m *Manager) EnsureFileWatcher(registration model.WorkspaceRegistration) {
+	_ = m.EnsureFileWatcherContext(m.watcherCtx, registration)
+}
+
+func (m *Manager) EnsureFileWatcherContext(ctx context.Context, registration model.WorkspaceRegistration) error {
 	if m.options.WatchMode == WatchModeOff {
-		return
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	key := canonicalWatcherRootKey(registration.Root)
 	if key == "" {
-		return
+		return nil
 	}
-
-	m.mu.Lock()
+	if err := lockManagerContext(ctx, &m.mu); err != nil {
+		return err
+	}
 	if _, ok := m.watchers[key]; ok {
 		m.touchWatcherLocked(key)
 		m.mu.Unlock()
-		return
+		return nil
 	}
 	if len(m.watchers) >= m.options.MaxWatchedRoots {
 		m.evictWatcherLocked()
 	}
-	m.watcherTransitions++
+	m.watcherTransitions.Add(1)
 	m.mu.Unlock()
 	defer m.endUpdateWatcherTransition()
 
 	fw, err := NewFileWatcher(registration, 500*time.Millisecond)
 	if err != nil {
-		if os.Getenv("MI_LSP_VERBOSE") != "" {
-			fmt.Printf("[mi-lsp:watcher] failed to create watcher for %s: %v\n", registration.Root, err)
-		}
-		return
+		return err
 	}
-	if err := fw.Start(m.watcherCtx); err != nil {
+	if err := fw.StartWithContexts(ctx, m.watcherCtx); err != nil {
 		fw.Stop()
-		if os.Getenv("MI_LSP_VERBOSE") != "" {
-			fmt.Printf("[mi-lsp:watcher] failed to start watcher for %s: %v\n", registration.Root, err)
-		}
-		return
+		return err
 	}
-
-	m.mu.Lock()
+	if err := lockManagerContext(ctx, &m.mu); err != nil {
+		fw.Stop()
+		return err
+	}
 	if existing, ok := m.watchers[key]; ok {
 		m.touchWatcherLocked(key)
 		m.mu.Unlock()
 		fw.Stop()
 		_ = existing
-		return
+		return nil
 	}
 	if len(m.watchers) >= m.options.MaxWatchedRoots {
 		m.evictWatcherLocked()
@@ -323,6 +363,23 @@ func (m *Manager) EnsureFileWatcher(registration model.WorkspaceRegistration) {
 	m.watchers[key] = fw
 	m.watcherRoots = append(m.watcherRoots, key)
 	m.mu.Unlock()
+	return nil
+}
+
+func lockManagerContext(ctx context.Context, mu *sync.Mutex) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for !mu.TryLock() {
+		timer := time.NewTimer(5 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil
 }
 
 // StopWatchers stops all running file watchers.
@@ -334,7 +391,7 @@ func (m *Manager) StopWatchers() {
 	}
 	m.watchers = map[string]*FileWatcher{}
 	m.watcherRoots = nil
-	m.watcherTransitions++
+	m.watcherTransitions.Add(1)
 	m.mu.Unlock()
 	defer m.endUpdateWatcherTransition()
 
@@ -380,7 +437,7 @@ func (m *Manager) evictWatcherLocked() {
 	if victim := m.watchers[victimKey]; victim != nil {
 		delete(m.watchers, victimKey)
 		m.skippedWatchers++
-		m.watcherTransitions++
+		m.watcherTransitions.Add(1)
 		go func() { defer m.endUpdateWatcherTransition(); victim.Stop() }()
 	}
 }
@@ -433,7 +490,11 @@ func (m *Manager) reapIdle() {
 		// Reduce idle timeout under memory pressure
 		effectiveIdleTimeout := m.idleTimeout / 2
 		for key, managed := range m.runtimes {
-			if managed.activeCalls == 0 && now.Sub(managed.status.LastUsedAt) > effectiveIdleTimeout {
+			lastUsed := managed.status.LastUsedAt
+			if stored := managed.lastUsedUnix.Load(); stored != 0 {
+				lastUsed = time.Unix(0, stored)
+			}
+			if managed.activeCalls.Load() == 0 && now.Sub(lastUsed) > effectiveIdleTimeout {
 				_ = managed.client.Close()
 				delete(m.runtimes, key)
 			}
@@ -444,7 +505,11 @@ func (m *Manager) reapIdle() {
 	} else {
 		// Normal reap at full idle timeout
 		for key, managed := range m.runtimes {
-			if managed.activeCalls == 0 && now.Sub(managed.status.LastUsedAt) > m.idleTimeout {
+			lastUsed := managed.status.LastUsedAt
+			if stored := managed.lastUsedUnix.Load(); stored != 0 {
+				lastUsed = time.Unix(0, stored)
+			}
+			if managed.activeCalls.Load() == 0 && now.Sub(lastUsed) > m.idleTimeout {
 				_ = managed.client.Close()
 				delete(m.runtimes, key)
 			}
@@ -465,13 +530,36 @@ func (m *Manager) WorkerCapacity() (inUse int, slots int) {
 
 func (m *Manager) getOrCreate(workspace model.WorkspaceRegistration, request model.WorkerRequest, markActive bool) (*managedRuntime, error) {
 	m.mu.Lock()
+	return m.getOrCreateLocked(context.Background(), workspace, request, markActive)
+}
+
+func (m *Manager) getOrCreateContext(ctx context.Context, workspace model.WorkspaceRegistration, request model.WorkerRequest, markActive bool) (*managedRuntime, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for !m.mu.TryLock() {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	return m.getOrCreateLocked(ctx, workspace, request, markActive)
+}
+
+func (m *Manager) getOrCreateLocked(ctx context.Context, workspace model.WorkspaceRegistration, request model.WorkerRequest, markActive bool) (*managedRuntime, error) {
 	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	key := runtimeKey(workspace, request)
 	if managed, ok := m.runtimes[key]; ok {
-		managed.status.LastUsedAt = time.Now()
+		lastUsed := time.Now()
+		managed.status.LastUsedAt = lastUsed
+		managed.lastUsedUnix.Store(lastUsed.UnixNano())
 		if markActive {
-			managed.activeCalls++
+			managed.activeCalls.Add(1)
 		}
 		return managed, nil
 	}
@@ -504,6 +592,7 @@ func (m *Manager) getOrCreate(workspace model.WorkspaceRegistration, request mod
 			LastUsedAt:     time.Now(),
 		},
 	}
+	managed.lastUsedUnix.Store(managed.status.LastUsedAt.UnixNano())
 
 	// LSP initialize belongs to Call(ctx), not pool allocation under a lock.
 	_, genericLSP := client.(*worker.LSPClient)
@@ -517,7 +606,7 @@ func (m *Manager) getOrCreate(workspace model.WorkspaceRegistration, request mod
 	managed.status.MemoryBytes = processMemoryBytes(managed.status.PID)
 	managed.memCachedAt = time.Now()
 	if markActive {
-		managed.activeCalls++
+		managed.activeCalls.Add(1)
 	}
 	m.runtimes[key] = managed
 	m.enforceIdleMemoryBoundsLocked(time.Now())
@@ -532,22 +621,35 @@ func (m *Manager) evictLeastRecentlyUsed() {
 	}
 }
 
-func (m *Manager) updateStatus(managed *managedRuntime) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	now := time.Now()
-	managed.status.LastUsedAt = now
-	if now.Sub(managed.memCachedAt) > memCacheTTL {
-		managed.status.MemoryBytes = processMemoryBytes(managed.status.PID)
-		managed.memCachedAt = now
+func (m *Manager) updateStatusContext(ctx context.Context, managed *managedRuntime) {
+	if managed == nil {
+		return
 	}
+	now := time.Now()
+	managed.lastUsedUnix.Store(now.UnixNano())
+	// PID may acquire the worker transport lock; sample it before taking the manager lock.
+	pid := managed.client.PID()
+	if lockManagerContext(ctx, &m.mu) != nil {
+		return
+	}
+	if m.runtimes[managed.status.RuntimeKey] == managed {
+		if managed.status.PID != pid {
+			managed.status.PID = pid
+			managed.status.MemoryBytes = 0
+			if pid == 0 {
+				managed.memCachedAt = now
+			} else {
+				managed.memCachedAt = time.Time{}
+			}
+		}
+		managed.status.LastUsedAt = now
+	}
+	m.mu.Unlock()
 }
 
 func (m *Manager) releaseRuntime(managed *managedRuntime) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if managed.activeCalls > 0 {
-		managed.activeCalls--
+	if managed != nil {
+		managed.activeCalls.Add(-1)
 	}
 }
 
@@ -561,7 +663,7 @@ func (m *Manager) enforceIdleMemoryBoundsLocked(now time.Time) {
 	// Enforce per-runtime memory limit
 	for key, managed := range m.runtimes {
 		refreshManagedMemory(managed, now)
-		if managed.activeCalls == 0 && managed.status.MemoryBytes > maxRuntimeBytes {
+		if managed.activeCalls.Load() == 0 && managed.status.MemoryBytes > maxRuntimeBytes {
 			_ = managed.client.Close()
 			delete(m.runtimes, key)
 		}
@@ -600,13 +702,19 @@ func runtimeMemoryTotalLocked(runtimes map[string]*managedRuntime, now time.Time
 func leastRecentlyUsedIdleRuntime(runtimes map[string]*managedRuntime) (string, *managedRuntime) {
 	var victimKey string
 	var victim *managedRuntime
+	var victimLastUsed time.Time
 	for key, candidate := range runtimes {
-		if candidate.activeCalls > 0 {
+		if candidate.activeCalls.Load() > 0 {
 			continue
 		}
-		if victim == nil || candidate.status.LastUsedAt.Before(victim.status.LastUsedAt) {
+		lastUsed := candidate.status.LastUsedAt
+		if stored := candidate.lastUsedUnix.Load(); stored != 0 {
+			lastUsed = time.Unix(0, stored)
+		}
+		if victim == nil || lastUsed.Before(victimLastUsed) {
 			victim = candidate
 			victimKey = key
+			victimLastUsed = lastUsed
 		}
 	}
 	return victimKey, victim

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -119,8 +120,8 @@ func refsSemanticTimeout(ctx context.Context) time.Duration {
 	return timeout
 }
 
-// callSemanticWorker calls the semantic backend; find_refs gets a deadline.
-// On expiry it just stops waiting (a daemon-owned worker keeps warming up).
+// callSemanticWorker bounds semantic references. The gopls path passes its
+// deadline through the runtime and LSP transport so cancellation releases the worker call.
 func (a *App) callSemanticWorker(ctx context.Context, registration model.WorkspaceRegistration, request model.WorkerRequest, method string) (model.WorkerResponse, error) {
 	if request.BackendType == "kotlin-language-server" {
 		timeout := 30 * time.Second
@@ -144,6 +145,15 @@ func (a *App) callSemanticWorker(ctx context.Context, registration model.Workspa
 		return a.Semantic.Call(ctx, registration, request)
 	}
 	timeout := refsSemanticTimeout(ctx)
+	if request.BackendType == "gopls" {
+		callCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		response, err := a.Semantic.Call(callCtx, registration, request)
+		if err != nil && errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			return model.WorkerResponse{}, &semanticTimeoutError{After: timeout}
+		}
+		return response, err
+	}
 	warmupState, warmup := a.beginTSRefsWarmup(registration, request)
 	callCtx := ctx
 	cancelCall := func() {}

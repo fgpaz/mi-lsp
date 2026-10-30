@@ -1206,16 +1206,27 @@ type WorkerRequest struct {
 }
 
 type WorkerResponse struct {
-	Partial     bool                   `json:"partial,omitempty"`
-	Reason      string                 `json:"reason,omitempty"`
-	Ok          bool                   `json:"ok"`
-	Backend     string                 `json:"backend,omitempty"`
-	Items       []map[string]any       `json:"items,omitempty"`
-	Warnings    []string               `json:"warnings,omitempty"`
-	Error       string                 `json:"error,omitempty"`
-	ErrorCode   string                 `json:"error_code,omitempty"`
-	Observation *GraphObservationBatch `json:"observation,omitempty"`
-	Stats       Stats                  `json:"stats,omitempty"`
+	Partial           bool                   `json:"partial,omitempty"`
+	Reason            string                 `json:"reason,omitempty"`
+	Ok                bool                   `json:"ok"`
+	Backend           string                 `json:"backend,omitempty"`
+	Items             []map[string]any       `json:"items,omitempty"`
+	WorkspaceEdit     json.RawMessage        `json:"workspace_edit,omitempty"`
+	DocumentSnapshots map[string]string      `json:"document_snapshots,omitempty"`
+	DocumentVersions  map[string]int         `json:"document_versions,omitempty"`
+	RenamePlaceholder string                 `json:"rename_placeholder,omitempty"`
+	RenameTarget      *WorkerRenameTarget    `json:"rename_target,omitempty"`
+	Warnings          []string               `json:"warnings,omitempty"`
+	Error             string                 `json:"error,omitempty"`
+	ErrorCode         string                 `json:"error_code,omitempty"`
+	Observation       *GraphObservationBatch `json:"observation,omitempty"`
+	Stats             Stats                  `json:"stats,omitempty"`
+}
+
+type WorkerRenameTarget struct {
+	File   string `json:"file"`
+	Line   int    `json:"line"`
+	Column int    `json:"column"`
 }
 
 type WorkerStatus struct {

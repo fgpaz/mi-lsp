@@ -169,7 +169,12 @@ func (c *LSPClient) startContext(ctx context.Context) error {
 		"rootUri":          rootURI,
 		"workspaceFolders": []map[string]any{{"uri": rootURI, "name": c.workspace.Name}},
 		"capabilities": map[string]any{
+			"workspace": map[string]any{
+				"workspaceEdit": map[string]any{"documentChanges": true},
+				"symbol":        map[string]any{"dynamicRegistration": false},
+			},
 			"textDocument": map[string]any{
+				"rename": map[string]any{"dynamicRegistration": false, "prepareSupport": true},
 				"hover": map[string]any{
 					"contentFormat": []string{"plaintext"},
 				},
@@ -243,6 +248,10 @@ func (c *LSPClient) Call(ctx context.Context, request model.WorkerRequest) (mode
 		return c.definition(ctx, request)
 	case "document_symbols":
 		return c.documentSymbols(ctx, request)
+	case "rename_symbol":
+		return c.renameSymbol(ctx, request)
+	case "resolve_rename_symbol":
+		return c.resolveRenameSymbol(ctx, request)
 	default:
 		return model.WorkerResponse{}, fmt.Errorf("LSP backend does not support method %q", request.Method)
 	}
@@ -395,6 +404,23 @@ func (c *LSPClient) resolveLocation(request model.WorkerRequest) (string, int, i
 	}
 	lineValue := intFromPayload(request.Payload, "line", 1)
 	symbol, _ := request.Payload["symbol"].(string)
+	strictPosition, _ := request.Payload["strict_position"].(bool)
+	if strictPosition {
+		if _, hasLine := request.Payload["line"]; !hasLine {
+			return "", 0, 0, "", errors.New("explicit line is required")
+		}
+		if _, hasColumn := request.Payload["column"]; !hasColumn {
+			return "", 0, 0, "", errors.New("explicit UTF-16 column is required")
+		}
+		column := intFromPayload(request.Payload, "column", 0)
+		if lineValue < 1 || column < 1 {
+			return "", 0, 0, "", errors.New("invalid UTF-16 position")
+		}
+		if err := validateUTF16Position(absoluteFile, lineValue, column); err != nil {
+			return "", 0, 0, "", err
+		}
+		return filepath.Clean(absoluteFile), lineValue, column, symbol, nil
+	}
 	if c.config.RequireExplicitPosition {
 		if !strings.EqualFold(filepath.Ext(absoluteFile), ".kt") {
 			return "", 0, 0, "", errors.New("unsupported_operation: Kotlin scripts are excluded")
@@ -420,20 +446,28 @@ func (c *LSPClient) resolveLocation(request model.WorkerRequest) (string, int, i
 }
 
 func (c *LSPClient) openDocument(filePath string) error {
-	info, err := os.Stat(filePath)
-	if err != nil {
-		return fmt.Errorf("cannot stat file for didOpen: %w", err)
-	}
-	if info.Size() > maxLSPDocumentBytes {
-		return fmt.Errorf("file too large for LSP didOpen: %d bytes exceeds %d", info.Size(), maxLSPDocumentBytes)
+	return c.openDocumentWithLimit(filePath, maxLSPDocumentBytes)
+}
+
+func (c *LSPClient) openDocumentWithLimit(filePath string, maxBytes int64) error {
+	return c.openDocumentBounded(filePath, maxBytes, false)
+}
+
+func (c *LSPClient) openDocumentForSelector(filePath string, maxBytes int64) error {
+	return c.openDocumentBounded(filePath, maxBytes, true)
+}
+
+func (c *LSPClient) openDocumentBounded(filePath string, maxBytes int64, rejectSymlink bool) error {
+	if maxBytes < 0 || maxBytes > maxLSPDocumentBytes {
+		maxBytes = maxLSPDocumentBytes
 	}
 	if c.openDocs == nil {
 		c.openDocs = map[string]openedDocument{}
 	}
 	key := filepath.Clean(filePath)
-	content, err := readKotlinMetadata(filePath)
+	content, info, err := readLSPSourceBounded(filePath, maxBytes, rejectSymlink)
 	if err != nil {
-		return fmt.Errorf("cannot read file for didOpen: %w", err)
+		return fmt.Errorf("cannot read bounded file for didOpen: %w", err)
 	}
 	if cached, ok := c.openDocs[key]; ok {
 		if cached.content == string(content) {
@@ -464,6 +498,49 @@ func (c *LSPClient) openDocument(filePath string) error {
 	c.touchOpenDocument(key)
 	c.evictOpenDocuments()
 	return nil
+}
+
+func readLSPSourceBounded(filePath string, maxBytes int64, rejectSymlink bool) ([]byte, os.FileInfo, error) {
+	if maxBytes < 0 {
+		return nil, nil, errors.New("negative source read limit")
+	}
+	pathBefore, err := os.Lstat(filePath)
+	if err != nil || rejectSymlink && pathBefore.Mode()&os.ModeSymlink != 0 {
+		return nil, nil, errors.New("source path is unavailable or symlinked")
+	}
+	before, err := os.Stat(filePath)
+	if err != nil || !before.Mode().IsRegular() || rejectSymlink && !os.SameFile(pathBefore, before) {
+		return nil, nil, errors.New("source is not a regular file with the expected path identity")
+	}
+	if before.Size() > maxBytes {
+		return nil, nil, fmt.Errorf("source exceeds %d-byte read limit", maxBytes)
+	}
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !os.SameFile(before, opened) {
+		return nil, nil, errors.New("source identity changed before read")
+	}
+	content, err := io.ReadAll(io.LimitReader(file, maxBytes))
+	if err != nil {
+		return nil, nil, err
+	}
+	after, err := file.Stat()
+	if err != nil || !os.SameFile(opened, after) || after.Size() != int64(len(content)) || after.Size() > maxBytes || !after.ModTime().Equal(opened.ModTime()) {
+		return nil, nil, errors.New("source changed during bounded read")
+	}
+	pathAfter, err := os.Lstat(filePath)
+	if err != nil || rejectSymlink && pathAfter.Mode()&os.ModeSymlink != 0 {
+		return nil, nil, errors.New("source path changed during bounded read")
+	}
+	currentPath, err := os.Stat(filePath)
+	if err != nil || !os.SameFile(after, currentPath) || rejectSymlink && !os.SameFile(pathAfter, currentPath) {
+		return nil, nil, errors.New("source path identity changed during bounded read")
+	}
+	return content, after, nil
 }
 
 func (c *LSPClient) touchOpenDocument(key string) {

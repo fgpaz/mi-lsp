@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -40,8 +41,22 @@ func (a *App) diagnostics(ctx context.Context, request model.CommandRequest) (mo
 	}
 	changed := boolPayload(request.Payload, "changed")
 	file := stringPayload(request.Payload, "file")
-	if changed == (file != "") {
-		return model.Envelope{}, errors.New("diagnostics requires one file or --changed")
+	files, filesErr := nativeFilesPayload(request.Payload["files"])
+	if filesErr != nil {
+		return model.Envelope{}, filesErr
+	}
+	forms := 0
+	if changed {
+		forms++
+	}
+	if file != "" {
+		forms++
+	}
+	if len(files) > 0 {
+		forms++
+	}
+	if forms != 1 {
+		return model.Envelope{}, errors.New("diagnostics requires exactly one file, files list, or --changed")
 	}
 	if !changed && stringPayload(request.Payload, "base") != "" {
 		return model.Envelope{}, errors.New("--base requires --changed")
@@ -54,7 +69,10 @@ func (a *App) diagnostics(ctx context.Context, request model.CommandRequest) (mo
 	if offset < 0 {
 		return model.Envelope{}, errors.New("offset must be nonnegative")
 	}
-	paths := []string{file}
+	paths := files
+	if file != "" {
+		paths = []string{file}
+	}
 	pathLimit := false
 	if changed {
 		paths, pathLimit, err = diagnosticsChangedPaths(ctx, registration.Root, stringPayload(request.Payload, "base"))
@@ -70,6 +88,10 @@ func (a *App) diagnostics(ctx context.Context, request model.CommandRequest) (mo
 			return diagnosticsFailure(registration.Name, code, "git change discovery unavailable or work limit reached; request files individually; no clean result inferred"), nil
 		}
 	}
+	paths = canonicalDiagnosticInputs(registration.Root, paths)
+	if !changed && len(paths) > 64 {
+		return diagnosticsFailure(registration.Name, "work_limit", "explicit diagnostics accept at most 64 canonical paths; no clean result inferred"), nil
+	}
 	summary := &model.DiagnosticsSummary{FilesRequested: len(paths), Backends: map[string]int{}}
 	env := model.Envelope{Ok: true, ContractVersion: "diagnostics/v1", Workspace: registration.Name, Backend: "semantic-diagnostics", Items: []model.Diagnostic{}, Diagnostics: summary}
 	omit := func(path, code, reason string) {
@@ -81,6 +103,7 @@ func (a *App) diagnostics(ctx context.Context, request model.CommandRequest) (mo
 		omit("", "work_limit", "changed path discovery exceeded 256 paths; use individual files")
 	}
 	groups := map[string][]diagnosticJob{}
+	readyOnly := boolPayload(request.Payload, "ready_only")
 	admitted := 0
 	for _, path := range paths {
 		absolute, relative, code := diagnosticsPath(registration.Root, path)
@@ -108,6 +131,10 @@ func (a *App) diagnostics(ctx context.Context, request model.CommandRequest) (mo
 		target, ambiguity, targetErr := a.resolveSemanticTarget(ctx, registration, project, perFile, "diagnostics", backend)
 		if targetErr != nil || ambiguity != nil {
 			omit(relative, "unavailable", "semantic target/entrypoint unavailable")
+			continue
+		}
+		if readyOnly && !semanticWorkerReady(a.Semantic.Status(), registration, target, backend) {
+			omit(relative, "unavailable", "semantic backend is cold; diagnostics were not started and no clean result is inferred")
 			continue
 		}
 		repoRoot := filepath.Join(registration.Root, filepath.FromSlash(target.Repo.Root))
@@ -401,6 +428,34 @@ func diagnosticsInside(root, path string) bool {
 	rel, e := filepath.Rel(physical, path)
 	return e == nil && !filepath.IsAbs(rel) && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
+func canonicalDiagnosticInputs(root string, paths []string) []string {
+	result := make([]string, 0, len(paths))
+	seen := make(map[string]bool, len(paths))
+	for _, path := range paths {
+		absolute, _, code := diagnosticsPath(root, path)
+		key := absolute
+		if code == "" {
+			if physical, err := filepath.EvalSymlinks(absolute); err == nil {
+				key = physical
+			}
+		} else {
+			key = path
+			if !filepath.IsAbs(key) {
+				key = filepath.Join(root, filepath.FromSlash(key))
+			}
+		}
+		key = filepath.Clean(key)
+		if runtime.GOOS == "windows" {
+			key = strings.ToLower(key)
+		}
+		if !seen[key] {
+			seen[key] = true
+			result = append(result, path)
+		}
+	}
+	return result
+}
+
 func diagnosticsPath(root, path string) (string, string, string) {
 	if path == "" || strings.ContainsRune(path, 0) {
 		return "", "", "invalid_path"

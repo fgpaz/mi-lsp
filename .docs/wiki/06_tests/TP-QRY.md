@@ -33,11 +33,12 @@ links:
   - RF-QRY-023
   - RF-QRY-024
   - RF-QRY-025
+  - RF-QRY-026
 ---
 
 ## Alcance
 
-RF-GPH-006, RF-GPH-008, RF-IDX-001, RF-QRY-001, RF-QRY-002, RF-QRY-003, RF-QRY-004, RF-QRY-005, RF-QRY-006, RF-QRY-007, RF-QRY-008, RF-QRY-009, RF-QRY-010, RF-QRY-011, RF-QRY-012, RF-QRY-013, RF-QRY-014, RF-QRY-015, RF-QRY-016, RF-QRY-017, RF-QRY-018, RF-QRY-019, RF-QRY-020, RF-QRY-022, RF-QRY-023, RF-QRY-024, RF-QRY-025. Se conserva el inventario de escenarios, límites, disposiciones y evidencia histórica, sin reejecución.
+RF-GPH-006, RF-GPH-008, RF-IDX-001, RF-QRY-001, RF-QRY-002, RF-QRY-003, RF-QRY-004, RF-QRY-005, RF-QRY-006, RF-QRY-007, RF-QRY-008, RF-QRY-009, RF-QRY-010, RF-QRY-011, RF-QRY-012, RF-QRY-013, RF-QRY-014, RF-QRY-015, RF-QRY-016, RF-QRY-017, RF-QRY-018, RF-QRY-019, RF-QRY-020, RF-QRY-022, RF-QRY-023, RF-QRY-024, RF-QRY-025, RF-QRY-026. Se conserva el inventario de escenarios, límites, disposiciones y evidencia histórica, sin reejecución.
 
 ## Casos
 
@@ -102,6 +103,7 @@ Son oráculos planificados para la única FINAL_VERIFY, no tests implementados/e
 - RF-QRY-023
 - RF-QRY-024
 - RF-QRY-025
+- RF-QRY-026
 
 
 ### Escenarios
@@ -829,6 +831,16 @@ Los casos TC-QRY-140 a TC-QRY-146 son cobertura implementada del contrato y sus 
 - **Evidencia referenciada**:
   - .docs/wiki/06_tests/TP-QRY.md
   - .docs/wiki/05_requirements/RF-QRY-025.md
+
+### Aceptación manual de verbos nativos — evidencia wave3 existente
+
+- RF-QRY-026 — Criterio 1. Disposición: manual. Evidencia observada: `smoke-state.json` conserva `probe_complete_acceptance_pending` y registra help/root/nav como descubrimiento de superficie, no como aceptación; `smoke-positive-state.json` conserva `positive_semantic_smoke_pass`. Sin reejecución en esta sesión.
+- RF-QRY-026 — Criterio 2. Disposición: manual. Evidencia observada: `smoke-positive-state.json`, estado `positive_semantic_smoke_pass`; el resultado conserva los estados parciales/approximate y la ruta RPC de `find_symbol`.
+- RF-QRY-026 — Criterio 3. Disposición: manual. Evidencia observada: pasos de selección, selector malformado y snapshot stale en `smoke-positive-state.json`; no se copia ningún valor opaco en este documento ni en los archivos fuente del fixture. Las capturas locales no versionadas sí conservan la respuesta que incluye el selector.
+- RF-QRY-026 — Criterio 4. Disposición: manual. Evidencia observada: `smoke-guards-state.json`, estado `guards_and_utf16_positive_pass`, más rename RPC seleccionado y readback de dos archivos fixture en `smoke-positive-state.json`; las guardas cubren UTF-16, paths, `.git`, symlink y workspace cruzado.
+- RF-QRY-026 — Criterio 5. Disposición: manual. Evidencia observada: `fixture_compiler.exit=0` y readback de dos archivos fixture en `smoke-positive-state.json`; `fixture_compile.exit=0` en `smoke-guards-state.json`. Es compilación del fixture aislado, no del proyecto ni una prueba de `compilation_state` del producto.
+
+Los artefactos citados están bajo `/home/tesla/.cache/mi-lsp-native3-verify-20261030/`, no versionados ni portables. La comprobación manual de esta sesión se limitó a leer sus estados resumidos; no se ejecutó código, test, build ni CLI. El manifest canónico `integrations/mi-mcp/provider-manifest.json` y `internal/cli/provider_manifest_test.go` son las referencias de contrato; no se añadió fixture ni test automatizado.
 
 ```yaml
 harness_protocol: SDD-HARNESS-v1

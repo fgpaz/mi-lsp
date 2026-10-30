@@ -725,7 +725,7 @@ func isGraphQueryOperation(operation string) bool {
 
 func (s *Server) isBackpressureLimited(request model.CommandRequest) bool {
 	switch request.Operation {
-	case "q", "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch", "nav.search", "nav.find", "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.status", "nav.graph.rank", "nav.graph.validate", "nav.intent", "nav.flow-slice", "nav.change-pack", "nav.diagnostics", "workspace.warm":
+	case "q", "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch", "nav.search", "nav.find", "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.status", "nav.graph.rank", "nav.graph.validate", "nav.intent", "nav.flow-slice", "nav.change-pack", "nav.diagnostics", "find_symbol", "rename_symbol", "get_errors", "workspace.warm":
 		return true
 	case "nav.workspace-map":
 		return request.Context.Full
@@ -776,6 +776,8 @@ func daemonErrorEnvelope(request model.CommandRequest, err error, fallbackKind s
 		case strings.HasPrefix(request.Operation, "nav.wiki."):
 			backend = "wiki"
 		case strings.HasPrefix(request.Operation, "nav."):
+			backend = "nav"
+		case request.Operation == "find_symbol" || request.Operation == "rename_symbol" || request.Operation == "get_errors":
 			backend = "nav"
 		}
 	}

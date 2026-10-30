@@ -34,6 +34,8 @@ type App struct {
 	ReadOnlyWorkspaceResolution bool
 	backendCooldown             sync.Map
 	tsRefsWarmups               sync.Map
+	nativeWarmupMu              sync.Mutex
+	nativeWarmups               map[string]struct{}
 }
 
 type semanticTarget struct {
@@ -114,6 +116,14 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		envelope, err = a.info(ctx, request.Context.Workspace)
 	case "nav.diagnostics":
 		envelope, err = a.diagnostics(ctx, request)
+	case "find_symbol":
+		envelope, err = a.findSymbol(ctx, request)
+	case "rename_symbol":
+		envelope, err = a.renameSymbol(ctx, request)
+	case "change_signature":
+		envelope = nativeOperationFailure("unsupported_operation", "no backend currently exposes a safe semantic signature-change plan; no files changed")
+	case "get_errors":
+		envelope, err = a.getErrors(ctx, request)
 	case "nav.symbols":
 		envelope, err = a.symbols(ctx, request)
 	case "nav.find":
@@ -212,8 +222,8 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		return model.Envelope{}, err
 	}
 	enrichmentStarted := time.Now()
-	if request.Operation == "nav.diagnostics" {
-		// Live diagnostics never consult or refresh a catalog/wiki index.
+	if request.Operation == "nav.diagnostics" || request.Operation == "get_errors" || request.Operation == "find_symbol" || request.Operation == "rename_symbol" || request.Operation == "change_signature" {
+		// Native verbs own their evidence; avoid a second wiki/index enrichment pass.
 	} else if liveWikiCodeOperation(request.Operation) {
 		envelope = a.enrichLiveWikiCodeContext(ctx, request, envelope)
 	} else {

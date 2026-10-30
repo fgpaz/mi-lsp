@@ -8,6 +8,7 @@ links:
   supports:
   - RF-GPH-008
   - RF-QRY-002
+  - RF-QRY-026
 ---
 
 ```yaml
@@ -104,6 +105,19 @@ Pyright y gopls LSP bridge:
 
 - `get_context` (via `textDocument/hover`)
 - `find_refs` (via `textDocument/references`)
+
+### Verbos nativos de símbolos y diagnósticos
+
+Los verbos root y sus aliases `nav` reutilizan el contrato CLI-daemon existente; no son métodos LSP nuevos ni una puerta de transporte adicional.
+
+- Root: `mi-lsp find_symbol <query> [--repo <id>]`, `mi-lsp rename_symbol <symbol> --new-name <identifier>`, `mi-lsp get_errors [file ...]`.
+- Aliases: `mi-lsp nav find_symbol`, `mi-lsp nav rename_symbol` y `mi-lsp nav get_errors`; el provider manifest publica las mismas operaciones y sus schemas.
+- `find_symbol` requiere `query`; `repo` es opcional y `--workspace` permanece en el contexto global. RPC `operation=find_symbol`, respuesta `find_symbol/v0`.
+- `rename_symbol` requiere `symbol` y `new_name`; el símbolo puede ser un identificador Go o el selector opaco devuelto en `candidate.symbol`. La selección explícita alternativa requiere `file`, `line` y `column` juntos (línea 1-based, columna UTF-16 1-based); `repo`, `entrypoint`, `solution` y `project_path` seleccionan scope. RPC `operation=rename_symbol`, respuesta `rename_symbol/v0`; solo `gopls` entrega el plan semántico.
+- `get_errors` admite paths posicionales o `--file` repetible; sin ellos usa archivos fuente cambiados. `--base` solo se admite con ese default y `--max-files` está entre 1 y 64. RPC `operation=get_errors`, respuesta `get_errors/v0`.
+- Request: `protocol_version=mi-lsp-v1.1`, `operation`, `context` y `payload`. La operación se enruta igual desde root y `nav`; el daemon valida la versión antes de ejecutar.
+- El rename usa `workspace/symbol` y `textDocument/prepareRename` para proponer/revalidar selección, y `textDocument/references` + `textDocument/rename` para planear. El core acepta solo `documentChanges` versionados, con fuentes/snapshots y referencias verificadas; paths y URIs no locales, `.git` y escapes por symlink fallan cerrado. Límite de aplicación: 32 archivos y 5000 edits; recuperación informa cualquier mutación parcial.
+- `get_errors` y los diagnósticos posteriores al rename distinguen `checked`, `partial` y `not_checked`; `compilation_state` siempre es `not_checked`. Diagnósticos no certifican compilación.
 
 ### Ciclo CLI-daemon y deadlines
 
