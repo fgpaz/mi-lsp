@@ -78,6 +78,7 @@ func (a *App) findSymbol(ctx context.Context, request model.CommandRequest) (mod
 	if err != nil {
 		return model.Envelope{}, errors.New("symbol catalog response was invalid")
 	}
+	catalogCandidateCount := len(candidates)
 	validCandidates := candidates[:0]
 	for _, candidate := range candidates {
 		if candidate.Name != "" && candidate.FilePath != "" && candidate.StartLine > 0 {
@@ -85,6 +86,9 @@ func (a *App) findSymbol(ctx context.Context, request model.CommandRequest) (mod
 		}
 	}
 	candidates = validCandidates
+	if identifier && found.Ok && found.Backend == "catalog" && catalogCandidateCount == 0 {
+		return a.findSymbolTextFallback(ctx, request, query, found.Warnings)
+	}
 	if found.Backend == "text" {
 		return model.Envelope{Ok: true, Workspace: found.Workspace, Backend: found.Backend, Partial: true, Degraded: true, Reason: "explicit_incomplete", Items: map[string]any{
 			"query": query, "approximate": true, "source": found.Backend, "semantic_status": "not_started",
@@ -109,10 +113,15 @@ func (a *App) findSymbol(ctx context.Context, request model.CommandRequest) (mod
 	}
 	candidates = uniqueSymbolRecords(candidates)
 	if len(candidates) != 1 {
+		ambiguity := len(candidates) > 1
+		warning := "catalog did not provide a usable candidate; semantic references were not selected"
+		if ambiguity {
+			warning = "multiple catalog candidates; semantic references were not selected"
+		}
 		return model.Envelope{Ok: true, Workspace: found.Workspace, Backend: found.Backend, Partial: true, Degraded: true, Reason: "explicit_incomplete", Items: map[string]any{
 			"query": query, "approximate": true, "source": "catalog", "semantic_status": "not_started",
-			"definitions": candidates, "usages": []any{}, "ranges": []any{}, "ambiguity": len(candidates) > 1,
-		}, Warnings: append(found.Warnings, "symbol is not uniquely identified; semantic references were not selected")}, nil
+			"definitions": candidates, "usages": []any{}, "ranges": []any{}, "ambiguity": ambiguity,
+		}, Warnings: append(found.Warnings, warning)}, nil
 	}
 	candidate := candidates[0]
 	registration, project, err := a.resolveWorkspaceWithProjectForNavigation(request)
@@ -222,6 +231,90 @@ func (a *App) findSymbol(ctx context.Context, request model.CommandRequest) (mod
 		resultItems["usage_candidates"] = usageCandidates
 	}
 	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: backend, Partial: !semanticOK, Degraded: !semanticOK, Reason: reasonIf(!semanticOK, "explicit_incomplete"), Items: resultItems, Warnings: warnings, Stats: model.Stats{Symbols: len(usages), Files: len(ranges)}}, nil
+}
+
+func (a *App) findSymbolTextFallback(ctx context.Context, request model.CommandRequest, query string, catalogWarnings []string) (model.Envelope, error) {
+	matcher := newTextDeclarationMatcher(query, true)
+	searchCtx, cancel := withSearchTimeout(ctx, a.Config.SearchTimeout)
+	defer cancel()
+
+	search := func(pattern string, limit int) (model.Envelope, []map[string]any, error) {
+		searchRequest := request
+		searchRequest.Operation = "nav.search"
+		searchRequest.Context.MaxItems = limit
+		searchRequest.Payload = map[string]any{"pattern": pattern, "regex": true}
+		if repo := stringPayload(request.Payload, "repo"); repo != "" {
+			searchRequest.Payload["repo"] = repo
+		}
+		envelope, err := a.search(searchCtx, searchRequest)
+		if err != nil || !envelope.Ok {
+			return envelope, nil, err
+		}
+		hits, ok := envelope.Items.([]map[string]any)
+		if !ok {
+			return model.Envelope{}, nil, fmt.Errorf("invalid_response: native text search returned items of type %T", envelope.Items)
+		}
+		return envelope, hits, nil
+	}
+
+	declarationsEnv, declarationHits, err := search(matcher.searchRe, 500)
+	if err != nil || !declarationsEnv.Ok {
+		return declarationsEnv, err
+	}
+	candidates := matcher.declarationItems(declarationHits)
+	warnings := append([]string{}, catalogWarnings...)
+	warnings = append(warnings, declarationsEnv.Warnings...)
+	searchIncomplete := declarationsEnv.Truncated || len(declarationHits) == 500 || searchCtx.Err() != nil || (declarationsEnv.NextHint != nil && *declarationsEnv.NextHint != axiPreviewExpansionHint)
+	var nextHint *string
+	if declarationsEnv.NextHint != nil {
+		nextHint = declarationsEnv.NextHint
+	}
+
+	candidateKind := "declaration"
+	if len(candidates) == 0 && !searchIncomplete {
+		occurrencesEnv, occurrenceHits, searchErr := search(wordBoundaryPattern(query), 300)
+		if searchErr != nil || !occurrencesEnv.Ok {
+			return occurrencesEnv, searchErr
+		}
+		candidates = matcher.occurrenceItems(occurrenceHits)
+		warnings = append(warnings, occurrencesEnv.Warnings...)
+		searchIncomplete = occurrencesEnv.Truncated || len(occurrenceHits) == 300 || searchCtx.Err() != nil || (occurrencesEnv.NextHint != nil && *occurrencesEnv.NextHint != axiPreviewExpansionHint)
+		if occurrencesEnv.NextHint != nil {
+			nextHint = occurrencesEnv.NextHint
+		}
+		candidateKind = "occurrence"
+	}
+
+	truncated := searchIncomplete || len(candidates) > nativeFindCandidateLimit
+	if len(candidates) > nativeFindCandidateLimit {
+		candidates = candidates[:nativeFindCandidateLimit]
+	}
+	ambiguity := len(candidates) > 1
+	warnings = append(warnings, "catalog returned zero candidates; bounded text evidence is lexical only and no semantic target was selected or warmed")
+	switch {
+	case len(candidates) == 0 && searchIncomplete:
+		warnings = append(warnings, "bounded text search was incomplete; zero observed candidates is not evidence of an empty workspace")
+	case len(candidates) == 0:
+		warnings = append(warnings, "bounded text search found no declaration or occurrence; zero candidates is not ambiguity")
+	case ambiguity:
+		warnings = append(warnings, "multiple lexical "+candidateKind+" candidates remain approximate; semantic identity was not established")
+	default:
+		warnings = append(warnings, "lexical "+candidateKind+" candidate is approximate; it is not a semantic definition/reference and was not selected")
+	}
+
+	reason := "explicit_incomplete"
+	if len(candidates) == 0 && !searchIncomplete {
+		reason = model.ReasonNoMatches
+	}
+	return model.Envelope{
+		Ok: true, Workspace: declarationsEnv.Workspace, Backend: "text", Partial: true, Degraded: true,
+		Reason: reason, Truncated: truncated, NextHint: nextHint,
+		Items: map[string]any{
+			"query": query, "approximate": true, "source": "text", "semantic_status": "not_started",
+			"definitions": candidates, "usages": []any{}, "ranges": []any{}, "ambiguity": ambiguity,
+		},
+		Warnings: dedupeStrings(warnings), Stats: model.Stats{Symbols: len(candidates)},
+	}, nil
 }
 
 func (a *App) getErrors(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
@@ -561,6 +654,16 @@ func (e *nativeRenameApplyError) Unwrap() error { return e.Cause }
 func nativeRenamePath(root, path string) (string, string, os.FileInfo, error) {
 	if root == "" || path == "" || strings.ContainsRune(path, 0) {
 		return "", "", nil, errors.New("rename path is empty or invalid")
+	}
+	if !(runtime.GOOS == "windows" && filepath.IsAbs(path) && filepath.VolumeName(path) != "") {
+		schemeEnd := strings.IndexByte(path, ':')
+		pathSeparator := strings.IndexAny(path, `/\\`)
+		if schemeEnd > 0 && (pathSeparator < 0 || schemeEnd < pathSeparator) {
+			path = uriToNativePath(path)
+			if path == "" {
+				return "", "", nil, errors.New("rename path URI must resolve to a local file")
+			}
+		}
 	}
 	rootLexical, err := filepath.Abs(root)
 	if err != nil {
