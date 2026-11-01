@@ -273,6 +273,15 @@ func (a *App) embedWorkspaceWiki(ctx context.Context, root string, progress func
 	return warnings, nil
 }
 
+const wikiEmbeddingsSkippedByOperationWarning = "wiki embeddings skipped by operation policy; existing embeddings were left unchanged"
+
+func (a *App) appendWikiEmbeddingWarningsForPolicy(ctx context.Context, root string, warnings []string, progress func(context.Context, indexer.Progress) error, noEmbeddings bool) ([]string, error) {
+	if noEmbeddings {
+		return appendStringIfMissing(warnings, wikiEmbeddingsSkippedByOperationWarning), nil
+	}
+	return a.appendWikiEmbeddingWarnings(ctx, root, warnings, progress)
+}
+
 func (a *App) appendWikiEmbeddingWarnings(ctx context.Context, root string, warnings []string, progress func(context.Context, indexer.Progress) error) ([]string, error) {
 	embedWarnings, err := a.embedWorkspaceWiki(ctx, root, progress)
 	if len(embedWarnings) > 0 {

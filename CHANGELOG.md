@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.11] - 2026-11-01
+
+### Añadido
+
+- `index start --no-embeddings` permite omitir embeddings por operación; la política queda persistida y visible en el job.
+
+### Corregido
+
+- La reparación de metadata distingue `Inspect` orientativo de cada `Apply`, que vuelve a seleccionar y validar su propia identidad física.
+- El guard outgoing conserva ambos endpoints de paths NUL y bloquea si cambia la identidad de rama aunque `HEAD` mantenga el mismo SHA.
+
 ## [0.16.7] - 2026-10-29
 
 ### Añadido

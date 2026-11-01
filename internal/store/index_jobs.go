@@ -36,6 +36,8 @@ type IndexJob struct {
 	Mode               string `json:"mode"`
 	EntrypointSelector string `json:"entrypoint,omitempty"`
 	GoOffline          bool   `json:"go_offline"`
+	NoEmbeddings       bool   `json:"no_embeddings"`
+	EmbeddingsOutcome  string `json:"embeddings_outcome,omitempty"`
 	Clean              bool   `json:"clean,omitempty"`
 	Status             string `json:"status"`
 	Phase              string `json:"phase,omitempty"`
@@ -73,15 +75,17 @@ func (e *ActiveIndexJobError) Error() string {
 	return fmt.Sprintf("index job already active: %s (%s)", e.Job.JobID, e.Job.Status)
 }
 
-// IndexJobPolicyMismatchError rejects deduplication across Go observation policies.
+// IndexJobPolicyMismatchError rejects deduplication across operation policies.
 // Job is the persisted active job, never a projection of the requested policy.
 type IndexJobPolicyMismatchError struct {
-	Job                IndexJob
-	RequestedGoOffline bool
+	Job                   IndexJob
+	RequestedGoOffline    bool
+	RequestedNoEmbeddings bool
 }
 
 func (e *IndexJobPolicyMismatchError) Error() string {
-	return fmt.Sprintf("index job policy mismatch: job_id=%s active_go_offline=%t requested_go_offline=%t; retry manually after the active job is terminal", e.Job.JobID, e.Job.GoOffline, e.RequestedGoOffline)
+	return fmt.Sprintf("index job policy mismatch: job_id=%s active_go_offline=%t requested_go_offline=%t active_no_embeddings=%t requested_no_embeddings=%t; retry manually after the active job is terminal",
+		e.Job.JobID, e.Job.GoOffline, e.RequestedGoOffline, e.Job.NoEmbeddings, e.RequestedNoEmbeddings)
 }
 
 var (
@@ -246,6 +250,22 @@ func indexJobSelectColumns(db *sql.DB) (string, error) {
 	if !hasOfflineColumn {
 		goOffline = "0 AS go_offline"
 	}
+	hasNoEmbeddingsColumn, err := tableHasColumn(db, "index_jobs", "no_embeddings")
+	if err != nil {
+		return "", err
+	}
+	noEmbeddings := "no_embeddings"
+	if !hasNoEmbeddingsColumn {
+		noEmbeddings = "0 AS no_embeddings"
+	}
+	hasEmbeddingsOutcomeColumn, err := tableHasColumn(db, "index_jobs", "embeddings_outcome")
+	if err != nil {
+		return "", err
+	}
+	embeddingsOutcome := "embeddings_outcome"
+	if !hasEmbeddingsOutcomeColumn {
+		embeddingsOutcome = "'' AS embeddings_outcome"
+	}
 	hasCancelColumn, err := tableHasColumn(db, "index_jobs", "requested_cancel")
 	if err != nil {
 		return "", err
@@ -254,9 +274,10 @@ func indexJobSelectColumns(db *sql.DB) (string, error) {
 	if !hasCancelColumn {
 		requestedCancel = "0 AS requested_cancel"
 	}
-	return fmt.Sprintf(`job_id, generation_id, workspace_name, workspace_root, mode, %s, %s, clean, status, phase, pid, %s, COALESCE(error, ''),
+	return fmt.Sprintf(`job_id, generation_id, workspace_name, workspace_root, mode, %s, %s, %s, %s, clean, status, phase, pid, %s, COALESCE(error, ''),
 	       COALESCE(current_stage, ''), COALESCE(current_path, ''), files_total,
-	       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at`, entrypointSelector, goOffline, requestedCancel), nil
+	       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at`,
+		entrypointSelector, goOffline, noEmbeddings, embeddingsOutcome, requestedCancel), nil
 }
 
 func loadIndexJobOwnership(ctx context.Context, tx *sql.Tx, workspaceRoot string) (indexJobOwnership, error) {
@@ -382,20 +403,40 @@ func CreateIndexJobWithEntrypoint(ctx context.Context, db *sql.DB, workspaceName
 }
 
 func CreateIndexJobWithGoOffline(ctx context.Context, db *sql.DB, workspaceName, workspaceRoot, mode string, clean bool, entrypointSelector string, goOffline bool) (IndexJob, error) {
-	return createIndexJob(ctx, db, workspaceName, workspaceRoot, mode, clean, entrypointSelector, true, goOffline)
+	return CreateIndexJobWithPolicies(ctx, db, workspaceName, workspaceRoot, mode, clean, entrypointSelector, goOffline, false)
+}
+
+func CreateIndexJobWithPolicies(ctx context.Context, db *sql.DB, workspaceName string, workspaceRoot string, mode string, clean bool, entrypointSelector string, goOffline, noEmbeddings bool) (IndexJob, error) {
+	return createIndexJob(ctx, db, workspaceName, workspaceRoot, mode, clean, entrypointSelector, true, goOffline, noEmbeddings)
 }
 
 func CreateIndexJobUnchecked(ctx context.Context, db *sql.DB, workspaceName string, workspaceRoot string, mode string, clean bool) (IndexJob, error) {
-	return createIndexJob(ctx, db, workspaceName, workspaceRoot, mode, clean, "", false)
+	return createIndexJob(ctx, db, workspaceName, workspaceRoot, mode, clean, "", false, false, false)
 }
 
-func createIndexJob(ctx context.Context, db *sql.DB, workspaceName string, workspaceRoot string, mode string, clean bool, entrypointSelector string, checkActive bool, offline ...bool) (IndexJob, error) {
+func indexJobEmbeddingsOutcome(mode string, noEmbeddings bool) string {
+	if mode == IndexModeCatalog {
+		return "not_applicable"
+	}
+	if noEmbeddings {
+		return "skipped_by_operation"
+	}
+	return ""
+}
+
+func createIndexJob(ctx context.Context, db *sql.DB, workspaceName string, workspaceRoot string, mode string, clean bool, entrypointSelector string, checkActive bool, goOffline, noEmbeddings bool) (IndexJob, error) {
 	_ = checkActive // reservation and job creation are always guarded atomically
 	normalizedMode, err := NormalizeIndexMode(mode)
 	if err != nil {
 		return IndexJob{}, err
 	}
 	if err := ensureColumn(db, "index_jobs", "go_offline", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return IndexJob{}, err
+	}
+	if err := ensureColumn(db, "index_jobs", "no_embeddings", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return IndexJob{}, err
+	}
+	if err := ensureColumn(db, "index_jobs", "embeddings_outcome", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return IndexJob{}, err
 	}
 	if err := ensureIndexJobOwnershipSchema(db); err != nil {
@@ -410,7 +451,9 @@ func createIndexJob(ctx context.Context, db *sql.DB, workspaceName string, works
 		WorkspaceRoot:      workspaceRoot,
 		Mode:               normalizedMode,
 		EntrypointSelector: strings.TrimSpace(entrypointSelector),
-		GoOffline:          len(offline) > 0 && offline[0],
+		GoOffline:          goOffline,
+		NoEmbeddings:       noEmbeddings,
+		EmbeddingsOutcome:  indexJobEmbeddingsOutcome(normalizedMode, noEmbeddings),
 		Clean:              clean,
 		Status:             IndexJobQueued,
 		Phase:              "queued",
@@ -425,16 +468,18 @@ func createIndexJob(ctx context.Context, db *sql.DB, workspaceName string, works
 	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO index_jobs(job_id, generation_id, workspace_name, workspace_root, mode, entrypoint_selector, go_offline, clean, status, phase, created_at, updated_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, job.JobID, job.GenerationID, job.WorkspaceName, job.WorkspaceRoot, job.Mode, job.EntrypointSelector, boolToInt(job.GoOffline), boolToInt(job.Clean), job.Status, job.Phase, job.CreatedAt, job.UpdatedAt); err != nil {
+		INSERT INTO index_jobs(job_id, generation_id, workspace_name, workspace_root, mode, entrypoint_selector, go_offline, no_embeddings, embeddings_outcome, clean, status, phase, created_at, updated_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, job.JobID, job.GenerationID, job.WorkspaceName, job.WorkspaceRoot, job.Mode, job.EntrypointSelector, boolToInt(job.GoOffline), boolToInt(job.NoEmbeddings), job.EmbeddingsOutcome, boolToInt(job.Clean), job.Status, job.Phase, job.CreatedAt, job.UpdatedAt); err != nil {
 		return IndexJob{}, err
 	}
 
 	if err := reserveIndexJobTx(ctx, tx, job); err != nil {
 		var activeErr *ActiveIndexJobError
-		if errors.As(err, &activeErr) && activeErr.Job.GoOffline != job.GoOffline {
-			return IndexJob{}, &IndexJobPolicyMismatchError{Job: activeErr.Job, RequestedGoOffline: job.GoOffline}
+		if errors.As(err, &activeErr) && (activeErr.Job.GoOffline != job.GoOffline || activeErr.Job.NoEmbeddings != job.NoEmbeddings) {
+			return IndexJob{}, &IndexJobPolicyMismatchError{
+				Job: activeErr.Job, RequestedGoOffline: job.GoOffline, RequestedNoEmbeddings: job.NoEmbeddings,
+			}
 		}
 		return IndexJob{}, err
 	}
@@ -565,7 +610,7 @@ func reserveIndexJobTx(ctx context.Context, tx *sql.Tx, job IndexJob) error {
 
 func loadIndexJobTx(ctx context.Context, tx *sql.Tx, jobID string) (IndexJob, error) {
 	return scanIndexJobRow(tx.QueryRowContext(ctx, `
-		SELECT job_id, generation_id, workspace_name, workspace_root, mode, COALESCE(entrypoint_selector, ''), go_offline, clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
+		SELECT job_id, generation_id, workspace_name, workspace_root, mode, COALESCE(entrypoint_selector, ''), go_offline, no_embeddings, embeddings_outcome, clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
 		       COALESCE(current_stage, ''), COALESCE(current_path, ''), files_total,
 		       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at
 		FROM index_jobs WHERE job_id = ?
@@ -574,7 +619,7 @@ func loadIndexJobTx(ctx context.Context, tx *sql.Tx, jobID string) (IndexJob, er
 
 func loadActiveIndexJobTx(ctx context.Context, tx *sql.Tx, workspaceRoot string, excludeJobID string) (IndexJob, error) {
 	return scanIndexJobRow(tx.QueryRowContext(ctx, `
-		SELECT job_id, generation_id, workspace_name, workspace_root, mode, COALESCE(entrypoint_selector, ''), go_offline, clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
+		SELECT job_id, generation_id, workspace_name, workspace_root, mode, COALESCE(entrypoint_selector, ''), go_offline, no_embeddings, embeddings_outcome, clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
 		       COALESCE(current_stage, ''), COALESCE(current_path, ''), files_total,
 		       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at
 		FROM index_jobs
@@ -1341,7 +1386,7 @@ type indexJobScanner interface {
 
 func scanIndexJob(scanner indexJobScanner) (IndexJob, error) {
 	var requested int
-	var clean, offline int
+	var clean, offline, noEmbeddings int
 	var job IndexJob
 	if err := scanner.Scan(
 		&job.JobID,
@@ -1351,6 +1396,8 @@ func scanIndexJob(scanner indexJobScanner) (IndexJob, error) {
 		&job.Mode,
 		&job.EntrypointSelector,
 		&offline,
+		&noEmbeddings,
+		&job.EmbeddingsOutcome,
 		&clean,
 		&job.Status,
 		&job.Phase,
@@ -1371,6 +1418,7 @@ func scanIndexJob(scanner indexJobScanner) (IndexJob, error) {
 		return IndexJob{}, err
 	}
 	job.GoOffline = offline != 0
+	job.NoEmbeddings = noEmbeddings != 0
 	job.Clean = clean != 0
 	job.RequestedCancel = requested != 0
 	return job, nil

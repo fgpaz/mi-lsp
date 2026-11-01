@@ -1461,6 +1461,7 @@ func (a *App) indexWorkspace(ctx context.Context, request model.CommandRequest) 
 	}
 	clean, _ := request.Payload["clean"].(bool)
 	docsOnly, _ := request.Payload["docs_only"].(bool)
+	noEmbeddings, _ := request.Payload["no_embeddings"].(bool)
 	entrypointSelector := strings.TrimSpace(stringPayload(request.Payload, "entrypoint"))
 	if docsOnly {
 		if err := validateIndexEntrypointMode(store.IndexModeDocs, entrypointSelector); err != nil {
@@ -1476,7 +1477,7 @@ func (a *App) indexWorkspace(ctx context.Context, request model.CommandRequest) 
 			if err != nil {
 				return err
 			}
-			result.Warnings, err = a.appendWikiEmbeddingWarnings(ctx, registration.Root, result.Warnings, nil)
+			result.Warnings, err = a.appendWikiEmbeddingWarningsForPolicy(ctx, registration.Root, result.Warnings, nil, noEmbeddings)
 			if err != nil {
 				return err
 			}
@@ -1495,7 +1496,7 @@ func (a *App) indexWorkspace(ctx context.Context, request model.CommandRequest) 
 			} else if err == nil && result.Stats.Files == 0 {
 				// No changes detected
 				warnings := appendStringIfMissing(result.Warnings, "no changes detected")
-				warnings, err = a.appendWikiEmbeddingWarnings(ctx, registration.Root, warnings, nil)
+				warnings, err = a.appendWikiEmbeddingWarningsForPolicy(ctx, registration.Root, warnings, nil, noEmbeddings)
 				if err != nil {
 					return err
 				}
@@ -1535,7 +1536,7 @@ func (a *App) indexWorkspace(ctx context.Context, request model.CommandRequest) 
 		if incremental {
 			warnings = appendStringIfMissing(warnings, "incremental=true")
 		}
-		warnings, err = a.appendWikiEmbeddingWarnings(ctx, registration.Root, warnings, nil)
+		warnings, err = a.appendWikiEmbeddingWarningsForPolicy(ctx, registration.Root, warnings, nil, noEmbeddings)
 		if err != nil {
 			return err
 		}

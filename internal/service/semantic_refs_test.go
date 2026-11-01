@@ -522,10 +522,16 @@ func TestFindRefsSemanticTimeoutFallsBackToTextAndCoolsDown(t *testing.T) {
 	t.Setenv("MI_LSP_REFS_TIMEOUT", "200ms")
 	root, alias := setupRefsWorkspace(t, []string{"go"}, false, map[string]string{"demo.go": goSource}, goRefsSymbols())
 	release := make(chan struct{})
+	cancelObserved := make(chan struct{})
 	t.Cleanup(func() { close(release) })
 	fake := &fakeSemanticCaller{callFn: func(ctx context.Context, _ model.WorkspaceRegistration, _ model.WorkerRequest) (model.WorkerResponse, error) {
-		<-release
-		return model.WorkerResponse{Ok: true, Backend: "gopls"}, nil
+		select {
+		case <-release:
+			return model.WorkerResponse{Ok: true, Backend: "gopls"}, nil
+		case <-ctx.Done():
+			close(cancelObserved)
+			return model.WorkerResponse{}, ctx.Err()
+		}
 	}}
 	app := New(root, fake)
 	request := model.CommandRequest{Operation: "nav.refs", Context: model.QueryOptions{Workspace: alias, MaxItems: 20}, Payload: map[string]any{"symbol": "Target"}}
@@ -537,6 +543,11 @@ func TestFindRefsSemanticTimeoutFallsBackToTextAndCoolsDown(t *testing.T) {
 	}
 	if elapsed := time.Since(started); elapsed > 4*time.Second {
 		t.Fatalf("timeout fallback took %s", elapsed)
+	}
+	select {
+	case <-cancelObserved:
+	default:
+		t.Fatal("semantic caller did not observe the timeout cancellation")
 	}
 	if !env.Ok || !env.Degraded || env.Reason != model.ReasonLSPError || env.FallbackUsed != "text" || env.Backend != "text" || len(envItems(t, env)) == 0 {
 		t.Fatalf("env = ok %v degraded %v reason %q fallback %q backend %q items %d", env.Ok, env.Degraded, env.Reason, env.FallbackUsed, env.Backend, len(envItems(t, env)))

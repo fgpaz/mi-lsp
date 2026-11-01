@@ -10,6 +10,8 @@ links:
       role: behavior
     - path: internal/repair/actions/inspect.go
       role: behavior
+    - path: internal/workspace/metadata_repair.go
+      role: behavior
 ---
 
 ## Resumen
@@ -44,3 +46,9 @@ La configuración pública ausente puede crearse como registro vacío bajo el bl
 La indexación usa el servicio de jobs existente en modo síncrono y offline para Go; después comprueba el catálogo publicado. Un job activo no se considera éxito. La instancia de reparación resuelve el workspace sin GC y omite la normalización que podría registrar o limpiar entradas ajenas. Se rechaza anticipadamente un índice ilegible y se pide revisión humana. La recuperación de corrupción propia del servicio sigue activa: una corrupción concurrente posterior a la comprobación podría mover el índice elegido y podar cuarentenas de ese workspace; no se promete recuperación universal ni se modifican fuentes o configuración. El worker se instala mediante `InstallWorkerMode`; el artefacto instalado debe superar el handshake antes de registrar el recibo.
 
 Los errores entregados por estas acciones son mensajes sanitizados, sin salida de procesos ni contenido de configuración. Los tiempos de espera, antirrecurrencia, protección por recibos de remoción y decisión de cuándo llamar a cada acción corresponden al motor de reparación.
+
+## Selección de identidad: Inspect y Apply
+
+`Inspect` es orientativo y de solo lectura. Puede recomendar `--apply`, pero no conserva una selección que autorice una llamada posterior ni promete que esa llamada recaiga sobre el mismo root.
+
+Cada `Apply` de metadata vuelve a resolver el selector y captura la identidad física del root en esa invocación. Bajo el bloqueo del registro, abre el root fijado y comprueba `os.SameFile` contra la identidad seleccionada antes de planificar o escribir; una discrepancia falla como root cambiado, sin retarget automático. La garantía es selección→pin dentro de un `Apply`, no una transacción `Inspect`→`Apply` entre comandos. Este documento continúa en `draft`.

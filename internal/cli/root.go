@@ -847,6 +847,9 @@ func timeoutForRequest(request model.CommandRequest) time.Duration {
 }
 
 func embeddingIndexTimeoutForRequest(request model.CommandRequest) (time.Duration, bool) {
+	if payloadBool(request.Payload, "no_embeddings") {
+		return 0, false
+	}
 	selector := strings.TrimSpace(payloadString(request.Payload, "path"))
 	if selector == "" {
 		selector = strings.TrimSpace(request.Context.Workspace)

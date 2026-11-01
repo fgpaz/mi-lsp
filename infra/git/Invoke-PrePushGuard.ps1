@@ -37,6 +37,20 @@ function Add-Unique {
     }
 }
 
+function Test-BranchIdentityStable {
+    param(
+        [int]$CapturedExitCode,
+        [AllowEmptyString()][string]$CapturedRef,
+        [int]$CurrentExitCode,
+        [AllowEmptyString()][string]$CurrentRef
+    )
+
+    if ($CapturedExitCode -notin @(0, 1) -or $CurrentExitCode -notin @(0, 1)) {
+        return $false
+    }
+    return $CapturedExitCode -eq $CurrentExitCode -and $CapturedRef -ceq $CurrentRef
+}
+
 function Resolve-SharedSkillRoot {
     param(
         [Parameter(Mandatory = $true)][string]$EnvironmentVariable,
@@ -58,22 +72,168 @@ function Resolve-SharedSkillRoot {
     return $resolvedRoot
 }
 
-function Convert-StatusLine {
-    param([string]$Line)
-    if ($Line.Length -lt 4) {
-        return $null
+function Invoke-GitRawText {
+    param([string[]]$Arguments)
+
+    $process = $null
+    try {
+        $gitPath = (Get-Command git -CommandType Application | Select-Object -First 1).Source
+        $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+        $startInfo.FileName = $gitPath
+        $startInfo.UseShellExecute = $false
+        $startInfo.CreateNoWindow = $true
+        $startInfo.RedirectStandardOutput = $true
+        $startInfo.RedirectStandardError = $true
+        $startInfo.StandardOutputEncoding = [System.Text.UTF8Encoding]::new($false)
+        $startInfo.StandardErrorEncoding = [System.Text.UTF8Encoding]::new($false)
+        foreach ($argument in $Arguments) {
+            $startInfo.ArgumentList.Add([string]$argument)
+        }
+
+        $process = [System.Diagnostics.Process]::new()
+        $process.StartInfo = $startInfo
+        if (-not $process.Start()) {
+            return [pscustomobject]@{ ExitCode = -1; OutputText = ""; ErrorText = "git process did not start" }
+        }
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $process.WaitForExit()
+        return [pscustomobject]@{
+            ExitCode = [int]$process.ExitCode
+            OutputText = $stdoutTask.GetAwaiter().GetResult()
+            ErrorText = $stderrTask.GetAwaiter().GetResult()
+        }
     }
-    $xy = $Line.Substring(0, 2)
-    $path = $Line.Substring(3)
-    if ($xy -eq "??") {
-        return [pscustomobject]@{ Kind = "untracked"; Path = $path; X = "?"; Y = "?" }
+    catch {
+        return [pscustomobject]@{ ExitCode = -1; OutputText = ""; ErrorText = "git raw invocation failed" }
     }
-    return [pscustomobject]@{
-        Kind = if ($xy[0] -ne ' ') { "staged" } elseif ($xy[1] -ne ' ') { "working" } else { "unknown" }
-        Path = $path
-        X = [string]$xy[0]
-        Y = [string]$xy[1]
+    finally {
+        if ($process) {
+            $process.Dispose()
+        }
     }
+}
+
+function Split-NulTerminatedText {
+    param([string]$Text)
+
+    if ([string]::IsNullOrEmpty($Text)) {
+        return @()
+    }
+    if ($Text[$Text.Length - 1] -ne [char]0) {
+        throw "NUL-delimited git output is not terminated"
+    }
+    $tokens = $Text.Split([char[]]@([char]0), [System.StringSplitOptions]::None)
+    if ($tokens.Length -lt 2 -or $tokens[$tokens.Length - 1] -ne "") {
+        throw "NUL-delimited git output is malformed"
+    }
+    $records = [System.Collections.Generic.List[string]]::new()
+    for ($index = 0; $index -lt $tokens.Length - 1; $index++) {
+        if ($tokens[$index].Length -eq 0) {
+            throw "NUL-delimited git output contains an empty field"
+        }
+        [void]$records.Add($tokens[$index])
+    }
+    return $records.ToArray()
+}
+
+function Convert-StatusPorcelainZ {
+    param([string]$OutputText)
+
+    $records = @(Split-NulTerminatedText $OutputText)
+    $changes = [System.Collections.Generic.List[object]]::new()
+    for ($index = 0; $index -lt $records.Count; ) {
+        $record = $records[$index++]
+        if ($record.Length -lt 4 -or $record[2] -ne ' ') {
+            throw "porcelain status record is malformed"
+        }
+        $xy = $record.Substring(0, 2)
+        $path = $record.Substring(3)
+        if ($path.Length -eq 0) {
+            throw "porcelain status path is empty"
+        }
+        $previousPath = $null
+        if ($xy -match '[RC]') {
+            if ($index -ge $records.Count) {
+                throw "porcelain rename/copy record is missing its source path"
+            }
+            # In status -z, the destination is first and the source path follows.
+            $previousPath = $records[$index++]
+        }
+        $kind = if ($xy -eq "??") {
+            "untracked"
+        } elseif ($xy[0] -ne ' ') {
+            "staged"
+        } elseif ($xy[1] -ne ' ') {
+            "working"
+        } else {
+            "unknown"
+        }
+        [void]$changes.Add([pscustomobject]@{
+            Kind = $kind
+            Path = $path
+            PreviousPath = $previousPath
+            X = [string]$xy[0]
+            Y = [string]$xy[1]
+        })
+    }
+    return $changes.ToArray()
+}
+
+function Convert-NameStatusZ {
+    param([string]$OutputText)
+
+    $records = @(Split-NulTerminatedText $OutputText)
+    $changes = [System.Collections.Generic.List[object]]::new()
+    for ($index = 0; $index -lt $records.Count; ) {
+        $status = $records[$index++]
+        if ($status -notmatch '^(?:A|C[0-9]*|D|M|R[0-9]*|T|U|X|B)$') {
+            throw "outgoing name-status record has an invalid status"
+        }
+        if ($index -ge $records.Count) {
+            throw "outgoing name-status record is missing its path"
+        }
+        $firstPath = $records[$index++]
+        if ($firstPath.Length -eq 0) {
+            throw "outgoing name-status path is empty"
+        }
+        $path = $firstPath
+        $previousPath = $null
+        if ($status -match '^[RC]') {
+            if ($index -ge $records.Count) {
+                throw "outgoing rename/copy record is missing its second path"
+            }
+            $secondPath = $records[$index++]
+            if ($secondPath.Length -eq 0) {
+                throw "outgoing rename/copy path is empty"
+            }
+            # diff --name-status -z retains the diff order: source, then destination.
+            $path = $secondPath
+            $previousPath = $firstPath
+        }
+        [void]$changes.Add([pscustomobject]@{
+            Kind = "outgoing"
+            Status = $status
+            Path = $path
+            PreviousPath = $previousPath
+            X = $status
+            Y = ' '
+        })
+    }
+    return $changes.ToArray()
+}
+
+function Get-InventoryPaths {
+    param([Parameter(Mandatory = $true)][object]$Change)
+
+    $paths = [System.Collections.Generic.List[string]]::new()
+    if (-not [string]::IsNullOrEmpty([string]$Change.Path)) {
+        [void]$paths.Add([string]$Change.Path)
+    }
+    if (-not [string]::IsNullOrEmpty([string]$Change.PreviousPath)) {
+        [void]$paths.Add([string]$Change.PreviousPath)
+    }
+    return $paths.ToArray()
 }
 
 function Get-Surface {
@@ -93,7 +253,10 @@ function Get-Surface {
 }
 
 function Get-SecretScan {
-    param([Parameter(Mandatory = $true)][string]$Range)
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Range,
+        [switch]$SnapshotUnavailable
+    )
 
     $patterns = [ordered]@{
         pem_private_key_header = '-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY-----'
@@ -109,9 +272,12 @@ function Get-SecretScan {
         $ruleCounts[$ruleId] = 0
     }
 
-    $scanError = $false
+    $scanError = [bool]$SnapshotUnavailable
     $scannedAddedLines = 0
     try {
+        if ($scanError) {
+            throw "captured commit snapshot is unavailable"
+        }
         $numstat = Invoke-Git diff --no-ext-diff --no-textconv --numstat $Range '--'
         if ($numstat.ExitCode -ne 0) {
             $scanError = $true
@@ -204,28 +370,70 @@ if ($rootResult.ExitCode -ne 0) {
 $repoRoot = ($rootResult.Output | Select-Object -First 1).ToString().Trim()
 Set-Location $repoRoot
 
-$branch = ((Invoke-Git branch --show-current).Output | Select-Object -First 1).ToString().Trim()
-$head = ((Invoke-Git rev-parse HEAD).Output | Select-Object -First 1).ToString().Trim()
-
 $fetch = Invoke-Git fetch origin main
 if ($fetch.ExitCode -ne 0) {
     Add-Unique $blockers "git fetch origin main failed"
 }
 
-$ff = Invoke-Git merge-base --is-ancestor origin/main HEAD
-$fastForwardSafe = $ff.ExitCode -eq 0
-if (-not $fastForwardSafe) {
-    Add-Unique $blockers "origin/main is not an ancestor of HEAD; reconcile before push"
+# Capture branch identity and commit refs together after fetch.
+$branchIdentityCapture = Invoke-Git symbolic-ref --quiet HEAD
+$branchIdentityExitCode = $branchIdentityCapture.ExitCode
+$branchRef = if ($branchIdentityExitCode -eq 0) {
+    ([string]($branchIdentityCapture.Output | Select-Object -First 1)).Trim()
+} else {
+    ""
+}
+$branch = if ($branchRef.StartsWith("refs/heads/", [System.StringComparison]::Ordinal)) {
+    $branchRef.Substring("refs/heads/".Length)
+} else {
+    ""
+}
+$branchIdentityAvailable = $branchIdentityExitCode -in @(0, 1)
+if (-not $branchIdentityAvailable) {
+    Add-Unique $blockers "could not capture symbolic branch identity after fetch"
+}
+if ($CollaborationMode -eq "governed" -and $branchIdentityExitCode -eq 1) {
+    Add-Unique $blockers "governed mode requires an attached symbolic branch; detached HEAD cannot be approved"
+}
+if ($branchIdentityExitCode -eq 0 -and -not $branchRef.StartsWith("refs/heads/", [System.StringComparison]::Ordinal)) {
+    $branchIdentityAvailable = $false
+    Add-Unique $blockers "HEAD symbolic ref is not a local branch; cannot verify branch identity"
 }
 
-$ahead = @((Invoke-Git log --oneline origin/main..HEAD -n 50).Output)
-$behind = @((Invoke-Git log --oneline HEAD..origin/main -n 50).Output)
+$baseCapture = Invoke-Git rev-parse --verify 'refs/remotes/origin/main^{commit}'
+$headCapture = Invoke-Git rev-parse --verify 'HEAD^{commit}'
+$baseSha = ([string]($baseCapture.Output | Select-Object -First 1)).Trim().ToLowerInvariant()
+$headSha = ([string]($headCapture.Output | Select-Object -First 1)).Trim().ToLowerInvariant()
+$fullShaPattern = '^(?:[0-9a-f]{40}|[0-9a-f]{64})$'
+if ($baseCapture.ExitCode -ne 0 -or $baseSha -notmatch $fullShaPattern) {
+    $baseSha = ""
+    Add-Unique $blockers "could not capture a full origin/main commit after fetch"
+}
+if ($headCapture.ExitCode -ne 0 -or $headSha -notmatch $fullShaPattern) {
+    $headSha = ""
+    Add-Unique $blockers "could not capture a full HEAD commit after fetch"
+}
+$snapshotAvailable = -not [string]::IsNullOrEmpty($baseSha) -and -not [string]::IsNullOrEmpty($headSha)
+$snapshotRange = if ($snapshotAvailable) { "$baseSha..$headSha" } else { "" }
 
-$secretsScan = Get-SecretScan -Range "origin/main..HEAD"
+$fastForwardSafe = $false
+$ahead = @()
+$behind = @()
+if ($snapshotAvailable) {
+    $ff = Invoke-Git merge-base --is-ancestor $baseSha $headSha
+    $fastForwardSafe = $ff.ExitCode -eq 0
+    if (-not $fastForwardSafe) {
+        Add-Unique $blockers "captured base SHA is not an ancestor of captured head SHA; reconcile before push"
+    }
+    $ahead = @((Invoke-Git log --oneline ($baseSha + '..' + $headSha) -n 50).Output)
+    $behind = @((Invoke-Git log --oneline ($headSha + '..' + $baseSha) -n 50).Output)
+}
+
+$secretsScan = Get-SecretScan -Range $snapshotRange -SnapshotUnavailable:(-not $snapshotAvailable)
 if ($secretsScan.status -eq "blocked") {
     Add-Unique $blockers "High-confidence secret detected in added content; see secrets_scan rule counts"
 } elseif ($secretsScan.status -eq "error") {
-    Add-Unique $blockers "Secrets scan failed closed for origin/main..HEAD"
+    Add-Unique $blockers "Secrets scan failed closed for captured base/head snapshot"
 }
 
 $hasIssue = $false
@@ -280,23 +488,51 @@ foreach ($path in $evidence) {
     }
 }
 
-$statusLines = @((Invoke-Git status --porcelain=v1).Output)
-$changes = @()
-foreach ($line in $statusLines) {
-    $entry = Convert-StatusLine $line
-    if ($entry) {
-        $changes += $entry
+$pendingChanges = @()
+$pendingStatus = Invoke-GitRawText @("status", "--porcelain=v1", "-z", "--untracked-files=all")
+if ($pendingStatus.ExitCode -ne 0) {
+    Add-Unique $blockers "pending changed-path inventory failed"
+} else {
+    try {
+        $pendingChanges = @(Convert-StatusPorcelainZ $pendingStatus.OutputText)
+    } catch {
+        Add-Unique $blockers "pending changed-path inventory was malformed"
     }
 }
+
+$pendingInventory = [ordered]@{
+    staged = @($pendingChanges | Where-Object { $_.X -ne ' ' -and $_.X -ne '?' })
+    unstaged = @($pendingChanges | Where-Object { $_.Y -ne ' ' -and $_.Y -ne '?' })
+    untracked = @($pendingChanges | Where-Object { $_.Kind -eq 'untracked' })
+}
+
+$outgoingChanges = @()
+if (-not $snapshotAvailable) {
+    Add-Unique $blockers "outgoing changed-path inventory unavailable without captured base/head SHAs"
+} else {
+    $outgoingDiff = Invoke-GitRawText @("diff", "--name-status", "--no-ext-diff", "-M", "-C", "--find-copies-harder", "-z", $snapshotRange, "--")
+    if ($outgoingDiff.ExitCode -ne 0) {
+        Add-Unique $blockers "outgoing changed-path inventory failed"
+    } else {
+        try {
+            $outgoingChanges = @(Convert-NameStatusZ $outgoingDiff.OutputText)
+        } catch {
+            Add-Unique $blockers "outgoing changed-path inventory was malformed"
+        }
+    }
+}
+$changes = @($outgoingChanges) + @($pendingChanges)
 
 $rawDirty = @()
 $surfaces = [System.Collections.Generic.HashSet[string]]::new()
 foreach ($change in $changes) {
-    $surface = Get-Surface $change.Path
-    [void]$surfaces.Add($surface)
-    if ($change.Path.Replace('\', '/') -like ".docs/raw/*") {
-        if ($change.X -ne 'D' -and $change.Y -ne 'D') {
-            $rawDirty += $change.Path
+    foreach ($path in @(Get-InventoryPaths $change)) {
+        $surface = Get-Surface $path
+        [void]$surfaces.Add($surface)
+        $copySourceOnly = $change.X -match '^C' -and $path -eq $change.PreviousPath
+        if (-not $copySourceOnly -and $path.Replace('\', '/') -like ".docs/raw/*" -and
+            $change.X -ne 'D' -and $change.Y -ne 'D') {
+            $rawDirty += $path
         }
     }
 }
@@ -308,13 +544,16 @@ $expected = [System.Collections.Generic.HashSet[string]]::new()
 foreach ($scopeItem in $ExpectedScope) {
     [void]$expected.Add([string]$scopeItem)
 }
-foreach ($surface in $surfaces) {
-    if ($surface -eq "unknown") {
-        Add-Unique $warnings "Changed path has unknown surface; review scope manually"
-        continue
-    }
-    if (-not $expected.Contains($surface) -and $surface -ne "raw-docs") {
-        Add-Unique $blockers "Changed surface '$surface' is not declared in ExpectedScope"
+foreach ($change in $changes) {
+    foreach ($path in @(Get-InventoryPaths $change)) {
+        $surface = Get-Surface $path
+        if ($surface -eq "unknown") {
+            Add-Unique $blockers "Changed path has unknown surface; cannot verify ExpectedScope: $path"
+            continue
+        }
+        if (-not $expected.Contains($surface) -and $surface -ne "raw-docs") {
+            Add-Unique $blockers "Changed surface '$surface' is not declared in ExpectedScope"
+        }
     }
 }
 
@@ -398,6 +637,26 @@ foreach ($path in $dangerous) {
 }
 }
 
+$branchIdentityStable = $false
+$headAtApprovalResult = Invoke-Git rev-parse --verify 'HEAD^{commit}'
+$headAtApproval = ([string]($headAtApprovalResult.Output | Select-Object -First 1)).Trim().ToLowerInvariant()
+$branchIdentityApproval = Invoke-Git symbolic-ref --quiet HEAD
+$currentBranchRef = if ($branchIdentityApproval.ExitCode -eq 0) {
+    ([string]($branchIdentityApproval.Output | Select-Object -First 1)).Trim()
+} else {
+    ""
+}
+$branchIdentityStable = $branchIdentityAvailable -and
+    (Test-BranchIdentityStable $branchIdentityExitCode $branchRef $branchIdentityApproval.ExitCode $currentBranchRef)
+if (-not $branchIdentityStable) {
+    Add-Unique $blockers "symbolic branch identity changed or could not be revalidated during guard"
+}
+$snapshotStable = $snapshotAvailable -and $headAtApprovalResult.ExitCode -eq 0 -and
+    $headAtApproval -eq $headSha -and $branchIdentityStable
+if ($snapshotAvailable -and ($headAtApprovalResult.ExitCode -ne 0 -or $headAtApproval -ne $headSha)) {
+    Add-Unique $blockers "HEAD changed during guard; captured snapshot cannot be approved"
+}
+
 $verdict = "Approved"
 if ($blockers.Count -gt 0) {
     $verdict = "Blocked"
@@ -409,7 +668,12 @@ $report = [pscustomobject]@{
     verdict = $verdict
     collaboration_mode = $CollaborationMode
     branch = $branch
-    head = $head
+    branch_ref = $branchRef
+    branch_identity_stable = $branchIdentityStable
+    head = $headSha
+    base_sha = $baseSha
+    head_sha = $headSha
+    snapshot_stable = $snapshotStable
     fast_forward_safe = $fastForwardSafe
     secrets_scan = $secretsScan
     ahead_count = $ahead.Count
@@ -420,6 +684,7 @@ $report = [pscustomobject]@{
     shared_skill_mirror_checks = @($sharedSkillMirrorChecks)
     waiver_reason = $WaiverReason
     changed_paths = @($changes)
+    pending_changes = $pendingInventory
     blockers = @($blockers)
     warnings = @($warnings)
     dry_run = [bool]$DryRun
@@ -431,6 +696,11 @@ if ($Json) {
     "PrePushGuard verdict: $verdict"
     "collaboration_mode: $CollaborationMode"
     "branch: $branch"
+    "branch_ref: $branchRef"
+    "branch_identity_stable: $branchIdentityStable"
+    "snapshot_stable: $snapshotStable"
+    "head_sha: $headSha"
+    "base_sha: $baseSha"
     "fast_forward_safe: $fastForwardSafe"
     "secrets_scan: status=$($secretsScan.status), match_count=$($secretsScan.match_count)"
     "expected_scope: $($ExpectedScope -join ',')"

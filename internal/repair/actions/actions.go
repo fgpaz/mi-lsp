@@ -62,42 +62,49 @@ func configResult() (Result, error) {
 
 // resolveSelector sólo consulta el registro y el sistema de archivos; nunca hace GC.
 func resolveSelector(target string) (model.WorkspaceRegistration, bool, error) {
+	registration, registered, _, err := resolveSelectorWithIdentity(target)
+	return registration, registered, err
+}
+
+// resolveSelectorWithIdentity conserva el FileInfo del objeto físico seleccionado
+// para que Apply pueda compararlo con el descriptor que abre antes de reparar.
+func resolveSelectorWithIdentity(target string) (model.WorkspaceRegistration, bool, os.FileInfo, error) {
 	target = strings.TrimSpace(target)
 	if target == "" {
-		return model.WorkspaceRegistration{}, false, errors.New("workspace requerido")
+		return model.WorkspaceRegistration{}, false, nil, errors.New("workspace requerido")
 	}
 	reg, _, err := inspectRegistry()
 	if err != nil {
-		return model.WorkspaceRegistration{}, false, err
+		return model.WorkspaceRegistration{}, false, nil, err
 	}
 	if item, found := reg.Workspaces[target]; found {
 		info, err := os.Stat(item.Root)
 		if err != nil || !info.IsDir() {
-			return model.WorkspaceRegistration{}, false, errors.New("workspace registrado no disponible")
+			return model.WorkspaceRegistration{}, false, nil, errors.New("workspace registrado no disponible")
 		}
 		item.Name = target
-		return item, true, nil
+		return item, true, info, nil
 	}
 	// Un alias desconocido no es una ruta implícita al directorio actual.
 	if !filepath.IsAbs(target) && target != "." && target != ".." && !strings.ContainsAny(target, `/\`) {
-		return model.WorkspaceRegistration{}, false, errors.New("alias desconocido")
+		return model.WorkspaceRegistration{}, false, nil, errors.New("alias desconocido")
 	}
 	abs, err := filepath.Abs(target)
 	if err != nil {
-		return model.WorkspaceRegistration{}, false, err
+		return model.WorkspaceRegistration{}, false, nil, err
 	}
 	info, err := os.Stat(abs)
 	if err != nil || !info.IsDir() {
-		return model.WorkspaceRegistration{}, false, errors.New("ruta de workspace no disponible")
+		return model.WorkspaceRegistration{}, false, nil, errors.New("ruta de workspace no disponible")
 	}
 	for name, item := range reg.Workspaces {
 		other, err := os.Stat(item.Root)
 		if err == nil && os.SameFile(info, other) {
 			item.Name = name
-			return item, true, nil
+			return item, true, info, nil
 		}
 	}
-	return model.WorkspaceRegistration{Root: filepath.Clean(abs)}, false, nil
+	return model.WorkspaceRegistration{Root: filepath.Clean(abs)}, false, info, nil
 }
 
 func Inspect(kind, target, toolRoot, mode string) (Result, error) {
@@ -116,7 +123,22 @@ func Inspect(kind, target, toolRoot, mode string) (Result, error) {
 			return Result{Needed: true, ReasonCode: "WORKSPACE_UNREGISTERED", Detail: "El workspace no está registrado.", NextAction: "Registrar el workspace seleccionado."}, nil
 		}
 		if kind == "workspace" {
-			return ok("Workspace registrado."), nil
+			plan, err := workspace.PlanWorkspaceMetadataRepair(reg)
+			if err != nil {
+				return workspaceMetadataFailure(err)
+			}
+			if !plan.MetadataPresent {
+				return ok("Workspace registrado sin project metadata local para reconciliar."), nil
+			}
+			if !plan.Drift {
+				return ok("Metadata de languages coincide con la detección actual."), nil
+			}
+			return Result{
+				Needed:     true,
+				ReasonCode: "WORKSPACE_METADATA_DRIFT",
+				Detail:     "Los languages detectados difieren de la metadata del workspace registrado.",
+				NextAction: "Inspección solo orientativa: --apply vuelve a seleccionar y valida la identidad física; no vincula esta selección. Revisar el delta. --apply es global: persiste repair state y puede registrar el runtime receipt; esta acción solo reconcilia languages. Indexar requiere --reindex explícito.",
+			}, nil
 		}
 		ready, err := catalogReadyReadOnly(reg.Root)
 		if err != nil {
@@ -170,7 +192,7 @@ func Apply(kind, target, toolRoot, mode string) (Result, error) {
 		readback.Changed = changed
 		return readback, nil
 	case "workspace":
-		return register(target)
+		return applyWorkspaceMetadata(target)
 	case "index":
 		return index(target, toolRoot)
 	case "worker":
@@ -196,6 +218,69 @@ func Apply(kind, target, toolRoot, mode string) (Result, error) {
 	default:
 		return failure("REPAIR_FAILED", "Tipo de acción desconocido.", "Revisar la solicitud.", nil)
 	}
+}
+
+func workspaceMetadataFailure(err error) (Result, error) {
+	code := "WORKSPACE_METADATA_REPAIR_FAILED"
+	detail := "No se pudo verificar o reparar la metadata de languages sin cambiar la identidad del workspace."
+	next := "Revisar la metadata y el registro antes de reintentar."
+	var partial *workspace.PartialMutationError
+	if errors.As(err, &partial) {
+		recovery := strings.Join(partial.RecoveryPaths, ", ")
+		result, returnedErr := failure(
+			"WORKSPACE_METADATA_PARTIAL_MUTATION",
+			"La reparación pudo modificar metadata parcialmente; el rollback no quedó verificado.",
+			"Inspeccionar y recuperar manualmente: "+recovery+". Verificar identidad física de la raíz antes de escribir.",
+			err,
+		)
+		result.Changed = true
+		return result, returnedErr
+	}
+	switch {
+	case errors.Is(err, workspace.ErrWorkspaceMetadataRootChanged):
+		code = "WORKSPACE_ROOT_CHANGED"
+		detail = "La raíz física seleccionada cambió; no se escribió en el destino nuevo."
+		next = "Volver a seleccionar y planificar la raíz verificada antes de reintentar."
+	case errors.Is(err, workspace.ErrWorkspaceMetadataUnsafe):
+		code = "WORKSPACE_METADATA_UNSAFE"
+		detail = "La metadata contiene TOML desconocido o una forma de archivo no segura; no se modificó."
+		next = "Resolver explícitamente los campos desconocidos antes de aplicar la reparación."
+	case errors.Is(err, workspace.ErrWorkspaceMetadataRegistrationChanged):
+		code = "WORKSPACE_REGISTRATION_CHANGED"
+		detail = "La identidad registrada del workspace cambió; no se modificó."
+		next = "Revisar alias y raíz antes de volver a planificar."
+	case errors.Is(err, workspace.ErrWorkspaceMetadataUnavailable):
+		code = "WORKSPACE_METADATA_UNAVAILABLE"
+		detail = "No se pudo leer o detectar la metadata del workspace; no se modificó."
+		next = "Revisar los archivos de metadata y los marcadores visibles del workspace."
+	}
+	return failure(code, detail, next, err)
+}
+
+func applyWorkspaceMetadata(target string) (Result, error) {
+	registration, registered, selectedRoot, err := resolveSelectorWithIdentity(target)
+	if err != nil {
+		return failure("WORKSPACE_REQUIRED", "Se requiere un workspace o una ruta existente.", "Seleccionar un alias registrado o una ruta de directorio existente.", err)
+	}
+	if !registered {
+		return register(target)
+	}
+	selection := workspace.WorkspaceMetadataSelection{Registration: registration, RootInfo: selectedRoot}
+	plan, changed, err := workspace.ApplyWorkspaceMetadataRepairSelected(selection)
+	if err != nil {
+		result, returnedErr := workspaceMetadataFailure(err)
+		result.Changed = result.Changed || changed
+		return result, returnedErr
+	}
+	result := ok("Metadata de languages reconciliada y verificada; no se retargeteó ni indexó el workspace.")
+	result.Changed = changed
+	result.NextAction = "Este action integra el --apply global, que persiste repair state y puede registrar el runtime receipt; indexación requiere --reindex explícito."
+	if !plan.MetadataPresent {
+		result.Detail = "Workspace registrado sin project metadata local; no se escribieron archivos del workspace."
+	} else if !plan.Drift {
+		result.Detail = "Metadata de languages ya coincide; no se escribieron los archivos del workspace."
+	}
+	return result, nil
 }
 
 func register(target string) (Result, error) {

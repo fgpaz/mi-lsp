@@ -53,8 +53,8 @@ Comandos canónicos:
 
 - `workspace add|scan|list|warm|status|remove|doctor|hygiene|prune|which`
 - `nav symbols|find|refs|overview|outline|service|search|context|deps|ask|pack|prepare|batch|related|workspace-map|diff-context|affected|trace|intent|suggest`
-- `index [path] [--clean] [--docs-only] [--entrypoint <id|repo-relative-path>]`
-- `index start|status|cancel` (`start` admite `--entrypoint <id|repo-relative-path>`)
+- `index [path] [--clean] [--docs-only] [--no-embeddings] [--entrypoint <id|repo-relative-path>]`
+- `index start|status|cancel` (`start` admite `--no-embeddings` y `--entrypoint <id|repo-relative-path>`)
 - `info`
 - `doctor` (alias unificado para diagnóstico workspace-aware)
 - `daemon start|stop|status|restart|open|logs [--tail N]`
@@ -220,8 +220,8 @@ Cuando un comando workspace-aware recibe `--workspace <alias>` y el `caller_cwd`
 Input:
 
 ```text
-mi-lsp index [path] [--workspace <alias>] [--clean] [--docs-only] [--entrypoint <id|repo-relative-path>] [--go-offline]
-mi-lsp index start [path] [--workspace <alias>] [--mode full|docs|catalog] [--clean] [--wait] [--entrypoint <id|repo-relative-path>] [--go-offline]
+mi-lsp index [path] [--workspace <alias>] [--clean] [--docs-only] [--no-embeddings] [--entrypoint <id|repo-relative-path>] [--go-offline]
+mi-lsp index start [path] [--workspace <alias>] [--mode full|docs|catalog] [--clean] [--wait] [--no-embeddings] [--entrypoint <id|repo-relative-path>] [--go-offline]
 mi-lsp index status [job-id] [--workspace <alias>]
 mi-lsp index cancel <job-id> [--workspace <alias>] [--force]
 
@@ -239,12 +239,12 @@ La política offline y su envelope se definen exclusivamente en este bloque; ace
 - **Marcador estable**: CT-CLI-DAEMON-ADMIN-GO-OFFLINE
 - **requirement_id**: RF-IDX-001
 - **observable_contract**: RF-IDX-001-GO-OFFLINE
-- **public_routes**: index wrapper direct wait; index start direct wait o detached; run-job recarga go_offline durable
+- **public_routes**: index wrapper direct wait; index start direct wait o detached; run-job recarga `go_offline` y `no_embeddings` durable
 - **daemon_route**: CLI index-daemon unsupported/noapplicable actual; dispatch App/server interno compartido no establece paridad ni habilita routing
 - **durable_policy**: `--go-offline` es opt-in (false por default) en `index` y `index start`: payload `go_offline` booleano y columna durable `index_jobs.go_offline` (legacy=0). `index run-job` carga esa columna; no necesita reenviar un flag ni compartir el entorno del cliente. La proyección pública del job/status incluye `go_offline` sin valores privados.
 - **process_and_metadata**: Toda invocación Go del observador usa GOTOOLCHAIN local, GOPROXY/GOSUMDB off, GOVCS *:off, GOFLAGS con un espacio (cero flags, override no vacío del valor persistido), GOWORK off y `-buildvcs=false -mod=readonly`. Ignora GOFLAGS heredados/configurados y observa el módulo sin `go.work` (evita modificar su sum); el resto del entorno y caches locales se preserva. `-modfile` apunta a copias temporales propias de go.mod/go.sum, porque readonly por sí solo no impide agregar sumas; los archivos del usuario quedan intactos. No modifica configuración global ni instala nada. El importador ambiental se deshabilita en ese modo.
 - **completeness**: Full offline recompone el candidato incluso sin cambios de catálogo; fingerprint distingue la política y warning `go_offline=true` registra la observación efectiva. Capabilities existentes conservan estado real: compilación/export local permitidos, metadata ausente devuelve `GPH_GO_OFFLINE_UNAVAILABLE`, metadata parcial puede producir diagnóstico genérico/index_failed, type_check_error o external_target; go_offline_metadata_unavailable no es universal y la precisión offline específica queda explicit_incomplete. Nunca retry online ni facts de compilador por fallback textual.
-- **scope_and_mismatch**: Docs/catalog no ejecutan ese observador y no se alteran; el flag no bloquea embeddings, otros backends ni consultas gopls, ni es un sandbox de red para un CC/cgo externo personalizado. La deduplicación compara el `go_offline` persistido del activo con el solicitado: si difieren en cualquiera de los dos sentidos, devuelve `ok=false`, `error.kind=validation`, `error.code=index_job_policy_mismatch`, `error.stage=index.start` y el job público real en items, con job_id y ambas políticas en el mensaje. No altera/cancela el activo, no crea otro runner ni hace retry automático; next_hint apunta a status y el reintento es manual después de terminal. Con política coincidente se conserva la deduplicación previa (sin nuevas restricciones de mode/clean/entrypoint). Contrato funcional y aceptación: [[RF-IDX-001]] / RF-IDX-001-GO-OFFLINE y [[TP-IDX]] / TC-IDX-029.
+- **scope_and_mismatch**: Docs/catalog no ejecutan el observador Go offline; `--go-offline` no bloquea embeddings, otros backends ni consultas gopls, ni es un sandbox de red para un CC/cgo externo personalizado. La deduplicación de `index.start` compara la tupla persistida del job activo `(go_offline, no_embeddings)` con la solicitada. Si difiere cualquiera de las dos dimensiones en cualquier sentido, devuelve `ok=false`, `error.kind=validation`, `error.code=index_job_policy_mismatch`, `error.stage=index.start` y el job público real en items; el mensaje incluye `active_go_offline`, `requested_go_offline`, `active_no_embeddings` y `requested_no_embeddings`. No altera/cancela el activo, no crea otro runner ni hace retry automático; `next_hint` apunta a status y el reintento es manual después de terminal. Si ambas dimensiones coinciden, conserva la deduplicación previa: devuelve el job activo sin mutarlo ni imponer restricciones nuevas de mode/clean/entrypoint. Contrato funcional y aceptación offline: [[RF-IDX-001]] / RF-IDX-001-GO-OFFLINE y [[TP-IDX]] / TC-IDX-029.
 - **verification_basis**: FINAL_VERIFY1 FAIL histórico; RECHECK1 PASS policy / PARTIAL global; audit1 Changes requested, reparación editorial no equivale a accepted/complete
 - **evidence_scope**: Rechazo simétrico, dedupe coincidente, snapshots durables sin mutación y retry terminal comprobados; stdlib bwrap succeeded, namespace distinto, solo lo y sin rutas
 - **evidence_limits**: No cero syscall, ejecución normal fuera de namespace, salud global ni capacidades/precisión externas completas; graph query daemon no prueba observador
@@ -255,9 +255,15 @@ La política offline y su envelope se definen exclusivamente en este bloque; ace
 - **budget**: FINAL_VERIFY1/audit1/RECHECK1 agotado; sin recheck2 ni verificador pendiente
 - **readiness_debt**: Sin migración global ni PASS Harness/wiki-source/P6/Graph; deuda preexistente preservada
 
+#### Opt-out por operación de embeddings
+
+`mi-lsp index` y `mi-lsp index start` aceptan `--no-embeddings` (opt-in, false por default), independiente de `[embeddings]` y de `--go-offline`. Omite solamente la fase de embeddings: conserva `doc_records`, memoria y la `GraphGeneration` documental en modos `docs`/`full`, deja vectores existentes intactos y no resuelve configuración de embeddings del proyecto/usuario, credenciales ni proveedor. El timeout preflight usa el presupuesto base sin cargar configuración ni estimar chunks. El resultado explícito es el warning `wiki embeddings skipped by operation policy; existing embeddings were left unchanged`.
+
+En `index.start`, `index_jobs.no_embeddings` persiste la política (legacy=0); `embeddings_outcome` muestra `skipped_by_operation` o `not_applicable` en `catalog`. `index status` proyecta ambos campos y el proceso detached reenvía la política al hidden `index run-job`, que valida/usa el valor persistido antes de la fase de embeddings. La deduplicación con un job activo sigue la regla compuesta única de `scope_and_mismatch` arriba. No agrega una ruta de servicio, no cambia defaults/configuración y no altera la semántica de `--go-offline`.
+
 - `index status` consulta el ultimo job del workspace si no se pasa `job-id`.
 - `index status.phase` conserva `indexing` durante el trabajo pesado y solo pasa a `publishing` en el cierre/publicacion final.
-- `index status` expone progreso vivo en `current_stage`, `current_path`, `files_total`, `files`, `symbols`, `docs` y `updated_at`; esos campos deben refrescarse durante catalogo/docs/embeddings antes de publicar. En embeddings, `current_stage=embeddings` y `current_path` incluye `N/M chunks embedded`.
+- `index status` expone `no_embeddings` y `embeddings_outcome` junto con progreso vivo en `current_stage`, `current_path`, `files_total`, `files`, `symbols`, `docs` y `updated_at`; esos campos deben refrescarse durante catalogo/docs/embeddings antes de publicar. En embeddings, `current_stage=embeddings` y `current_path` incluye `N/M chunks embedded`.
 - `index cancel` marca cancelacion solicitada; la cancelacion es cooperativa y puede no interrumpir una publicación que ya llego al commit.
 - `index cancel --force` puede terminar el PID vivo del job, marcarlo `canceled` y remover el `.mi-lsp/index.lock` si pertenece a ese PID ya muerto; se reserva para jobs colgados.
 - `workspace.add`, `init` usan **hibrido smart-sync** (FD1): indexan sincronicamente dentro de `SmartSyncTimeout` (`MI_LSP_INDEX_SYNC_TIMEOUT`, 20s) para preservar el contrato init-then-query; si una primera indexación grande lo excede, degradan a background y devuelven `job_id` con warning. `--background`/`background:true` fuerza async inmediato; `--wait`/`wait:true` fuerza sync completo (`IndexTimeout`, `MI_LSP_INDEX_TIMEOUT` default 30min); con `[embeddings]` activo el wrapper de index puede elevar ese presupuesto por corpus/batches o por `[embeddings].index_timeout_ms`; `--no-index` omite indexacion.

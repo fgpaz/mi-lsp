@@ -47,6 +47,7 @@ func (a *App) indexStart(ctx context.Context, request model.CommandRequest) (mod
 	wait, _ := request.Payload["wait"].(bool)
 	clean, _ := request.Payload["clean"].(bool)
 	goOffline, _ := request.Payload["go_offline"].(bool)
+	noEmbeddings, _ := request.Payload["no_embeddings"].(bool)
 	entrypointSelector := strings.TrimSpace(stringPayload(request.Payload, "entrypoint"))
 	if err := validateIndexEntrypointMode(mode, entrypointSelector); err != nil {
 		return model.Envelope{}, err
@@ -58,7 +59,7 @@ func (a *App) indexStart(ctx context.Context, request model.CommandRequest) (mod
 	}
 	defer db.Close()
 
-	job, err := store.CreateIndexJobWithGoOffline(ctx, db, registration.Name, registration.Root, mode, clean, entrypointSelector, goOffline)
+	job, err := store.CreateIndexJobWithPolicies(ctx, db, registration.Name, registration.Root, mode, clean, entrypointSelector, goOffline, noEmbeddings)
 	if err != nil {
 		var mismatchErr *store.IndexJobPolicyMismatchError
 		if errors.As(err, &mismatchErr) {
@@ -154,7 +155,15 @@ func (a *App) indexRunJob(ctx context.Context, request model.CommandRequest) (mo
 		ctx, stop = startAutoIndexJobGuards(ctx, registration.Root)
 		defer stop()
 	}
-	job, result, err := a.runIndexJob(ctx, registration, jobID)
+	var noEmbeddingsHint *bool
+	if raw, ok := request.Payload["no_embeddings"]; ok {
+		value, valid := raw.(bool)
+		if !valid {
+			return model.Envelope{}, errors.New("no_embeddings must be a boolean")
+		}
+		noEmbeddingsHint = &value
+	}
+	job, result, err := a.runIndexJobWithPolicyHint(ctx, registration, jobID, noEmbeddingsHint)
 	if autoIndexJobProcess() {
 		recordAutoIndexResult(registration.Root, job, err)
 	}
@@ -270,6 +279,10 @@ func markIndexJobCanceledCooperatively(ctx context.Context, db *sql.DB, jobID st
 }
 
 func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegistration, jobID string) (store.IndexJob, indexer.Result, error) {
+	return a.runIndexJobWithPolicyHint(ctx, registration, jobID, nil)
+}
+
+func (a *App) runIndexJobWithPolicyHint(ctx context.Context, registration model.WorkspaceRegistration, jobID string, noEmbeddingsHint *bool) (store.IndexJob, indexer.Result, error) {
 	db, err := openWorkspaceDBForIndex(registration, "index.run-job")
 	if err != nil {
 		return store.IndexJob{}, indexer.Result{}, err
@@ -282,6 +295,9 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 	}
 	if !ok {
 		return store.IndexJob{}, indexer.Result{}, fmt.Errorf("index job %s not found", jobID)
+	}
+	if noEmbeddingsHint != nil && *noEmbeddingsHint != job.NoEmbeddings {
+		return store.IndexJob{}, indexer.Result{}, fmt.Errorf("index job %s no_embeddings policy mismatch: persisted=%t requested=%t", jobID, job.NoEmbeddings, *noEmbeddingsHint)
 	}
 	jobFence := store.IndexJobFence{OwnerToken: job.OwnerToken, FencingToken: job.FencingToken}
 	if job.Status == store.IndexJobCanceled {
@@ -386,7 +402,7 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 	// cannot change a succeeded job back to failed.
 	if job.Mode == store.IndexModeDocs || job.Mode == store.IndexModeFull {
 		var embeddingErr error
-		result.Warnings, embeddingErr = a.appendWikiEmbeddingWarnings(ctx, registration.Root, result.Warnings, nil)
+		result.Warnings, embeddingErr = a.appendWikiEmbeddingWarningsForPolicy(ctx, registration.Root, result.Warnings, nil, job.NoEmbeddings)
 		if embeddingErr != nil {
 			result.Warnings = appendStringIfMissing(result.Warnings, "embeddings unavailable after publication; index job succeeded")
 		}
@@ -488,7 +504,19 @@ func (a *App) spawnIndexJobWith(ctx context.Context, db *sql.DB, registration mo
 }
 
 func startDetachedIndexJobProcess(registration model.WorkspaceRegistration, jobID string) (int, error) {
-	return startDetachedIndexJobProcessWithEnv(registration, jobID, registration.Name, nil)
+	db, err := openWorkspaceDBForIndex(registration, "index.start")
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+	job, found, err := store.GetIndexJob(context.Background(), db, jobID)
+	if err != nil {
+		return 0, err
+	}
+	if !found {
+		return 0, fmt.Errorf("index job %s not found before detached spawn", jobID)
+	}
+	return startDetachedIndexJobProcessWithPolicy(registration, jobID, registration.Name, nil, job.NoEmbeddings)
 }
 
 // startDetachedAutoIndexJobProcess spawns the self-heal job with capped
@@ -502,6 +530,10 @@ func startDetachedAutoIndexJobProcess(registration model.WorkspaceRegistration, 
 }
 
 func startDetachedIndexJobProcessWithEnv(registration model.WorkspaceRegistration, jobID string, selector string, extraEnv []string) (int, error) {
+	return startDetachedIndexJobProcessWithPolicy(registration, jobID, selector, extraEnv, false)
+}
+
+func startDetachedIndexJobProcessWithPolicy(registration model.WorkspaceRegistration, jobID string, selector string, extraEnv []string, noEmbeddings bool) (int, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		return 0, err
@@ -516,7 +548,8 @@ func startDetachedIndexJobProcessWithEnv(registration model.WorkspaceRegistratio
 	}
 	defer logFile.Close()
 
-	cmd := processutil.CommandContext(context.Background(), executable, "--workspace", selector, "--format", "json", "index", "run-job", jobID)
+	args := detachedIndexJobCommandArgs(selector, jobID, noEmbeddings)
+	cmd := processutil.CommandContext(context.Background(), executable, args...)
 	if neutralCWD := detachedIndexJobCWD(); neutralCWD != "" {
 		cmd.Dir = neutralCWD
 	}
@@ -530,6 +563,14 @@ func startDetachedIndexJobProcessWithEnv(registration model.WorkspaceRegistratio
 	pid := cmd.Process.Pid
 	_ = cmd.Process.Release()
 	return pid, nil
+}
+
+func detachedIndexJobCommandArgs(selector, jobID string, noEmbeddings bool) []string {
+	args := []string{"--workspace", selector, "--format", "json", "index", "run-job"}
+	if noEmbeddings {
+		args = append(args, "--no-embeddings")
+	}
+	return append(args, jobID)
 }
 
 func detachedIndexJobCWD() string {
