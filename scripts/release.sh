@@ -81,7 +81,8 @@ if [[ "$upload" -eq 0 ]]; then
   goreleaser_bin="$(find_goreleaser)"
   # Reuse the tag name the workflow would see. Do not create a tag.
   export GORELEASER_CURRENT_TAG="v${version}"
-  "$goreleaser_bin" release --clean --skip=publish
+  # Bound GoReleaser task concurrency for resource-bounded release builds.
+  "$goreleaser_bin" release --clean --skip=publish --parallelism 1
   # Binary-format artifacts retain their build path; materialize the named
   # upload files from GoReleaser's manifest without guessing build directories.
   # Windows environments commonly provide python, not the python3 Store alias.
