@@ -1,0 +1,28 @@
+Resultado: documentación de cierre para los verbos nativos de símbolos; sin cambios de código.
+
+Alcance completado:
+- RF-QRY-026 crea el requisito activo para find_symbol, rename_symbol y get_errors, con cinco criterios, errores tipados y 17 links.code exactos.
+- FL-QRY-01 añade la secuencia P1–P5 para root/nav, RPC, selección, aplicación limitada y salida honesta.
+- TP-QRY verifica RF-QRY-026 y registra aceptación manual con referencias a smoke-positive-state, smoke-guards-state y smoke-state. El estado probe_complete_acceptance_pending no se eleva a PASS. El fixture compilado y sus dos archivos de readback no se presentan como compilación del producto.
+- CT-DAEMON-WORKER soporta RF-QRY-026 y documenta comandos mínimos, aliases, RPC v1.1, selección UTF-16, paths locales y estados de diagnósticos.
+
+Evidencia consultada: los estados resumidos existentes en /home/tesla/.cache/mi-lsp-native3-verify-20261030/. No se copiaron valores opacos de selectores. No ejecuté tests, builds, comandos de mi-lsp ni validadores wiki.
+
+Límites y siguiente acción:
+- Los 17 archivos de implementación están en el worktree hermano /home/tesla/repos/mios-wt/mi-lsp-native-verbs-20261030; no edité esos archivos ni cambié los otros cambios preexistentes de este worktree. Integrar los cambios de código y estos documentos en el workspace combinado antes de la validación/AE trace autorizada.
+- Los JSON de evidencia están en cache local, no versionados ni portables; conservarlos o trasladar un resumen durable corresponde al dueño de evidencia.
+- La búsqueda de coordinación falló por JetStream 503/code 10008 y botsd msg sesiones agotó timeout de KV botsd_sesiones; no se enviaron ni acusaron mensajes. Sin ETA; reintentar en el próximo evento de coordinación.
+- botsd_resultado.put devolvió delegation_not_found para la Task inyectada; no se creó recibo KV. El reporte durable permanece en el path indicado; sin ETA, siguiente evento: el coordinador lee ese archivo.
+- El diagnóstico automático post-edición de mi-lsp devolvió unsupported_operation (language has no diagnostic backend); no se lanzó validación manual. Sin ETA; siguiente evento: validador disponible y ejecución autorizada.
+
+Paths wiki tocados (4 Markdown):
+- .docs/wiki/04_flows/FL-QRY-01.md
+- .docs/wiki/05_requirements/RF-QRY-026.md
+- .docs/wiki/06_tests/TP-QRY.md
+- .docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md
+
+Path de resultado:
+- results/native-verbs-doc-close-20261030.txt
+
+REPORTE-FINAL: results/native-verbs-doc-close-20261030.txt
+LISTO

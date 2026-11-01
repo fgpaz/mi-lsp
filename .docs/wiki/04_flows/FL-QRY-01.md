@@ -73,6 +73,21 @@ La puerta `mi-lsp mcp` (proceso local JSON-RPC/NDJSON por stdio) fue retirada el
 
 ## Secuencia
 
+### P1 · Invocación explícita del verbo
+El consumidor invoca `find_symbol`, `rename_symbol` o `get_errors` desde el root o el alias `nav`; rename siempre requiere una acción y un nombre nuevo explícitos.
+
+### P2 · Enrutamiento y contrato RPC
+La CLI resuelve el workspace y enruta el mismo `operation`/`payload` con `mi-lsp-v1.1` al daemon o al core directo. Un alias no cambia la semántica.
+
+### P3 · Resolución semántica
+`find_symbol` conserva la marca aproximada cuando la evidencia semántica no es completa. `rename_symbol` exige selección validada y backend `gopls`; `get_errors` informa cobertura de diagnósticos, no compilación.
+
+### P4 · Validación y aplicación limitada
+Antes del rename, el core verifica el plan versionado, posiciones UTF-16, snapshots y paths locales dentro del scope seleccionado; rechaza referencias incompletas o inseguras sin escribir.
+
+### P5 · Resultado honesto
+La respuesta identifica archivos tocados y diagnósticos `checked|partial|not_checked`; compilation permanece `not_checked` y una falla de recuperación expone el estado parcial.
+
 ```mermaid
 sequenceDiagram
     participant A as Agente/Usuario
@@ -81,6 +96,38 @@ sequenceDiagram
     participant C as Core
     participant DG as Docgraph
     participant X as Service profile
+    participant W as Semantic worker (gopls for Go rename)
+
+    opt Verbos nativos explícitos
+        A->>CLI: P1 invoca find_symbol | rename_symbol | get_errors
+        alt daemon activo
+            CLI->>D: P2 request protocol mi-lsp-v1.1
+            D->>C: P2 route operation + context + payload
+        else daemon ausente
+            CLI->>C: P2 fallback directo con el mismo contrato
+        end
+        alt find_symbol
+            C->>C: P3 combina catálogo y evidencia semántica disponible
+            C->>W: P3 consulta definición/referencias si el backend está listo
+            W-->>C: P3 resultado semántico o estado incompleto
+        else rename_symbol
+            C->>W: P3 resuelve candidato y valida prepareRename en vivo
+            W-->>C: P3 candidato o rechazo explícito
+            C->>W: P4 solicita plan de rename versionado
+            W-->>C: P4 WorkspaceEdit + versiones/snapshots
+            C->>C: P4 valida referencias, UTF-16, paths y aplica/recupera
+        else get_errors
+            C->>W: P3 consulta diagnósticos en los archivos acotados
+            W-->>C: P3 diagnósticos con cobertura
+        end
+        alt daemon activo
+            C-->>D: P5 envelope + files_touched/diagnostics_status
+            D-->>CLI: P5 respuesta; compilation_state=not_checked
+        else daemon ausente
+            C-->>CLI: P5 envelope + files_touched/diagnostics_status
+        end
+        CLI-->>A: P5 resultado tipado, incluidos límites y fallas
+    end
 
     A->>CLI: nav <comando> [--axi|--classic] [--full] --token-budget N
     alt lectura barata de catalogo/texto

@@ -11,7 +11,18 @@ internal static class Program
         WriteIndented = false
     };
 
-    public static async Task<int> Main()
+    // Keep the controlled bootstrap free of RoslynService type references: it must
+    // run before those dependencies are resolved in the child's default context.
+    public static Task<int> Main(string[] args)
+    {
+        if (args.Length == 1 && string.Equals(args[0], ControlledHostBootstrap.Argument, StringComparison.Ordinal))
+        {
+            return ControlledHostBootstrap.RunAsync();
+        }
+        return RunLegacyAsync();
+    }
+
+    private static async Task<int> RunLegacyAsync()
     {
         var service = new RoslynService();
         await using var input = Console.OpenStandardInput();

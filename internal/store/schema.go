@@ -452,10 +452,11 @@ var graphIndexes = map[string]string{
 }
 
 var graphAdditiveIndexes = map[string]string{
-	"idx_graph_nodes_generation_semantic_identity": `CREATE INDEX IF NOT EXISTS idx_graph_nodes_generation_semantic_identity ON graph_nodes(generation_id, semantic_identity);`,
-	"idx_graph_nodes_generation_display_name":      `CREATE INDEX IF NOT EXISTS idx_graph_nodes_generation_display_name ON graph_nodes(generation_id, display_name);`,
-	"idx_graph_analysis_generation_key":            `CREATE INDEX IF NOT EXISTS idx_graph_analysis_generation_key ON graph_analysis(generation_id, analysis_key);`,
-	"idx_graph_analysis_generation_profile":        `CREATE INDEX IF NOT EXISTS idx_graph_analysis_generation_profile ON graph_analysis(generation_id, algorithm, algorithm_version, profile);`,
+	"idx_graph_nodes_generation_backend_kind_owner": `CREATE INDEX IF NOT EXISTS idx_graph_nodes_generation_backend_kind_owner ON graph_nodes(generation_id, backend_type, symbol_kind, owner_path);`,
+	"idx_graph_nodes_generation_semantic_identity":  `CREATE INDEX IF NOT EXISTS idx_graph_nodes_generation_semantic_identity ON graph_nodes(generation_id, semantic_identity);`,
+	"idx_graph_nodes_generation_display_name":       `CREATE INDEX IF NOT EXISTS idx_graph_nodes_generation_display_name ON graph_nodes(generation_id, display_name);`,
+	"idx_graph_analysis_generation_key":             `CREATE INDEX IF NOT EXISTS idx_graph_analysis_generation_key ON graph_analysis(generation_id, analysis_key);`,
+	"idx_graph_analysis_generation_profile":         `CREATE INDEX IF NOT EXISTS idx_graph_analysis_generation_profile ON graph_analysis(generation_id, algorithm, algorithm_version, profile);`,
 }
 
 func normalizeSchemaSQL(s string) string {
@@ -521,6 +522,23 @@ func graphSchemaPreflight(db *sql.DB) error {
 	}
 	if err := rows.Err(); err != nil {
 		return err
+	}
+	// Additive indexes may be absent on older stores, but a pre-existing name
+	// must have exactly the expected definition. CREATE IF NOT EXISTS cannot
+	// establish that contract and must never silently accept a foreign index.
+	// Check even an otherwise fresh graph schema for a colliding index name.
+	for name, ddl := range graphAdditiveIndexes {
+		var actual sql.NullString
+		err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='index' AND name=? COLLATE NOCASE`, name).Scan(&actual)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if !actual.Valid || normalizeSchemaSQL(actual.String) != normalizeSchemaSQL(ddl) {
+			return &graphSchemaCompatibilityError{"incompatible additive index " + name}
+		}
 	}
 	if len(present) == 0 {
 		return nil

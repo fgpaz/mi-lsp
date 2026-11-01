@@ -1019,13 +1019,23 @@ type WorkspaceCanonLink struct {
 	Role  string `toml:"role" json:"role"`
 }
 
+type WorktreeIdentity struct {
+	Version      int    `json:"version" toml:"version"`
+	Verification string `json:"verification,omitempty" toml:"verification,omitempty"`
+	PhysicalRoot string `json:"physical_root" toml:"physical_root"`
+	MainRoot     string `json:"main_root" toml:"main_root"`
+	CommonDir    string `json:"common_dir" toml:"common_dir"`
+	GitDir       string `json:"git_dir" toml:"git_dir"`
+}
+
 type WorkspaceRegistration struct {
-	Name       string               `json:"name,omitempty" toml:"-"`
-	Root       string               `json:"root" toml:"root"`
-	Languages  []string             `json:"languages,omitempty" toml:"languages"`
-	Kind       string               `json:"kind,omitempty" toml:"kind,omitempty"`
-	Solution   string               `json:"sln,omitempty" toml:"sln,omitempty"`
-	CanonLinks []WorkspaceCanonLink `toml:"canon_link,omitempty" json:"canon_links,omitempty"`
+	WorktreeIdentity *WorktreeIdentity    `json:"worktree_identity,omitempty" toml:"worktree_identity,omitempty"`
+	Name             string               `json:"name,omitempty" toml:"-"`
+	Root             string               `json:"root" toml:"root"`
+	Languages        []string             `json:"languages,omitempty" toml:"languages"`
+	Kind             string               `json:"kind,omitempty" toml:"kind,omitempty"`
+	Solution         string               `json:"sln,omitempty" toml:"sln,omitempty"`
+	CanonLinks       []WorkspaceCanonLink `toml:"canon_link,omitempty" json:"canon_links,omitempty"`
 }
 
 type WorkspaceRepo struct {
