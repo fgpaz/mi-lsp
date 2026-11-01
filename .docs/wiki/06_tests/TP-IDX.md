@@ -9,6 +9,11 @@ links:
   - RF-IDX-001
   - RF-IDX-002
   - RF-IDX-003
+  code:
+  - path: internal/cli/index_no_embeddings_contract_preflight_test.go
+    role: test
+  - path: internal/service/index_no_embeddings_contract_preflight_test.go
+    role: test
 ---
 
 ## Alcance
@@ -82,6 +87,12 @@ RF-IDX-001, RF-IDX-002, RF-IDX-003. Se conserva el inventario de escenarios, lí
   - RF-IDX-001 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: Go offline por CLI direct/wait/detached; daemon CLI no aplicable. FINAL_VERIFY1 FAIL histórico; RECHECK1 PASS policy / PARTIAL global, límites en bloque TC-IDX-029. No acredita una ejecución de esta migración.
 - **Caso**: TC-IDX-028; **Tipo**: positivo; **RF**: RF-IDX-002; **Descripción**: aceptación manual por CLI pública; definición normativa en el bloque `TC-IDX-028`
   - RF-IDX-002 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: aceptación manual por CLI pública; definición normativa en el bloque `TC-IDX-028`. No acredita una ejecución de esta migración.
+- **Caso**: TC-IDX-030; **Tipo**: positivo; **RF**: RF-IDX-001; **Descripción**: `--no-embeddings` omite solo embeddings y conserva documentos, grafo documental y vectores existentes
+  - RF-IDX-001 — Criterio 10. Disposición: automated. Evidencia esperada: `TestIndexNoEmbeddingsContractPreflightBuildsRealDocsGraphWithoutProvider`, `TestIndexStartNoEmbeddingsContractPreflightWaitPreservesDocsGraph`, `TestIndexNoEmbeddingsContractPreflightPublicFlags` y `TestIndexNoEmbeddingsContractPreflightSkipsDynamicTimeoutResolution` en los paths declarados. No se ejecutaron en este cierre.
+- **Caso**: TC-IDX-031; **Tipo**: positivo; **RF**: RF-IDX-001; **Descripción**: la política opt-out queda persistida, visible en status y propagada al runner detached
+  - RF-IDX-001 — Criterio 11. Disposición: automated. Evidencia esperada: `TestIndexStartNoEmbeddingsContractPreflightPersistsPolicyAndRejectsMismatch`, `TestIndexNoEmbeddingsContractPreflightDetachedRunJobPropagation` y `TestIndexNoEmbeddingsContractPreflightDetachedRunJobFlag` en los paths declarados. No se ejecutaron en este cierre.
+- **Caso**: TC-IDX-032; **Tipo**: negativo; **RF**: RF-IDX-001; **Descripción**: la política `no_embeddings` incompatible rechaza el start sin alterar el job activo ni crear jobs/generaciones adicionales
+  - RF-IDX-001 — Criterio 12. Disposición: automated. Evidencia esperada: aserciones de `TestIndexStartNoEmbeddingsContractPreflightPersistsPolicyAndRejectsMismatch` en `internal/service/index_no_embeddings_contract_preflight_test.go`. No se ejecutaron en este cierre.
 
 #### TC-IDX-029 — Go offline por job
   - RF-IDX-001 — Criterio 6. Disposición: manual_evidence_pending. Evidencia esperada: el resultado, snapshot y oráculo definidos en este caso; conservar cualquier omisión o estado pendiente. No acredita una ejecución de esta migración.
@@ -179,6 +190,33 @@ RF-IDX-001, RF-IDX-002, RF-IDX-003. Se conserva el inventario de escenarios, lí
 - **execution_note**: FINAL_VERIFY1 parcial ya consumida; BUILD solo ajusta autoría code y wiki, sin corridas nuevas ni reescritura del packet; recheck1 reservado al verifier del parent
 - **manual_evidence_owner**: parent_final_verify
 - **manual_evidence_due**: FINAL_VERIFY del objetivo docs-clean-reparse-20261013, antes del cierre
+
+#### TC-IDX-030 — Opt-out de embeddings por operación
+
+- **requirement_id**: RF-IDX-001
+- **case_id**: TC-IDX-030
+- **acceptance_criterion**: 10
+- **verification_mode**: automated
+- **expected**: el opt-out omite proveedor/embeddings y el preflight dinámico, mantiene docs/grafo y vectores existentes; el default sigue siendo false.
+- **execution_note**: Se referencian tests existentes del corte; no fueron ejecutados en esta reparación documental.
+
+#### TC-IDX-031 — Política durable y runner detached
+
+- **requirement_id**: RF-IDX-001
+- **case_id**: TC-IDX-031
+- **acceptance_criterion**: 11
+- **verification_mode**: automated
+- **expected**: el job persiste y expone la política en status; el comando detached reenvía el flag al hidden `run-job`.
+- **execution_note**: Se referencian tests existentes del corte; no fueron ejecutados en esta reparación documental.
+
+#### TC-IDX-032 — Mismatch de política opt-out
+
+- **requirement_id**: RF-IDX-001
+- **case_id**: TC-IDX-032
+- **acceptance_criterion**: 12
+- **verification_mode**: automated
+- **expected**: el mismatch devuelve `index_job_policy_mismatch` y no cambia el job activo ni agrega jobs/generaciones.
+- **execution_note**: Se referencian aserciones existentes del corte; no fueron ejecutados en esta reparación documental.
 
 ```yaml
 harness_protocol: SDD-HARNESS-v1

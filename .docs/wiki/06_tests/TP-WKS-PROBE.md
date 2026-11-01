@@ -7,6 +7,11 @@ title: TP-WKS-PROBE - Plan de pruebas del Batch B
 links:
   verifies:
   - RF-WKS-007
+  code:
+  - path: internal/repair/actions/metadata_repair_test.go
+    role: test
+  - path: internal/workspace/metadata_repair_test.go
+    role: test
 ---
 
 ## Alcance
@@ -191,6 +196,16 @@ wiki_source_table_exception: true
     - real_user_home
 
 La única oracle de formato para todos los Go tocados es la orden dinámica y no mutante declarada en `verify`. El conjunto se obtiene desde Git para incluir cambios staged y unstaged; no se aceptan listas manuales ni invocaciones mutantes del formateador, porque la verificación no debe mutar archivos. Los casos que requieren symlink/junction se marcan skip únicamente cuando el sistema operativo o permisos no los permiten; el motivo queda en el resultado de test.
+
+### [TP-WKS-PROBE-B06] Identidad en reparación de metadata
+
+- **Marcador estable**: TP-WKS-PROBE-B06
+- **plan_id**: TP-WKS-PROBE
+- **normative**: metadata_inspect_apply_identity
+- **Caso**: TC-WKS-PROBE-025; **Tipo**: positivo; **Cobertura**: Inspect consultivo, read-only; Apply vuelve a resolver y conserva la identidad física seleccionada; **Resultado esperado**: el plan no modifica metadata/registro y la identidad seleccionada corresponde al root resuelto
+  - RF-WKS-007 — Criterio 10. Disposición: automated. Evidencia esperada: `TestRegisteredWorkspaceMetadataRepairPlansWithoutWriting`, `TestResolveSelectorWithIdentityRetainsSelectedWorkspaceObject` y `TestRegisteredWorkspaceMetadataRepairApplyPreservesNonLanguageFields` en `internal/repair/actions/metadata_repair_test.go`. No se ejecutaron en este cierre.
+- **Caso**: TC-WKS-PROBE-026; **Tipo**: negativo; **Cobertura**: sustitución de root entre selección/pin o antes del commit; **Resultado esperado**: error de root cambiado sin modificar el root original, el destino sustituto ni el registro
+  - RF-WKS-007 — Criterio 10. Disposición: automated. Evidencia esperada: `TestApplyWorkspaceMetadataRepairRejectsSelectionToPinSwap` y `TestApplyWorkspaceMetadataRepairRejectsRootSwapBeforeCommit` en `internal/workspace/metadata_repair_test.go`. No se ejecutaron en este cierre.
 
 ```yaml
 harness_protocol: SDD-HARNESS-v1

@@ -24,6 +24,10 @@ links:
     role: behavior
   - path: internal/workspace/registry.go
     role: behavior
+  - path: internal/repair/actions/actions.go
+    role: behavior
+  - path: internal/workspace/metadata_repair.go
+    role: behavior
 ---
 
 ## Propósito
@@ -386,6 +390,7 @@ Los aliases heredados que apunten a la misma raíz física siguen siendo válido
 7. `mi-lsp probe` puede ejecutarse sin daemon y sin DB. Si existe una DB, solo puede abrirla en modo SQLite `ro` real; si no existe, debe reportar evidencia ausente sin crear directorios ni archivos. El probe no inicializa schema, no aplica migraciones, no escribe registry, no crea snapshots, no envía telemetría y devuelve `side_effects:false` en salida estructurada.
 8. Los estados son diagnósticos, no instrucciones implícitas de reparación. La salida incluye evidencia mínima, migration status, resolución del workspace y provenance reutilizable de `mi-lsp version` cuando corresponda.
 9. Las pruebas cubren snapshots antes/después de parent, worktree, home y fixtures temporales, alias inexistente y stale, resolución contextual sin selector, casing por plataforma, symlink/junction cuando el host lo permite, DB inexistente y apertura read-only sin WAL/SHM. Toda prueba que observe una mutación del filesystem o registry hace fallar el batch. La única oracle de formato para todos los Go tocados es la orden dinámica y no mutante declarada en `verify`: descubre el conjunto completo desde Git, no usa listas manuales y nunca escribe archivos.
+10. `Inspect` de metadata registrada es consultivo y de solo lectura: su selección no autoriza ni vincula un `Apply` posterior. Cada `Apply` vuelve a resolver el selector y captura la identidad física seleccionada; antes de planificar o escribir, abre la raíz fijada bajo el bloqueo del registro y compara la identidad con `os.SameFile`. Un cambio de raíz entre selección y pin, o antes del commit, falla como raíz cambiada sin retarget ni escritura en el destino sustituto. El límite de garantía es selección→pin dentro de una invocación `Apply`, no una transacción `Inspect`→`Apply` entre comandos.
 
 ```yaml
 harness_protocol: SDD-HARNESS-v1

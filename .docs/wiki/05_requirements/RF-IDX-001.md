@@ -10,6 +10,12 @@ links:
   code:
   - path: internal/cli/index.go
     role: behavior
+  - path: internal/cli/root.go
+    role: behavior
+  - path: internal/service/app.go
+    role: behavior
+  - path: internal/service/recall.go
+    role: behavior
   - path: internal/indexer/extractor_go.go
     role: behavior
   - path: internal/indexer/graph_pipeline.go
@@ -164,6 +170,9 @@ CLI `mi-lsp`, con operaciones y selectores detallados en el comportamiento del r
 7. El indexador documental prepara `DocRecord`, `DocEdge` y `DocMention` a partir de `.docs/wiki`, `README*`, `docs/` y `.docs/`.
 8. El runtime publica catálogo, docs y memoria de reentrada en una única transaccion SQLite para `mode=full`.
 9. La CLI devuelve job status, stats y warnings no fatales si encontro ruido, archivos sin match de repo o problemas de docs.
+10. `--no-embeddings` es opt-in (`false` por default) para `index` e `index start`; omite solo la fase de embeddings de esa operación/job, incluido el preflight dinámico de timeout, sin resolver configuración, proveedor ni credenciales de embeddings. Conserva los documentos, la memoria, la `GraphGeneration` documental y los vectores existentes; informa `wiki embeddings skipped by operation policy; existing embeddings were left unchanged`. Esta política es independiente de `--go-offline`.
+11. `index start` persiste `no_embeddings` en el job y expone `no_embeddings` y `embeddings_outcome` en la respuesta/status; el runner detached reenvía la política persistida a `index run-job` para validarla antes de trabajar.
+12. Si un job activo tiene una política `no_embeddings` distinta de la solicitada, `index.start` responde `index_job_policy_mismatch` y conserva el job activo sin agregar jobs ni generaciones. El default permanece `false`; estos criterios no amplían ni alteran el alcance/evidencia histórica de `TC-IDX-029`.
 
 ### 8. Trazabilidad de pruebas
 - Manual con evidencia acotada: `TP-IDX / TC-IDX-029` (RF-IDX-001-GO-OFFLINE); FINAL_VERIFY1 FAIL histórico, RECHECK1 PASS policy / PARTIAL global, sin aceptación completa.
@@ -176,6 +185,9 @@ CLI `mi-lsp`, con operaciones y selectores detallados en el comportamiento del r
 - Positivo: `TP-QRY / TC-QRY-173`
 - Positivo: `TP-QRY / TC-QRY-174`
 - Negativo: `TP-IDX / TC-IDX-003`
+- Positivo: `TP-IDX / TC-IDX-030` (Criterio 10)
+- Positivo: `TP-IDX / TC-IDX-031` (Criterio 11)
+- Negativo: `TP-IDX / TC-IDX-032` (Criterio 12)
 
 ```yaml
 harness_protocol: SDD-HARNESS-v1
