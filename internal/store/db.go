@@ -26,6 +26,26 @@ func WorkspaceDBPath(root string) string {
 	return filepath.Join(root, ".mi-lsp", "index.db")
 }
 
+// OpenGraphSnapshotMemory creates a request-scoped SQLite graph store without
+// touching workspace or cache files. Callers may retain it while caching one
+// immutable graph generation, then close it on eviction.
+func OpenGraphSnapshotMemory() (*sql.DB, error) {
+	db, err := sql.Open(driverName, ":memory:")
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	if err := configureWorkspaceDB(db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err := EnsureSchema(db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
 func Open(root string) (*sql.DB, error) {
 	stateDir := filepath.Join(root, ".mi-lsp")
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {

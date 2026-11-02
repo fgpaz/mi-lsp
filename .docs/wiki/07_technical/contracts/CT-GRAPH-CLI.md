@@ -13,6 +13,7 @@ links:
   - RF-GPH-007
   - RF-GPH-009
   - RF-GPH-011
+  - RF-WKS-007
 ---
 
 ## Consumidor
@@ -545,6 +546,46 @@ El contrato hace reproducible el orden y evita que el orden de llegada altere ID
   - **generation_id**: excludes-created_at
 
 La ausencia o invalidez del origin local no permite actualizar la generation activa ni inventar una identidad desde alias, basename o path. Un workspace con backend elegible que no produzca batches es error; solo un proyecto explicitamente no graph puede devolver `GraphNotApplicable`.
+
+### Overlay GraphQuery para linked worktrees dirty
+
+- **Marcador estable**: CT-GRAPH-CLI.worktree-graph-query-overlay
+- **Estado del comportamiento**: implemented_slice
+- **Alcance Go-only**: la candidata 0.16.7 admite exclusivamente topologías Go completas. C#, Kotlin y mezclas fallan cerrado antes de observar/publicar; su admisión multilenguaje se entrega en otra versión. Esto no cambia los observers del índice base ni afirma que 0.16.7 esté publicada.
+- **aplica_a**: operaciones GraphQuery sobre un path físico explícito que resuelve a un linked worktree dirty
+- **excluye**: `nav.refs` y `nav.affected`, que conservan sus contratos y routing existentes
+- **snapshot**:
+  - **root**: raíz física del worktree seleccionado; nunca sustituir por el root principal
+  - **base_graph_db**: read-only; no se modifica ni migra
+  - **overlay_store**: SQLite en memoria, generation completa de consulta
+  - **registration/indexing**: prohibidos durante la query
+  - **topology**: observar todas las selecciones tipadas declaradas y publicarlas como una generación atómica con identidad canónica común
+  - **entrypoint_selection**: un default de repositorio para C# u otro lenguaje no shadowea módulos Go declarados ni el `go.mod` del root; un default Go explícito conserva prioridad
+  - **admission**: `ReadyForStaging` estricto; cualquier selección parcial, omission no admisible o backend ausente rechaza todo el overlay
+- **freshness**:
+  - **before_publish**: revalidar el fingerprint observado
+  - **after_query**: revalidar que el snapshot no cambió concurrentemente
+  - **fingerprint_fields**: git common-dir, HEAD base, root físico, paths y contenido del delta, identidad, proyecto y configuración/runtime relevantes
+  - **branch_isolation**: incluir el root físico aunque common-dir y delta coincidan
+- **cache**: LRU en proceso con máximo cuatro snapshots completos; clave incluye identidad/fingerprint, proyecto y selecciones, caller semántico y configuración runtime read-only de observadores (entorno, toolchain y artefactos). Runtime config se hashea y no se expone en warnings. El desalojo cierra la DB en memoria fuera del mutex y no retira entradas en uso
+- **concurrencia**: lock global breve para lookup, referencias y publicación LRU; observación, freshness y publicación SQLite quedan fuera. Singleflight por clave; espera y cancelación respetan el contexto, y el último waiter cancelado cancela el build
+- **cursor**: ligado al fingerprint/snapshot; continuar dentro de la misma branch y rechazar cursor legacy o cruzado con `GPH_QUERY_CURSOR_STALE`
+- **failure**:
+  - **backend parcial, gated o no disponible**: error tipado, comúnmente `GPH_QUERY_BACKEND_UNAVAILABLE`
+  - **partial_graph**: forbidden; no ocultar omissions ni sustituir el graph activo por un snapshot incompleto
+  - **Kotlin**: permanece experimental/no-stageable según [[RF-GPH-008]] y [[ADR-KOTLIN-GRAPH-ADMISSION-V1]]; no se amplía la admisión
+- **comprobación prevista**:
+  - `.docs/wiki/06_tests/TP-GPH.md::TC-GPH-068`
+  - `.docs/wiki/06_tests/TP-GPH.md::TC-GPH-069`
+  - `.docs/wiki/06_tests/TP-GPH.md::TC-GPH-070`
+  - `.docs/wiki/06_tests/TP-GPH.md::TC-GPH-071`
+  - `.docs/wiki/06_tests/TP-GPH.md::TC-GPH-072`
+- **evidencia de implementación**:
+  - `internal/model/graph_query.go`
+  - `internal/service/app.go`
+  - `internal/service/graph_query.go`
+  - `internal/store/db.go`
+  - `internal/workspace/worktree_overlay.go`
 
 ### Rank, cache, utility y comportamiento bounded
 

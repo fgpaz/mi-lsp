@@ -90,7 +90,7 @@ traits:
 		t.Fatalf("unexpected projection: %+v", decoded)
 	}
 	want := map[string][]string{
-		"governance":   {".docs/wiki/00_governance.md", ".docs/wiki/00_retirements.md"},
+		"governance":   {".docs/wiki/00_governance.md", ".docs/wiki/00_retirements.md", ".docs/wiki/ae/**"},
 		"scope":        {".docs/wiki/01_scope.md"},
 		"outcome":      {".docs/wiki/02_outcomes/RS-*.md"},
 		"architecture": {".docs/wiki/03_architecture.md"},

@@ -52,23 +52,26 @@ func (e *GraphQueryError) Unwrap() error {
 }
 
 type GraphQueryRequest struct {
-	Operation        string
-	Selector         string
-	From             string
-	To               string
-	Generation       string
-	Depth            int
-	Limit            int
-	TokenBudget      int
-	Direction        string
-	Relations        []string
-	Cursor           string
-	UtilitySignal    string
-	CandidateNodeKey string
-	UtilityIntent    string
-	Utility          []UtilitySignal
-	CachedRanks      []GraphRank
-	CachedDigest     string
+	// OverlayFingerprint binds continuation cursors to one physical worktree snapshot.
+	// It is internal and is never accepted from serialized CLI input.
+	OverlayFingerprint string `json:"-"`
+	Operation          string
+	Selector           string
+	From               string
+	To                 string
+	Generation         string
+	Depth              int
+	Limit              int
+	TokenBudget        int
+	Direction          string
+	Relations          []string
+	Cursor             string
+	UtilitySignal      string
+	CandidateNodeKey   string
+	UtilityIntent      string
+	Utility            []UtilitySignal
+	CachedRanks        []GraphRank
+	CachedDigest       string
 }
 
 func (q GraphQueryRequest) Normalize() (GraphQueryRequest, error) {

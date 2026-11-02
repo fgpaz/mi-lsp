@@ -7,27 +7,37 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
+	"github.com/fgpaz/mi-lsp/internal/worker"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 type graphCursor struct {
-	Generation    string   `json:"generation"`
-	Operation     string   `json:"operation"`
-	Selector      string   `json:"selector,omitempty"`
-	From          string   `json:"from,omitempty"`
-	To            string   `json:"to,omitempty"`
-	Depth         int      `json:"depth"`
-	Limit         int      `json:"limit"`
-	Token         int      `json:"token"`
-	Direction     string   `json:"direction"`
-	Relations     []string `json:"relations,omitempty"`
-	Offset        int      `json:"offset"`
-	RequestDigest string   `json:"request_digest,omitempty"`
-	Checksum      string   `json:"checksum"`
+	Generation         string   `json:"generation"`
+	OverlayFingerprint string   `json:"overlay_fingerprint,omitempty"`
+	Operation          string   `json:"operation"`
+	Selector           string   `json:"selector,omitempty"`
+	From               string   `json:"from,omitempty"`
+	To                 string   `json:"to,omitempty"`
+	Depth              int      `json:"depth"`
+	Limit              int      `json:"limit"`
+	Token              int      `json:"token"`
+	Direction          string   `json:"direction"`
+	Relations          []string `json:"relations,omitempty"`
+	Offset             int      `json:"offset"`
+	RequestDigest      string   `json:"request_digest,omitempty"`
+	Checksum           string   `json:"checksum"`
 }
 
 func graphCursorDigest(c graphCursor) string {
@@ -93,8 +103,580 @@ func graphRequestFromPayload(request model.CommandRequest) (model.GraphQueryRequ
 	return q, nil
 }
 
+// overlayGraphSnapshot builds one complete typed graph generation from the
+// selected worktree topology. It never writes the shared base graph database.
+func (a *App) overlayGraphSnapshot(ctx context.Context, registration model.WorkspaceRegistration, project model.ProjectFile, overlay workspace.WorktreeOverlay, q model.GraphQueryRequest) (model.Envelope, error) {
+	selections, err := worktreeGraphSelections(registration.Root, project)
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	identity, err := workspace.ResolveRepositoryIdentity(ctx, registration.Root, selectedGraphRepos(selections))
+	if err != nil {
+		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: "worktree graph repository identity is unavailable or ambiguous"}
+	}
+	q.OverlayFingerprint = overlay.Fingerprint
+	key, err := worktreeGraphCacheKey(a, overlay, registration.Root, identity, project, selections)
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	entry, cacheState, release, err := acquireWorktreeGraphSnapshot(ctx, key, func(buildCtx context.Context) (*worktreeGraphCacheEntry, error) {
+		return buildWorktreeGraphSnapshot(buildCtx, key, registration.Root, identity, overlay.Fingerprint, func() ([]model.GraphObservationBatch, error) {
+			return a.observeWorktreeGraph(buildCtx, registration.Root, project, selections, identity)
+		})
+	})
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	defer release()
+	if q.Generation != "" && q.Generation != entry.generation {
+		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_CURSOR_STALE", Message: "requested generation does not match the worktree overlay snapshot"}
+	}
+	q.Generation = entry.generation
+	env, err := GraphQuery(ctx, entry.db, q)
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	current, linked, freshnessErr := workspace.TryResolveWorktreeOverlay(registration.Root)
+	if freshnessErr != nil || !linked || current.Fingerprint != overlay.Fingerprint {
+		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_GRAPH_INVALID", Message: "worktree changed during graph query; retry against a fresh overlay snapshot"}
+	}
+	env.Workspace = registration.Name
+	env.Backend = "worktree-graph-overlay"
+	env.Warnings = append(env.Warnings, "worktree_graph_snapshot:"+overlay.Fingerprint, "worktree_graph_generation:"+entry.generation, "worktree_graph_cache:"+cacheState)
+	return env, nil
+}
+
+type worktreeGraphCacheEntry struct {
+	key        string
+	db         *sql.DB
+	generation string
+	lastUsed   time.Time
+	inUse      int
+}
+
+type worktreeGraphFlight struct {
+	key       string
+	ctx       context.Context
+	cancel    context.CancelFunc
+	done      chan struct{}
+	waiters   int
+	completed bool
+	entry     *worktreeGraphCacheEntry
+	err       error
+}
+
+var worktreeGraphCache = struct {
+	sync.Mutex
+	entries map[string]*worktreeGraphCacheEntry
+	flights map[string]*worktreeGraphFlight
+}{
+	entries: map[string]*worktreeGraphCacheEntry{},
+	flights: map[string]*worktreeGraphFlight{},
+}
+
+const maxWorktreeGraphSnapshots = 4
+
+type worktreeGraphSelection struct {
+	repo       model.WorkspaceRepo
+	entrypoint model.WorkspaceEntrypoint
+	language   string
+}
+
+func worktreeGraphSelections(root string, project model.ProjectFile) ([]worktreeGraphSelection, error) {
+	repos := project.Repos
+	if len(repos) == 0 {
+		return nil, overlayGraphUnavailable("worktree graph project has no declared repositories")
+	}
+	if project.Project.Kind != model.WorkspaceKindContainer && len(repos) > 1 {
+		selected := strings.TrimSpace(project.Project.DefaultRepo)
+		if selected == "" {
+			return nil, overlayGraphUnavailable("worktree graph repository selection is ambiguous")
+		}
+		filtered := make([]model.WorkspaceRepo, 0, 1)
+		for _, repo := range repos {
+			if strings.EqualFold(repo.ID, selected) {
+				filtered = append(filtered, repo)
+			}
+		}
+		if len(filtered) != 1 {
+			return nil, overlayGraphUnavailable("selected worktree graph repository is not declared")
+		}
+		repos = filtered
+	}
+	selections := make([]worktreeGraphSelection, 0)
+	seenSelections := map[string]bool{}
+	for _, repo := range repos {
+		if _, err := worktreeRepoRelativePath(root, repo.Root); err != nil {
+			return nil, overlayGraphUnavailable("worktree graph repository root is unsafe or unavailable")
+		}
+		languages := repo.Languages
+		if len(languages) == 0 {
+			languages = project.Project.Languages
+		}
+		seen := map[string]bool{}
+		for _, raw := range languages {
+			lang := strings.ToLower(strings.TrimSpace(raw))
+			backend := lang
+			switch lang {
+			case "go":
+				backend = "go"
+			default:
+				return nil, overlayGraphUnavailable("worktree graph overlay currently supports Go-only topologies; other languages require a later release")
+			}
+			if seen[backend] {
+				continue
+			}
+			seen[backend] = true
+			entries := make([]model.WorkspaceEntrypoint, 0)
+			for _, ep := range project.Entrypoints {
+				if ep.RepoID != repo.ID {
+					continue
+				}
+				path := strings.ToLower(filepath.ToSlash(ep.Path))
+				switch backend {
+				case "go":
+					if filepath.Base(path) == "go.mod" && ep.Kind == model.EntrypointKindProject {
+						entries = append(entries, ep)
+					}
+				}
+			}
+			if backend == "go" {
+				var err error
+				entries, err = selectWorktreeGoModules(root, project, repo, entries)
+				if err != nil {
+					return nil, err
+				}
+			}
+			if len(entries) == 0 {
+				return nil, overlayGraphUnavailable("worktree graph topology lacks a declared, supported module entrypoint")
+			}
+			for _, ep := range entries {
+				if backend == "go" && !worktreeGraphGoModuleBelongsToRepo(root, repo.Root, ep.Path) {
+					return nil, overlayGraphUnavailable("selected Go module is not physically contained by its declared repository")
+				}
+				key := repo.ID + "\x00" + backend + "\x00" + filepath.ToSlash(filepath.Clean(filepath.FromSlash(ep.Path)))
+				if seenSelections[key] {
+					continue
+				}
+				seenSelections[key] = true
+				selections = append(selections, worktreeGraphSelection{repo: repo, entrypoint: ep, language: backend})
+			}
+		}
+	}
+	if len(selections) == 0 {
+		return nil, overlayGraphUnavailable("worktree graph topology has no complete typed observer")
+	}
+	sort.Slice(selections, func(i, j int) bool {
+		a, b := selections[i], selections[j]
+		if a.repo.ID != b.repo.ID {
+			return a.repo.ID < b.repo.ID
+		}
+		if a.language != b.language {
+			return a.language < b.language
+		}
+		if a.entrypoint.Path != b.entrypoint.Path {
+			return a.entrypoint.Path < b.entrypoint.Path
+		}
+		return a.entrypoint.ID < b.entrypoint.ID
+	})
+	return selections, nil
+}
+
+func worktreeRepoRelativePath(root, configured string) (string, error) {
+	rel := strings.TrimSpace(filepath.ToSlash(configured))
+	if rel == "" {
+		rel = "."
+	}
+	clean := filepath.Clean(filepath.FromSlash(rel))
+	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("unsafe repository root")
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	candidate := filepath.Join(rootAbs, clean)
+	check, err := filepath.Rel(rootAbs, candidate)
+	if err != nil || check == ".." || strings.HasPrefix(check, ".."+string(filepath.Separator)) || filepath.IsAbs(check) {
+		return "", fmt.Errorf("repository root escapes workspace")
+	}
+	rootReal, err := filepath.EvalSymlinks(rootAbs)
+	if err != nil {
+		return "", err
+	}
+	candidateReal, err := filepath.EvalSymlinks(candidate)
+	if err != nil {
+		return "", err
+	}
+	realRel, err := filepath.Rel(rootReal, candidateReal)
+	if err != nil || realRel == ".." || strings.HasPrefix(realRel, ".."+string(filepath.Separator)) || filepath.IsAbs(realRel) {
+		return "", fmt.Errorf("repository root symlink escapes workspace")
+	}
+	return filepath.ToSlash(clean), nil
+}
+
+func worktreeGraphGoModuleBelongsToRepo(root, repoRoot, modulePath string) bool {
+	if strings.Contains(modulePath, "\\") || filepath.IsAbs(filepath.FromSlash(modulePath)) {
+		return false
+	}
+	repoRel, err := worktreeRepoRelativePath(root, repoRoot)
+	if err != nil {
+		return false
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	repoAbs := filepath.Join(rootAbs, filepath.FromSlash(repoRel))
+	candidate := filepath.Join(rootAbs, filepath.FromSlash(modulePath))
+	rel, err := filepath.Rel(repoAbs, candidate)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return false
+	}
+	repoReal, err := filepath.EvalSymlinks(repoAbs)
+	if err != nil {
+		return false
+	}
+	candidateReal, err := filepath.EvalSymlinks(candidate)
+	if err != nil {
+		return false
+	}
+	realRel, err := filepath.Rel(repoReal, candidateReal)
+	if err != nil || realRel == ".." || strings.HasPrefix(realRel, ".."+string(filepath.Separator)) || filepath.IsAbs(realRel) {
+		return false
+	}
+	info, err := os.Lstat(candidate)
+	return err == nil && info.Mode().IsRegular()
+}
+
+func selectWorktreeGoModules(root string, project model.ProjectFile, repo model.WorkspaceRepo, declared []model.WorkspaceEntrypoint) ([]model.WorkspaceEntrypoint, error) {
+	repoRel, err := worktreeRepoRelativePath(root, repo.Root)
+	if err != nil {
+		return nil, overlayGraphUnavailable("worktree graph repository root is unsafe")
+	}
+	configured := strings.TrimSpace(repo.DefaultEntrypoint)
+	if configured != "" {
+		if ep, ok := workspace.FindEntrypoint(project, configured); ok {
+			if filepath.Base(filepath.ToSlash(ep.Path)) == "go.mod" {
+				if ep.RepoID == repo.ID {
+					return []model.WorkspaceEntrypoint{ep}, nil
+				}
+				return nil, overlayGraphUnavailable("configured Go module belongs to a different repository")
+			}
+			// A repository's default may select its C# solution or another
+			// language. It must not shadow declared/root Go modules.
+		} else {
+			p := filepath.ToSlash(filepath.Clean(configured))
+			if !filepath.IsAbs(filepath.FromSlash(p)) && repoRel != "." && p != repoRel && !strings.HasPrefix(p, repoRel+"/") {
+				p = filepath.ToSlash(filepath.Join(repoRel, p))
+			}
+			if filepath.Base(p) == "go.mod" {
+				return []model.WorkspaceEntrypoint{{ID: p, RepoID: repo.ID, Path: p, Kind: model.EntrypointKindProject}}, nil
+			}
+		}
+	}
+	if len(declared) > 0 {
+		return declared, nil
+	}
+	p := filepath.ToSlash(filepath.Join(repoRel, "go.mod"))
+	if repoRel == "." {
+		p = "go.mod"
+	}
+	info, err := os.Stat(filepath.Join(root, filepath.FromSlash(p)))
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, overlayGraphUnavailable("worktree graph Go repository has no selected go.mod")
+	}
+	return []model.WorkspaceEntrypoint{{ID: p, RepoID: repo.ID, Path: p, Kind: model.EntrypointKindProject}}, nil
+}
+
+func worktreeGraphCacheKey(a *App, overlay workspace.WorktreeOverlay, root, identity string, project model.ProjectFile, selections []worktreeGraphSelection) (string, error) {
+	projectBytes, err := json.Marshal(project)
+	if err != nil {
+		return "", err
+	}
+	selectionBytes, err := json.Marshal(selections)
+	if err != nil {
+		return "", err
+	}
+	semanticIdentity := graphSemanticCallerIdentity(a.Semantic)
+	observerRuntime := worker.GraphObserverRuntimeFingerprint(a.RepoRoot)
+	h := sha256.New()
+	for _, part := range []string{
+		overlay.Fingerprint,
+		filepath.Clean(root),
+		identity,
+		string(projectBytes),
+		string(selectionBytes),
+		filepath.Clean(a.RepoRoot),
+		semanticIdentity,
+		observerRuntime,
+		runtime.Version(),
+		runtime.GOOS,
+		runtime.GOARCH,
+	} {
+		_, _ = fmt.Fprintf(h, "%d:", len(part))
+		_, _ = h.Write([]byte(part))
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func graphSemanticCallerIdentity(caller SemanticCaller) string {
+	if caller == nil {
+		return "nil"
+	}
+	if fingerprinted, ok := caller.(interface{ GraphObserverCacheFingerprint() string }); ok {
+		return fmt.Sprintf("%T:%s", caller, fingerprinted.GraphObserverCacheFingerprint())
+	}
+	if ephemeral, ok := caller.(worker.EphemeralCaller); ok {
+		return fmt.Sprintf("%T:%s", caller, filepath.Clean(ephemeral.RepoRoot))
+	}
+	if ephemeral, ok := caller.(*worker.EphemeralCaller); ok {
+		if ephemeral == nil {
+			return "nil-ephemeral-caller"
+		}
+		return fmt.Sprintf("%T:%s", caller, filepath.Clean(ephemeral.RepoRoot))
+	}
+	// Include the complete caller value so mutable custom observer state cannot
+	// silently share a snapshot. Callers may provide a stable explicit digest.
+	return fmt.Sprintf("%T:%#v", caller, caller)
+}
+
+func selectedGraphRepos(selections []worktreeGraphSelection) []model.WorkspaceRepo {
+	seen := map[string]bool{}
+	repos := make([]model.WorkspaceRepo, 0)
+	for _, s := range selections {
+		if !seen[s.repo.ID] {
+			seen[s.repo.ID] = true
+			repos = append(repos, s.repo)
+		}
+	}
+	return repos
+}
+
+func overlayGraphUnavailable(message string) error {
+	return &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: message}
+}
+
+func (a *App) observeWorktreeGraph(ctx context.Context, root string, project model.ProjectFile, selections []worktreeGraphSelection, identity string) ([]model.GraphObservationBatch, error) {
+	batches := make([]model.GraphObservationBatch, 0, len(selections))
+	for _, selection := range selections {
+		if selection.language != "go" {
+			return nil, overlayGraphUnavailable("worktree graph overlay currently supports Go-only topologies")
+		}
+		batch, err := indexer.ObserveGoGraph(ctx, indexer.GoGraphObservationRequest{Root: root, RepositoryIdentity: identity, ProjectOrModule: selection.entrypoint.Path, GoOffline: true})
+		if err != nil {
+			return nil, overlayGraphUnavailable("complete typed Go graph observation is unavailable")
+		}
+		if err := batch.ReadyForStaging(); err != nil {
+			return nil, overlayGraphUnavailable("worktree graph observation is incomplete")
+		}
+		if batch.WorkspaceIdentity != identity || batch.RepositoryIdentity != identity {
+			return nil, overlayGraphUnavailable("worktree graph observer returned a mismatched identity")
+		}
+		batches = append(batches, batch)
+	}
+	return batches, nil
+}
+
+func acquireWorktreeGraphSnapshot(ctx context.Context, key string, build func(context.Context) (*worktreeGraphCacheEntry, error)) (*worktreeGraphCacheEntry, string, func(), error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, "", nil, err
+	}
+
+	worktreeGraphCache.Lock()
+	if entry := worktreeGraphCache.entries[key]; entry != nil {
+		entry.inUse++
+		entry.lastUsed = time.Now()
+		worktreeGraphCache.Unlock()
+		return entry, "hit", func() { releaseWorktreeGraphSnapshot(entry) }, nil
+	}
+	if flight := worktreeGraphCache.flights[key]; flight != nil {
+		flight.waiters++
+		worktreeGraphCache.Unlock()
+		return waitWorktreeGraphSnapshot(ctx, flight, "shared")
+	}
+	buildCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	flight := &worktreeGraphFlight{key: key, ctx: buildCtx, cancel: cancel, done: make(chan struct{}), waiters: 1}
+	worktreeGraphCache.flights[key] = flight
+	worktreeGraphCache.Unlock()
+
+	go func() {
+		entry, err := build(buildCtx)
+		completeWorktreeGraphFlight(flight, entry, err)
+	}()
+	return waitWorktreeGraphSnapshot(ctx, flight, "miss")
+}
+
+func waitWorktreeGraphSnapshot(ctx context.Context, flight *worktreeGraphFlight, cacheState string) (*worktreeGraphCacheEntry, string, func(), error) {
+	select {
+	case <-ctx.Done():
+		cancelWorktreeGraphWaiter(flight)
+		return nil, "", nil, ctx.Err()
+	case <-flight.done:
+		if err := ctx.Err(); err != nil {
+			cancelWorktreeGraphWaiter(flight)
+			return nil, "", nil, err
+		}
+	}
+
+	worktreeGraphCache.Lock()
+	if flight.waiters > 0 {
+		flight.waiters--
+	}
+	entry, err := flight.entry, flight.err
+	if entry != nil {
+		entry.lastUsed = time.Now()
+	}
+	worktreeGraphCache.Unlock()
+	if err != nil {
+		return nil, "", nil, err
+	}
+	if entry == nil {
+		return nil, "", nil, overlayGraphUnavailable("worktree graph snapshot flight completed without a result")
+	}
+	return entry, cacheState, func() { releaseWorktreeGraphSnapshot(entry) }, nil
+}
+
+func cancelWorktreeGraphWaiter(flight *worktreeGraphFlight) {
+	worktreeGraphCache.Lock()
+	if flight.waiters > 0 {
+		flight.waiters--
+	}
+	if flight.completed {
+		if flight.entry != nil && flight.entry.inUse > 0 {
+			flight.entry.inUse--
+		}
+	} else if flight.waiters == 0 {
+		if worktreeGraphCache.flights[flight.key] == flight {
+			delete(worktreeGraphCache.flights, flight.key)
+		}
+		flight.cancel()
+	}
+	evicted := pruneWorktreeGraphSnapshotsLocked()
+	worktreeGraphCache.Unlock()
+	closeWorktreeGraphSnapshots(evicted)
+}
+
+func completeWorktreeGraphFlight(flight *worktreeGraphFlight, entry *worktreeGraphCacheEntry, buildErr error) {
+	var discard *sql.DB
+	worktreeGraphCache.Lock()
+	flight.completed = true
+	if buildErr == nil && entry == nil {
+		buildErr = overlayGraphUnavailable("worktree graph snapshot build returned no result")
+	}
+	if buildErr == nil && flight.ctx.Err() == nil && flight.waiters > 0 && worktreeGraphCache.flights[flight.key] == flight {
+		entry.key = flight.key
+		entry.inUse = flight.waiters
+		entry.lastUsed = time.Now()
+		worktreeGraphCache.entries[flight.key] = entry
+		flight.entry = entry
+		delete(worktreeGraphCache.flights, flight.key)
+	} else {
+		if buildErr == nil {
+			buildErr = context.Canceled
+		}
+		flight.err = buildErr
+		if entry != nil {
+			discard = entry.db
+		}
+		if worktreeGraphCache.flights[flight.key] == flight {
+			delete(worktreeGraphCache.flights, flight.key)
+		}
+	}
+	close(flight.done)
+	evicted := pruneWorktreeGraphSnapshotsLocked()
+	worktreeGraphCache.Unlock()
+	flight.cancel()
+	if discard != nil {
+		_ = discard.Close()
+	}
+	closeWorktreeGraphSnapshots(evicted)
+}
+
+func buildWorktreeGraphSnapshot(ctx context.Context, key, root, identity, expectedFingerprint string, observe func() ([]model.GraphObservationBatch, error)) (*worktreeGraphCacheEntry, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	batches, err := observe()
+	if err != nil {
+		return nil, err
+	}
+	if len(batches) == 0 {
+		return nil, overlayGraphUnavailable("worktree graph produced no typed observations")
+	}
+	for i := range batches {
+		if err := batches[i].ReadyForStaging(); err != nil {
+			return nil, overlayGraphUnavailable("worktree graph observation is incomplete")
+		}
+	}
+	current, linked, freshnessErr := workspace.TryResolveWorktreeOverlay(root)
+	if freshnessErr != nil || !linked || current.Fingerprint != expectedFingerprint {
+		return nil, &model.GraphQueryError{Code: "GPH_QUERY_GRAPH_INVALID", Message: "worktree changed during graph observation; retry against a fresh overlay snapshot"}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	db, err := store.OpenGraphSnapshotMemory()
+	if err != nil {
+		return nil, err
+	}
+	generation, err := indexer.PublishGraphObservationBatches(ctx, db, indexer.GraphAssemblyRequest{Batches: batches, WorkspaceIdentity: identity, RepositoryIdentity: identity, CreatedAt: time.Now().UTC()}, nil)
+	if err != nil {
+		_ = db.Close()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: "overlay graph generation could not be published"}
+	}
+	if err := ctx.Err(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return &worktreeGraphCacheEntry{key: key, db: db, generation: generation.GenerationID.String(), lastUsed: time.Now()}, nil
+}
+
+func releaseWorktreeGraphSnapshot(entry *worktreeGraphCacheEntry) {
+	worktreeGraphCache.Lock()
+	if entry.inUse > 0 {
+		entry.inUse--
+	}
+	if entry.inUse == 0 {
+		entry.lastUsed = time.Now()
+	}
+	evicted := pruneWorktreeGraphSnapshotsLocked()
+	worktreeGraphCache.Unlock()
+	closeWorktreeGraphSnapshots(evicted)
+}
+
+func pruneWorktreeGraphSnapshotsLocked() []*sql.DB {
+	var evicted []*sql.DB
+	for len(worktreeGraphCache.entries) > maxWorktreeGraphSnapshots {
+		var oldest *worktreeGraphCacheEntry
+		for _, entry := range worktreeGraphCache.entries {
+			if entry.inUse == 0 && (oldest == nil || entry.lastUsed.Before(oldest.lastUsed)) {
+				oldest = entry
+			}
+		}
+		if oldest == nil {
+			return evicted
+		}
+		delete(worktreeGraphCache.entries, oldest.key)
+		evicted = append(evicted, oldest.db)
+	}
+	return evicted
+}
+
+func closeWorktreeGraphSnapshots(dbs []*sql.DB) {
+	for _, db := range dbs {
+		_ = db.Close()
+	}
+}
+
 func cursorMatches(c graphCursor, q model.GraphQueryRequest, generation string) bool {
-	return c.Generation == generation && c.Operation == q.Operation && c.Selector == q.Selector && c.From == q.From && c.To == q.To && c.Depth == q.Depth && c.Limit == q.Limit && c.Token == q.TokenBudget && c.Direction == q.Direction && equalStrings(c.Relations, q.Relations)
+	return c.Generation == generation && c.OverlayFingerprint == q.OverlayFingerprint && c.Operation == q.Operation && c.Selector == q.Selector && c.From == q.From && c.To == q.To && c.Depth == q.Depth && c.Limit == q.Limit && c.Token == q.TokenBudget && c.Direction == q.Direction && equalStrings(c.Relations, q.Relations)
 }
 func equalStrings(a, b []string) bool {
 	if len(a) != len(b) {
@@ -809,7 +1391,7 @@ func finalizeGraphItemsWithSearchBudget(q model.GraphQueryRequest, g model.Graph
 	truncated := offset+len(returned) < len(all)
 	next := ""
 	if truncated {
-		next = encodeGraphCursor(graphCursor{Generation: g.GenerationID.String(), Operation: q.Operation, Selector: q.Selector, From: q.From, To: q.To, Depth: q.Depth, Limit: q.Limit, Token: q.TokenBudget, Direction: q.Direction, Relations: q.Relations, Offset: offset + len(returned)})
+		next = encodeGraphCursor(graphCursor{Generation: g.GenerationID.String(), OverlayFingerprint: q.OverlayFingerprint, Operation: q.Operation, Selector: q.Selector, From: q.From, To: q.To, Depth: q.Depth, Limit: q.Limit, Token: q.TokenBudget, Direction: q.Direction, Relations: q.Relations, Offset: offset + len(returned)})
 	}
 	stats := model.GraphQueryStats{Visited: visited, Frontier: frontier, Returned: len(returned), Depth: q.Depth, DepthReached: q.Depth, TokenUnits: units, Unresolved: g.UnresolvedCount, SearchBudgetExhausted: searchBudgetExhausted}
 	env := graphEnvelope(q, g, s, nil, returned, stats, "")

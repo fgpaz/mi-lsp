@@ -35,6 +35,8 @@ type WikiContractGovernance struct {
 	WikiContract    string
 	ModelRevision   string
 	Version         int
+	AECanon         model.GovernanceAECanon
+	AECanonPresent  bool
 	Traits          map[string]model.WikiContractTraitView
 	LayerExceptions []model.WikiLayerExceptionView
 }
@@ -156,16 +158,43 @@ func ParseWikiContractGovernanceYAML(block string) (*WikiContractGovernance, []s
 	if modelRevision == "" {
 		modelRevision = "1.1"
 	}
+	aeCanon, aeCanonPresent, aeCanonWarnings := parseWikiContractAECanon(raw)
 	traits, traitWarnings := parseWikiContractTraits(raw["traits"])
 	exceptions, exceptionWarnings := parseWikiContractLayerExceptions(raw["layer_exceptions"])
 	warnings := append(traitWarnings, exceptionWarnings...)
+	warnings = append(warnings, aeCanonWarnings...)
 	return &WikiContractGovernance{
 		WikiContract:    wikiContractProtocolV1,
 		ModelRevision:   modelRevision,
 		Version:         version,
+		AECanon:         aeCanon,
+		AECanonPresent:  aeCanonPresent,
 		Traits:          traits,
 		LayerExceptions: exceptions,
 	}, warnings
+}
+
+func parseWikiContractAECanon(raw map[string]any) (model.GovernanceAECanon, bool, []string) {
+	value, present := raw["ae_canon"]
+	if !present {
+		return model.GovernanceAECanon{}, false, nil
+	}
+	mapping, ok := value.(map[string]any)
+	if !ok || mapping == nil {
+		return model.GovernanceAECanon{}, true, []string{"wiki_contract_governance: ae_canon must be a mapping"}
+	}
+	encoded, err := yaml.Marshal(mapping)
+	if err != nil {
+		return model.GovernanceAECanon{}, true, []string{"wiki_contract_governance: ae_canon could not be parsed"}
+	}
+	var config model.GovernanceAECanon
+	if err := yaml.Unmarshal(encoded, &config); err != nil {
+		return config, true, []string{"wiki_contract_governance: ae_canon has invalid field types"}
+	}
+	if strings.TrimSpace(config.Mode) == "" {
+		return config, true, []string{"wiki_contract_governance: ae_canon.mode is required when ae_canon is declared"}
+	}
+	return config, true, nil
 }
 
 func parseWikiContractTraits(raw any) (map[string]model.WikiContractTraitView, []string) {

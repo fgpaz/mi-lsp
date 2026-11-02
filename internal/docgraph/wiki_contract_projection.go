@@ -89,7 +89,7 @@ func buildWikiContractReadProfile(g *WikiContractGovernance, sourceDoc string) m
 		paths               []string
 	}
 	specs := []surface{
-		{"governance", "functional", "", []string{"00_governance.md", "00_retirements.md"}},
+		{"governance", "functional", "", []string{"00_governance.md", "00_retirements.md", "ae/**"}},
 		{"scope", "functional", "", []string{"01_scope.md"}},
 		{"outcome", "functional", "", []string{"02_outcomes/RS-*.md"}},
 		{"architecture", "functional", "", []string{"03_architecture.md"}},
@@ -244,6 +244,11 @@ func inspectWikiContractProjection(root string, status model.GovernanceStatus, g
 	status.Profile = ""
 	status.EffectiveBase = ""
 	status.WikiContract = g.WikiContract
+	status.AECanon = inspectWikiContractAECanon(root, g)
+	if status.AECanon.Blocking && (status.AECanon.Status == "missing" || status.AECanon.Status == "mismatch") {
+		status.Issues = append(status.Issues, "AE canon is blocked: "+status.AECanon.Reason)
+		status.Blocked = true
+	}
 	status.Sync = "stale"
 	status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
 	if status.IndexSync == "stale" {
@@ -281,5 +286,22 @@ func inspectWikiContractProjection(root string, status model.GovernanceStatus, g
 		}
 	}
 	status.Summary = "WIKI-CONTRACT-v1 read-model projection is advisory (" + status.Sync + ")."
+	if status.AECanon.Blocking {
+		status.Summary = "WIKI-CONTRACT-v1 governance is blocked by AE canon validation (" + status.AECanon.Reason + "); read-model projection is advisory (" + status.Sync + ")."
+	}
 	return status
+}
+
+func inspectWikiContractAECanon(root string, g *WikiContractGovernance) model.AECanonStatus {
+	config := model.GovernanceAECanon{}
+	present := false
+	if g != nil {
+		config = g.AECanon
+		present = g.AECanonPresent
+	}
+	if present && strings.TrimSpace(config.Mode) == "" {
+		// A declared but incomplete block must not collapse to the optional zero-value mode.
+		config.Mode = "invalid"
+	}
+	return inspectConfiguredAECanon(root, config, nil, "governance")
 }

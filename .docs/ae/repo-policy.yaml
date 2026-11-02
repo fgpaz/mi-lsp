@@ -74,6 +74,9 @@ wiki:
     "07": Technical baseline, physical data and contracts
     "10": UI journeys and modules; DESIGN.md and PRODUCT.md at repo root
     "ae": Compatibility history only; universal AE authority is the external Kernel v2 canon
+  read_model_coverage:
+    - ".docs/wiki/ae/**"
+  read_model_coverage_rule: "The WIKI-CONTRACT generator includes AE compatibility documents in governance read/edit globs. Inclusion grants visibility, not Harness authority or acceptance; regenerate the read-model rather than patching its output."
   paths_file: PATHS.md
   subagents_file: AGENTS.md
   workspace_alias: mi-lsp
