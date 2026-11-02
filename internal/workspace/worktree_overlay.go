@@ -55,9 +55,14 @@ func worktreeOverlayFingerprint(overlay WorktreeOverlay) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve overlay base HEAD: %w", err)
 	}
+	worktreeHead, err := processutil.Command("git", "-C", overlay.Root, "rev-parse", "--verify", "HEAD").Output()
+	if err != nil {
+		return "", fmt.Errorf("resolve overlay worktree HEAD: %w", err)
+	}
 	write(filepath.Clean(overlay.CommonDir))
 	write(filepath.Clean(overlay.Root))
 	write(strings.TrimSpace(string(baseHead)))
+	write(strings.TrimSpace(string(worktreeHead)))
 	for _, path := range overlay.Changed {
 		write("changed:" + filepath.ToSlash(path))
 		physical := filepath.Join(overlay.Root, filepath.FromSlash(path))
