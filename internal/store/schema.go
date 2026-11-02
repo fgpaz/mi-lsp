@@ -293,6 +293,7 @@ CREATE TABLE IF NOT EXISTS wiki_chunk_embeddings (
 );
 `
 
+const graphGenerationTopologyDDL = `CREATE TABLE IF NOT EXISTS graph_generation_topology (generation_id BLOB NOT NULL CHECK(length(generation_id)=32), witness_version INTEGER NOT NULL CHECK(witness_version=1), topology_json TEXT NOT NULL CHECK(length(topology_json)<=65536), topology_digest BLOB NOT NULL CHECK(length(topology_digest)=32), PRIMARY KEY(generation_id), FOREIGN KEY(generation_id) REFERENCES graph_generations(generation_id) ON DELETE CASCADE);`
 const graphGenerationsDDL = `CREATE TABLE IF NOT EXISTS graph_generations (generation_id BLOB NOT NULL CHECK(length(generation_id)=32), schema_version INTEGER NOT NULL CHECK(schema_version=1), workspace_identity TEXT NOT NULL, source_fingerprint BLOB NOT NULL CHECK(length(source_fingerprint)=32), config_fingerprint BLOB NOT NULL CHECK(length(config_fingerprint)=32), backend_manifest_digest BLOB NOT NULL CHECK(length(backend_manifest_digest)=32), content_digest BLOB NOT NULL CHECK(length(content_digest)=32), status TEXT NOT NULL CHECK(status IN ('staged','active','retired','invalid')), node_count INTEGER NOT NULL DEFAULT 0 CHECK(node_count>=0), edge_count INTEGER NOT NULL DEFAULT 0 CHECK(edge_count>=0), evidence_count INTEGER NOT NULL DEFAULT 0 CHECK(evidence_count>=0), unresolved_count INTEGER NOT NULL DEFAULT 0 CHECK(unresolved_count>=0), previous_generation_id BLOB CHECK(previous_generation_id IS NULL OR length(previous_generation_id)=32), created_at TEXT NOT NULL, published_at TEXT, error_code TEXT, PRIMARY KEY(generation_id), FOREIGN KEY(previous_generation_id) REFERENCES graph_generations(generation_id) ON DELETE RESTRICT);`
 const graphNodesDDL = `CREATE TABLE IF NOT EXISTS graph_nodes (generation_id BLOB NOT NULL CHECK(length(generation_id)=32), node_id INTEGER NOT NULL CHECK(node_id>=0), node_key BLOB NOT NULL CHECK(length(node_key)=32), identity_schema TEXT NOT NULL, repository_identity TEXT NOT NULL, backend_type TEXT NOT NULL, language TEXT NOT NULL, project_or_module TEXT NOT NULL, owner_path TEXT NOT NULL, symbol_kind TEXT NOT NULL, semantic_identity TEXT NOT NULL, display_name TEXT NOT NULL, source_digest BLOB NOT NULL CHECK(length(source_digest)=32), claim_status TEXT NOT NULL, cross_rid TEXT NOT NULL, sort_key TEXT NOT NULL, PRIMARY KEY(generation_id,node_id), UNIQUE(generation_id,node_key), FOREIGN KEY(generation_id) REFERENCES graph_generations(generation_id) ON DELETE CASCADE);`
 const graphEdgesDDL = `CREATE TABLE IF NOT EXISTS graph_edges (generation_id BLOB NOT NULL CHECK(length(generation_id)=32), edge_id INTEGER NOT NULL CHECK(edge_id>=0), edge_key BLOB NOT NULL CHECK(length(edge_key)=32), from_node_id INTEGER NOT NULL CHECK(from_node_id>=0), to_node_id INTEGER NOT NULL CHECK(to_node_id>=0), relation TEXT NOT NULL, claim_scope TEXT NOT NULL, claim_status TEXT NOT NULL, owner_path TEXT NOT NULL, source_backend TEXT NOT NULL, cross_rid TEXT NOT NULL, PRIMARY KEY(generation_id,edge_id), UNIQUE(generation_id,edge_key), FOREIGN KEY(generation_id) REFERENCES graph_generations(generation_id) ON DELETE CASCADE, FOREIGN KEY(generation_id,from_node_id) REFERENCES graph_nodes(generation_id,node_id) ON DELETE CASCADE, FOREIGN KEY(generation_id,to_node_id) REFERENCES graph_nodes(generation_id,node_id) ON DELETE CASCADE);`
@@ -451,11 +452,16 @@ var graphIndexes = map[string]string{
 	"idx_graph_migrations_status":                       `CREATE INDEX IF NOT EXISTS idx_graph_migrations_status ON graph_migrations(status, started_at);`,
 }
 
+var graphAdditiveTables = map[string]string{
+	"graph_generation_topology": graphGenerationTopologyDDL,
+}
+
 var graphAdditiveIndexes = map[string]string{
-	"idx_graph_nodes_generation_semantic_identity": `CREATE INDEX IF NOT EXISTS idx_graph_nodes_generation_semantic_identity ON graph_nodes(generation_id, semantic_identity);`,
-	"idx_graph_nodes_generation_display_name":      `CREATE INDEX IF NOT EXISTS idx_graph_nodes_generation_display_name ON graph_nodes(generation_id, display_name);`,
-	"idx_graph_analysis_generation_key":            `CREATE INDEX IF NOT EXISTS idx_graph_analysis_generation_key ON graph_analysis(generation_id, analysis_key);`,
-	"idx_graph_analysis_generation_profile":        `CREATE INDEX IF NOT EXISTS idx_graph_analysis_generation_profile ON graph_analysis(generation_id, algorithm, algorithm_version, profile);`,
+	"idx_graph_nodes_generation_backend_kind_owner": `CREATE INDEX IF NOT EXISTS idx_graph_nodes_generation_backend_kind_owner ON graph_nodes(generation_id, backend_type, symbol_kind, owner_path);`,
+	"idx_graph_nodes_generation_semantic_identity":  `CREATE INDEX IF NOT EXISTS idx_graph_nodes_generation_semantic_identity ON graph_nodes(generation_id, semantic_identity);`,
+	"idx_graph_nodes_generation_display_name":       `CREATE INDEX IF NOT EXISTS idx_graph_nodes_generation_display_name ON graph_nodes(generation_id, display_name);`,
+	"idx_graph_analysis_generation_key":             `CREATE INDEX IF NOT EXISTS idx_graph_analysis_generation_key ON graph_analysis(generation_id, analysis_key);`,
+	"idx_graph_analysis_generation_profile":         `CREATE INDEX IF NOT EXISTS idx_graph_analysis_generation_profile ON graph_analysis(generation_id, algorithm, algorithm_version, profile);`,
 }
 
 func normalizeSchemaSQL(s string) string {
@@ -522,6 +528,32 @@ func graphSchemaPreflight(db *sql.DB) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	// Additive indexes may be absent on older stores, but a pre-existing name
+	// must have exactly the expected definition. CREATE IF NOT EXISTS cannot
+	// establish that contract and must never silently accept a foreign index.
+	// Check even an otherwise fresh graph schema for a colliding index name.
+	for name, ddl := range graphAdditiveIndexes {
+		var actual sql.NullString
+		err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='index' AND name=? COLLATE NOCASE`, name).Scan(&actual)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if !actual.Valid || normalizeSchemaSQL(actual.String) != normalizeSchemaSQL(ddl) {
+			return &graphSchemaCompatibilityError{"incompatible additive index " + name}
+		}
+	}
+	for name, ddl := range graphAdditiveTables {
+		if !present[name] {
+			continue
+		}
+		var actual string
+		if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&actual); err != nil || normalizeSchemaSQL(actual) != normalizeSchemaSQL(ddl) {
+			return &graphSchemaCompatibilityError{"incompatible additive table " + name}
+		}
+	}
 	if len(present) == 0 {
 		return nil
 	}
@@ -582,6 +614,9 @@ func ensureGraphSchemaTx(ctx context.Context, tx interface {
 		if _, err := tx.ExecContext(ctx, ddl); err != nil {
 			return fmt.Errorf("create %s: %w", name, err)
 		}
+	}
+	if _, err := tx.ExecContext(ctx, graphGenerationTopologyDDL); err != nil {
+		return fmt.Errorf("create graph_generation_topology: %w", err)
 	}
 	// These columns are additive and intentionally migrated inside the same
 	// transaction as graph bootstrap. This handles both fresh databases and

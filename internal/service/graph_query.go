@@ -103,55 +103,151 @@ func graphRequestFromPayload(request model.CommandRequest) (model.GraphQueryRequ
 	return q, nil
 }
 
-// overlayGraphSnapshot builds one complete typed graph generation from the
-// selected worktree topology. It never writes the shared base graph database.
+// overlayGraphSnapshot pins the existing main index and retains only typed
+// delta observations. Uncertified source/config/topology cases fail closed;
+// they are unfinished overlay coverage, not permission to rebuild a WT index.
 func (a *App) overlayGraphSnapshot(ctx context.Context, registration model.WorkspaceRegistration, project model.ProjectFile, overlay workspace.WorktreeOverlay, q model.GraphQueryRequest) (model.Envelope, error) {
-	selections, err := worktreeGraphSelections(registration.Root, project)
+	baseDB, err := store.OpenReadOnlyExistingWithWAL(overlay.BaseRoot, store.WorkspaceDBPath(overlay.BaseRoot))
+	if err != nil {
+		return model.Envelope{}, overlayGraphUnavailable("existing worktree base graph is unavailable")
+	}
+	defer baseDB.Close()
+	base, err := store.BeginGraphQuerySnapshot(ctx, baseDB, "")
+	if err != nil {
+		return model.Envelope{}, store.SanitizeGraphQueryError(err)
+	}
+	defer base.Close()
+	baseGeneration, err := base.Generation()
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	identity, err := workspace.ResolveRepositoryIdentity(ctx, registration.Root, selectedGraphRepos(selections))
+	topologyWitness, err := base.GraphTopologyWitness(ctx)
 	if err != nil {
-		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: "worktree graph repository identity is unavailable or ambiguous"}
+		return model.Envelope{}, err
+	}
+	worktreeTopologyDigest, err := model.GraphTopologyProjectFingerprint(project)
+	if err != nil || worktreeTopologyDigest != topologyWitness.ProjectDigest {
+		return model.Envelope{}, overlayGraphTopologyIncomplete("worktree project topology differs from the captured pinned topology")
+	}
+	identity, err := workspace.ResolveRepositoryIdentity(ctx, registration.Root, project.Repos)
+	if err != nil || identity != topologyWitness.WorkspaceIdentity {
+		return model.Envelope{}, overlayGraphTopologyIncomplete("worktree repository identity differs from the captured pinned topology")
+	}
+	if baseGeneration.WorkspaceIdentity != topologyWitness.WorkspaceIdentity || baseGeneration.RepositoryIdentity != topologyWitness.RepositoryIdentity || !base.SnapshotFreshness(baseGeneration.GenerationID.String()).AllowsExactClaims() {
+		return model.Envelope{}, overlayGraphUnavailable("pinned base graph identity or freshness is unsuitable for a worktree delta")
+	}
+	profileInput, err := captureWorktreeGraphDocumentProfile(ctx, registration.Root)
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	documentPlan, err := planWorktreeGraphDocumentDelta(ctx, base, registration.Root, overlay.BaseRoot, project, overlay, profileInput)
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	profileControls := make(map[string]bool, len(documentPlan.ProfileControls))
+	for _, path := range documentPlan.ProfileControls {
+		profileControls[path] = true
+	}
+	changed := append(append([]string(nil), overlay.Changed...), overlay.Deleted...)
+	codeChanges := make([]string, 0, len(changed))
+	for _, path := range changed {
+		if strings.EqualFold(filepath.Ext(path), ".md") || profileControls[path] {
+			continue
+		}
+		codeChanges = append(codeChanges, path)
+	}
+	affected, err := base.WorktreeCodeDependencyPaths(ctx, codeChanges)
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	affected = graphDeltaPathUnion(affected, documentPlan.AffectedPaths)
+	// Control names are candidates only: the compiler's consumed-input
+	// receipt must certify them before any mask can be installed.
+	for _, path := range affected {
+		ext := strings.ToLower(filepath.Ext(path))
+		control := filepath.Base(path) == "go.mod" || filepath.Base(path) == "go.sum"
+		if ext != ".go" && ext != ".cs" && ext != ".md" && !control {
+			return model.Envelope{}, overlayGraphUnavailable("worktree graph configuration or non-code delta coverage is unfinished")
+		}
 	}
 	q.OverlayFingerprint = overlay.Fingerprint
-	key, err := worktreeGraphCacheKey(a, overlay, registration.Root, identity, project, selections)
+	key, err := worktreeGraphCacheKey(a, overlay, registration.Root, identity, project, nil, profileInput.Fingerprint)
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	key = "delta:" + baseGeneration.GenerationID.String() + ":" + topologyWitness.Digest.String() + ":" + worktreeTopologyDigest.String() + ":" + key
 	entry, cacheState, release, err := acquireWorktreeGraphSnapshot(ctx, key, func(buildCtx context.Context) (*worktreeGraphCacheEntry, error) {
-		return buildWorktreeGraphSnapshot(buildCtx, key, registration.Root, identity, overlay.Fingerprint, func() ([]model.GraphObservationBatch, error) {
-			return a.observeWorktreeGraph(buildCtx, registration.Root, project, selections, identity)
-		})
+		return a.buildSelectiveWorktreeDelta(buildCtx, key, registration, project, overlay, baseGeneration.GenerationID.String(), topologyWitness, worktreeTopologyDigest, affected, profileInput, documentPlan.DomainPaths)
+	}, func(buildCtx context.Context) error {
+		return profileInput.recheck(buildCtx, registration.Root)
 	})
 	if err != nil {
 		return model.Envelope{}, err
 	}
 	defer release()
-	if q.Generation != "" && q.Generation != entry.generation {
-		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_CURSOR_STALE", Message: "requested generation does not match the worktree overlay snapshot"}
+	if entry.profileFingerprint != profileInput.Fingerprint || entry.generation != baseGeneration.GenerationID.String() || entry.baseTopologyDigest != topologyWitness.Digest || entry.worktreeTopologyDigest != worktreeTopologyDigest {
+		return model.Envelope{}, overlayGraphTopologyIncomplete("cached worktree graph topology identity does not match the pinned generation")
 	}
-	q.Generation = entry.generation
-	env, err := GraphQuery(ctx, entry.db, q)
+	if err := profileInput.recheck(ctx, registration.Root); err != nil {
+		return model.Envelope{}, err
+	}
+	var view *store.LayeredGraphSnapshot
+	if entry.documents != nil {
+		view, err = store.NewLayeredGraphSnapshotWithDocumentsAndWorktreeDomains(base, entry.affected, entry.batches, overlay.Fingerprint, *entry.documents, entry.domains)
+	} else {
+		view, err = store.NewLayeredGraphSnapshotWithWorktreeDomains(base, entry.affected, entry.batches, overlay.Fingerprint, entry.domains)
+	}
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	defer view.Close()
+	generation, err := view.Generation()
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	if q.Generation != "" && q.Generation != generation.GenerationID.String() {
+		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_CURSOR_STALE", Message: "requested generation does not match the worktree delta"}
+	}
+	q.Generation = generation.GenerationID.String()
+	var cursor graphCursor
+	if q.Cursor != "" {
+		cursor, err = decodeGraphCursor(q.Cursor)
+		if err != nil || !cursorMatches(cursor, q, q.Generation) {
+			return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_CURSOR_STALE", Message: "worktree delta cursor is stale"}
+		}
+	}
+	env, err := graphQueryReadSnapshot(ctx, baseDB, view, q, cursor, false)
 	if err != nil {
 		return model.Envelope{}, err
 	}
 	current, linked, freshnessErr := workspace.TryResolveWorktreeOverlay(registration.Root)
 	if freshnessErr != nil || !linked || current.Fingerprint != overlay.Fingerprint {
-		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_GRAPH_INVALID", Message: "worktree changed during graph query; retry against a fresh overlay snapshot"}
+		return model.Envelope{}, overlayGraphUnavailable("worktree changed during layered graph query")
+	}
+	if err := profileInput.recheck(ctx, registration.Root); err != nil {
+		return model.Envelope{}, err
 	}
 	env.Workspace = registration.Name
 	env.Backend = "worktree-graph-overlay"
-	env.Warnings = append(env.Warnings, "worktree_graph_snapshot:"+overlay.Fingerprint, "worktree_graph_generation:"+entry.generation, "worktree_graph_cache:"+cacheState)
+	env.Warnings = append(env.Warnings, entry.warnings...)
+	env.Warnings = append(env.Warnings, "worktree_graph_snapshot:"+overlay.Fingerprint, "worktree_graph_generation:"+q.Generation, "worktree_graph_cache:"+cacheState)
 	return env, nil
 }
 
 type worktreeGraphCacheEntry struct {
-	key        string
-	db         *sql.DB
-	generation string
-	lastUsed   time.Time
-	inUse      int
+	documents              *store.GraphDocumentDelta // Private delta IR, never a published generation.
+	baseTopologyDigest     model.GraphDigest
+	worktreeTopologyDigest model.GraphDigest
+	profileFingerprint     string
+	batches                []model.GraphObservationBatch
+	domains                []model.GraphWorktreeDomain
+	affected               []string
+	warnings               []string
+	key                    string
+	db                     *sql.DB
+	generation             string
+	lastUsed               time.Time
+	inUse                  int
 }
 
 type worktreeGraphFlight struct {
@@ -389,7 +485,7 @@ func selectWorktreeGoModules(root string, project model.ProjectFile, repo model.
 	return []model.WorkspaceEntrypoint{{ID: p, RepoID: repo.ID, Path: p, Kind: model.EntrypointKindProject}}, nil
 }
 
-func worktreeGraphCacheKey(a *App, overlay workspace.WorktreeOverlay, root, identity string, project model.ProjectFile, selections []worktreeGraphSelection) (string, error) {
+func worktreeGraphCacheKey(a *App, overlay workspace.WorktreeOverlay, root, identity string, project model.ProjectFile, selections []worktreeGraphSelection, profileFingerprint string) (string, error) {
 	projectBytes, err := json.Marshal(project)
 	if err != nil {
 		return "", err
@@ -403,6 +499,7 @@ func worktreeGraphCacheKey(a *App, overlay workspace.WorktreeOverlay, root, iden
 	h := sha256.New()
 	for _, part := range []string{
 		overlay.Fingerprint,
+		profileFingerprint,
 		filepath.Clean(root),
 		identity,
 		string(projectBytes),
@@ -457,6 +554,10 @@ func overlayGraphUnavailable(message string) error {
 	return &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: message}
 }
 
+func overlayGraphTopologyIncomplete(message string) error {
+	return &model.GraphQueryError{Code: "GPH_QUERY_TOPOLOGY_INCOMPLETE", Field: "topology_witness", Message: "explicit_incomplete: " + message}
+}
+
 func (a *App) observeWorktreeGraph(ctx context.Context, root string, project model.ProjectFile, selections []worktreeGraphSelection, identity string) ([]model.GraphObservationBatch, error) {
 	batches := make([]model.GraphObservationBatch, 0, len(selections))
 	for _, selection := range selections {
@@ -478,7 +579,7 @@ func (a *App) observeWorktreeGraph(ctx context.Context, root string, project mod
 	return batches, nil
 }
 
-func acquireWorktreeGraphSnapshot(ctx context.Context, key string, build func(context.Context) (*worktreeGraphCacheEntry, error)) (*worktreeGraphCacheEntry, string, func(), error) {
+func acquireWorktreeGraphSnapshot(ctx context.Context, key string, build func(context.Context) (*worktreeGraphCacheEntry, error), beforeCommit ...func(context.Context) error) (*worktreeGraphCacheEntry, string, func(), error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -505,6 +606,9 @@ func acquireWorktreeGraphSnapshot(ctx context.Context, key string, build func(co
 
 	go func() {
 		entry, err := build(buildCtx)
+		if err == nil && len(beforeCommit) > 0 && beforeCommit[0] != nil {
+			err = beforeCommit[0](buildCtx)
+		}
 		completeWorktreeGraphFlight(flight, entry, err)
 	}()
 	return waitWorktreeGraphSnapshot(ctx, flight, "miss")
@@ -671,7 +775,9 @@ func pruneWorktreeGraphSnapshotsLocked() []*sql.DB {
 
 func closeWorktreeGraphSnapshots(dbs []*sql.DB) {
 	for _, db := range dbs {
-		_ = db.Close()
+		if db != nil {
+			_ = db.Close()
+		}
 	}
 }
 
@@ -754,9 +860,29 @@ func GraphQuery(ctx context.Context, db *sql.DB, q model.GraphQueryRequest) (mod
 		return model.Envelope{}, store.SanitizeGraphQueryError(err)
 	}
 	defer snapshot.Close()
+	return graphQueryReadSnapshot(ctx, db, snapshot, q, cursor, true)
+}
+
+// graphQueryReadSnapshot runs the same traversal and rank algorithms on pinned
+// canonical or layered reads. Only the canonical entrypoint may publish rank
+// cache rows; a virtual worktree generation has no canonical generation row.
+func graphQueryReadSnapshot(ctx context.Context, db *sql.DB, snapshot graphReadSnapshot, q model.GraphQueryRequest, cursor graphCursor, cacheCanonical bool) (model.Envelope, error) {
+	if ctx == nil || snapshot == nil {
+		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: "graph snapshot is unavailable"}
+	}
 	generation, err := snapshot.Generation()
 	if err != nil {
 		return model.Envelope{}, store.SanitizeGraphQueryError(err)
+	}
+	if generation.Status == "overlay" {
+		counts, countErr := snapshot.Stats(ctx)
+		if countErr != nil {
+			return model.Envelope{}, store.SanitizeGraphQueryError(countErr)
+		}
+		generation.NodeCount = counts["nodes"]
+		generation.EdgeCount = counts["edges"]
+		generation.EvidenceCount = counts["evidence"]
+		generation.UnresolvedCount = counts["unresolved"]
 	}
 	if q.Cursor != "" && cursor.Generation != generation.GenerationID.String() {
 		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_CURSOR_STALE", Message: "cursor generation is no longer available"}
@@ -785,7 +911,7 @@ func GraphQuery(ctx context.Context, db *sql.DB, q model.GraphQueryRequest) (mod
 			return model.Envelope{}, store.SanitizeGraphQueryError(err)
 		}
 	}
-	if q.Operation == "nav.graph.rank" {
+	if q.Operation == "nav.graph.rank" && cacheCanonical {
 		snapshot.Close()
 		if len(q.CachedRanks) == 0 && len(q.Utility) == 0 && envelope.Ok && !envelope.Truncated {
 			_ = cacheGraphEnvelope(ctx, db, generation, q, envelope)
@@ -810,7 +936,7 @@ func cacheGraphEnvelope(ctx context.Context, db *sql.DB, generation model.GraphG
 	return cacheGraphRanks(ctx, db, generation, GraphRankRequest{GenerationID: generation.GenerationID.String(), Limit: q.Limit, MaxNodes: model.GraphAnalysisMaxNodes, MaxEdges: model.GraphAnalysisMaxEdges, Intent: rankIntent}, ranks, envelope.DeterminismDigest)
 }
 
-func graphExplain(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQueryRequest, g model.GraphGeneration) (model.Envelope, error) {
+func graphExplain(ctx context.Context, s graphReadSnapshot, q model.GraphQueryRequest, g model.GraphGeneration) (model.Envelope, error) {
 	edges, err := s.ResolveGraphEdgeSelector(ctx, q.Selector)
 	if err != nil {
 		return model.Envelope{}, err
@@ -828,7 +954,7 @@ func graphExplain(ctx context.Context, s *store.GraphQuerySnapshot, q model.Grap
 	return graphEnvelope(q, g, s, []any{item}, []model.GraphQueryItem{item}, model.GraphQueryStats{Visited: 2, Returned: 1, Depth: 1, DepthReached: 1}, ""), nil
 }
 
-func graphRankQuery(ctx context.Context, db *sql.DB, s *store.GraphQuerySnapshot, q model.GraphQueryRequest, g model.GraphGeneration) (model.Envelope, error) {
+func graphRankQuery(ctx context.Context, db *sql.DB, s graphReadSnapshot, q model.GraphQueryRequest, g model.GraphGeneration) (model.Envelope, error) {
 	rankIntent := model.SanitizeUtilityIntent(q.UtilityIntent)
 	if strings.TrimSpace(q.UtilityIntent) == "" {
 		rankIntent = "graph"
@@ -859,7 +985,7 @@ func graphRankQuery(ctx context.Context, db *sql.DB, s *store.GraphQuerySnapshot
 	return env, nil
 }
 
-func graphStats(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQueryRequest, g model.GraphGeneration) (model.Envelope, error) {
+func graphStats(ctx context.Context, s graphReadSnapshot, q model.GraphQueryRequest, g model.GraphGeneration) (model.Envelope, error) {
 	counts, err := s.Stats(ctx)
 	if err != nil {
 		return model.Envelope{}, store.SanitizeGraphQueryError(err)
@@ -878,7 +1004,7 @@ func graphStats(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQ
 	}
 	return env, nil
 }
-func graphValidate(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQueryRequest, g model.GraphGeneration) (model.Envelope, error) {
+func graphValidate(ctx context.Context, s graphReadSnapshot, q model.GraphQueryRequest, g model.GraphGeneration) (model.Envelope, error) {
 	validated, err := s.Validate(ctx)
 	if err != nil {
 		return model.Envelope{}, store.SanitizeGraphQueryError(err)
@@ -894,7 +1020,7 @@ func graphValidate(ctx context.Context, s *store.GraphQuerySnapshot, q model.Gra
 	return env, nil
 }
 
-func graphNeighborhood(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQueryRequest, g model.GraphGeneration, offset int) (model.Envelope, error) {
+func graphNeighborhood(ctx context.Context, s graphReadSnapshot, q model.GraphQueryRequest, g model.GraphGeneration, offset int) (model.Envelope, error) {
 	nodes, _, err := s.ResolveGraphSelector(ctx, q.Selector)
 	if err != nil {
 		return model.Envelope{}, store.SanitizeGraphQueryError(err)
@@ -987,7 +1113,7 @@ func uniqueInts(xs []int) []int {
 	return out
 }
 
-func graphPath(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQueryRequest, g model.GraphGeneration, offset int) (model.Envelope, error) {
+func graphPath(ctx context.Context, s graphReadSnapshot, q model.GraphQueryRequest, g model.GraphGeneration, offset int) (model.Envelope, error) {
 	from, _, err := s.ResolveGraphSelector(ctx, q.From)
 	if err != nil {
 		return model.Envelope{}, store.SanitizeGraphQueryError(err)
@@ -1137,7 +1263,7 @@ func graphPathStepKey(previous string, edge model.GraphEdgeRecord, node model.Gr
 	return previous + edge.Relation + "\x00" + edge.EdgeKey.String() + "\x00" + node.NodeKey.String()
 }
 
-func sNode(s *store.GraphQuerySnapshot, ctx context.Context, id int) (model.GraphNodeRecord, error) {
+func sNode(s graphReadSnapshot, ctx context.Context, id int) (model.GraphNodeRecord, error) {
 	return s.Node(ctx, id)
 }
 
@@ -1152,7 +1278,7 @@ type graphHydration struct {
 	edgeEvidence map[int][]string
 }
 
-func hydrateGraphEdges(ctx context.Context, s *store.GraphQuerySnapshot, works []graphEdgeWork) (graphHydration, error) {
+func hydrateGraphEdges(ctx context.Context, s graphReadSnapshot, works []graphEdgeWork) (graphHydration, error) {
 	nodeIDs := make([]int, 0, len(works)*3)
 	edgeIDs := make([]int, 0, len(works))
 	for _, work := range works {
@@ -1170,7 +1296,7 @@ func hydrateGraphEdges(ctx context.Context, s *store.GraphQuerySnapshot, works [
 	return graphHydration{nodes: nodes, edgeEvidence: evidence}, nil
 }
 
-func graphItemsFromEdgeWorks(ctx context.Context, s *store.GraphQuerySnapshot, works []graphEdgeWork) ([]model.GraphQueryItem, error) {
+func graphItemsFromEdgeWorks(ctx context.Context, s graphReadSnapshot, works []graphEdgeWork) ([]model.GraphQueryItem, error) {
 	hydration, err := hydrateGraphEdges(ctx, s, works)
 	if err != nil {
 		return nil, err
@@ -1222,7 +1348,7 @@ func graphNodeItemHydrated(n model.GraphNodeRecord, distance int, edge *model.Gr
 	return item, nil
 }
 
-func graphNodeItem(s *store.GraphQuerySnapshot, ctx context.Context, n model.GraphNodeRecord, distance int, edge *model.GraphEdgeRecord) (model.GraphQueryItem, error) {
+func graphNodeItem(s graphReadSnapshot, ctx context.Context, n model.GraphNodeRecord, distance int, edge *model.GraphEdgeRecord) (model.GraphQueryItem, error) {
 	item := model.GraphQueryItem{Kind: "node", CrossRID: n.CrossRID, Display: n.DisplayName, Status: n.ClaimStatus, ConfidenceClass: confidenceClass(n.ClaimStatus), Distance: distance, NodeKey: n.NodeKey.String(), NodeID: n.NodeID, SymbolKind: n.Identity.SymbolKind, OwnerPath: n.Identity.OwnerPath}
 	if n.Identity.SymbolKind == "document" {
 		item.DestinationPath = n.Identity.OwnerPath
@@ -1261,7 +1387,7 @@ func graphNodeItem(s *store.GraphQuerySnapshot, ctx context.Context, n model.Gra
 	return item, err
 }
 
-func graphEdgeItem(s *store.GraphQuerySnapshot, ctx context.Context, edge model.GraphEdgeRecord) (model.GraphQueryItem, error) {
+func graphEdgeItem(s graphReadSnapshot, ctx context.Context, edge model.GraphEdgeRecord) (model.GraphQueryItem, error) {
 	from, err := s.Node(ctx, edge.FromNodeID)
 	if err != nil {
 		return model.GraphQueryItem{}, err
@@ -1295,7 +1421,7 @@ func confidenceClass(status string) string {
 	}
 }
 
-func sortPathEdges(ctx context.Context, s *store.GraphQuerySnapshot, edges []model.GraphEdgeRecord) {
+func sortPathEdges(ctx context.Context, s graphReadSnapshot, edges []model.GraphEdgeRecord) {
 	if len(edges) < 2 {
 		return
 	}
@@ -1363,11 +1489,11 @@ func claimRank(s string) int {
 	return 3
 }
 
-func finalizeGraphItems(q model.GraphQueryRequest, g model.GraphGeneration, s *store.GraphQuerySnapshot, all []model.GraphQueryItem, visited, frontier, offset int) model.Envelope {
+func finalizeGraphItems(q model.GraphQueryRequest, g model.GraphGeneration, s graphReadSnapshot, all []model.GraphQueryItem, visited, frontier, offset int) model.Envelope {
 	return finalizeGraphItemsWithSearchBudget(q, g, s, all, visited, frontier, offset, false)
 }
 
-func finalizeGraphItemsWithSearchBudget(q model.GraphQueryRequest, g model.GraphGeneration, s *store.GraphQuerySnapshot, all []model.GraphQueryItem, visited, frontier, offset int, searchBudgetExhausted bool) model.Envelope {
+func finalizeGraphItemsWithSearchBudget(q model.GraphQueryRequest, g model.GraphGeneration, s graphReadSnapshot, all []model.GraphQueryItem, visited, frontier, offset int, searchBudgetExhausted bool) model.Envelope {
 	if offset > len(all) {
 		offset = len(all)
 	}
@@ -1403,7 +1529,7 @@ func finalizeGraphItemsWithSearchBudget(q model.GraphQueryRequest, g model.Graph
 	}
 	return env
 }
-func graphEnvelope(q model.GraphQueryRequest, g model.GraphGeneration, s *store.GraphQuerySnapshot, raw []any, canonical []model.GraphQueryItem, stats model.GraphQueryStats, hint string) model.Envelope {
+func graphEnvelope(q model.GraphQueryRequest, g model.GraphGeneration, s graphReadSnapshot, raw []any, canonical []model.GraphQueryItem, stats model.GraphQueryStats, hint string) model.Envelope {
 	if raw == nil {
 		raw = make([]any, len(canonical))
 		for i := range canonical {

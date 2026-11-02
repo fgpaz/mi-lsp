@@ -1200,19 +1200,27 @@ func probeDaemonHome(parent context.Context) (model.DaemonState, bool) {
 	if err != nil {
 		return model.DaemonState{}, false
 	}
-	var decoded []map[string]any
-	if err := json.Unmarshal(body, &decoded); err != nil || len(decoded) == 0 {
+	var decoded []struct {
+		State *model.DaemonState `json:"state"`
+	}
+	if err := json.Unmarshal(body, &decoded); err != nil || len(decoded) != 1 || decoded[0].State == nil {
 		return model.DaemonState{}, false
 	}
-	stateBody, err := json.Marshal(decoded[0]["state"])
-	if err != nil {
-		return model.DaemonState{}, false
-	}
-	var state model.DaemonState
-	if err := json.Unmarshal(stateBody, &state); err != nil {
+	state := *decoded[0].State
+	if !completeHomeDaemonState(state) {
 		return model.DaemonState{}, false
 	}
 	return state, true
+}
+
+// completeHomeDaemonState mirrors the owner/binding completeness required by
+// daemon.probeDaemonWithTransport without exposing any binding material.
+func completeHomeDaemonState(state model.DaemonState) bool {
+	return state.PID > 0 && state.RunID > 0 && !state.StartedAt.IsZero() &&
+		strings.TrimSpace(state.Endpoint) != "" && strings.TrimSpace(state.Version) != "" &&
+		strings.TrimSpace(state.ProtocolVersion) != "" && strings.TrimSpace(state.ExecutablePath) != "" &&
+		strings.TrimSpace(state.ExecutableSHA256) != "" && strings.TrimSpace(state.AdminURL) != "" &&
+		strings.TrimSpace(state.AdminToken) != ""
 }
 
 func homeDocsReadModel(root string) string {

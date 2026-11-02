@@ -77,6 +77,8 @@ func indexWorkspaceWithGraphProgress(ctx context.Context, root string, clean boo
 	}
 
 	// Observe before publishing catalog data so an observer failure preserves the prior graph state.
+	var topologyWitness *model.GraphTopologyWitness
+	graphOptions.TopologyWitnessOut = &topologyWitness
 	graphBatches, graphOmissions, graphWarnings, err := ObserveGraph(ctx, root, projectFile, graphOptions, progress)
 	if err != nil {
 		return Result{}, err
@@ -122,7 +124,7 @@ func indexWorkspaceWithGraphProgress(ctx context.Context, root string, clean boo
 		} else if ok {
 			prior = &active
 		}
-		request, publishGraph, identityWarning := documentationGraphRequest(ctx, root, projectFile, graphBatches, docs, docEdges, docMentions, time.Now().UTC())
+		request, publishGraph, identityWarning := documentationGraphRequest(ctx, root, projectFile, graphBatches, docs, docEdges, docMentions, topologyWitness, time.Now().UTC())
 		if identityWarning != "" {
 			warnings = appendIfMissing(warnings, identityWarning)
 		}
@@ -371,7 +373,7 @@ func indexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, clean 
 		}
 		defer db.Close()
 
-		request, publishGraph, identityWarning := documentationGraphRequest(ctx, root, projectFile, nil, docs, docEdges, docMentions, time.Now().UTC())
+		request, publishGraph, identityWarning := documentationGraphRequest(ctx, root, projectFile, nil, docs, docEdges, docMentions, nil, time.Now().UTC())
 		if identityWarning != "" {
 			warnings = appendIfMissing(warnings, identityWarning)
 		}
@@ -504,13 +506,14 @@ func appendIfMissing(items []string, value string) []string {
 	return append(items, value)
 }
 
-func documentationGraphRequest(ctx context.Context, root string, project model.ProjectFile, batches []model.GraphObservationBatch, docs []model.DocRecord, docEdges []model.DocEdge, docMentions []model.DocMention, createdAt time.Time) (GraphAssemblyRequest, bool, string) {
+func documentationGraphRequest(ctx context.Context, root string, project model.ProjectFile, batches []model.GraphObservationBatch, docs []model.DocRecord, docEdges []model.DocEdge, docMentions []model.DocMention, topologyWitness *model.GraphTopologyWitness, createdAt time.Time) (GraphAssemblyRequest, bool, string) {
 	req := GraphAssemblyRequest{
-		Batches:     batches,
-		Docs:        docs,
-		DocEdges:    docEdges,
-		DocMentions: docMentions,
-		CreatedAt:   createdAt,
+		Batches:         batches,
+		TopologyWitness: topologyWitness,
+		Docs:            docs,
+		DocEdges:        docEdges,
+		DocMentions:     docMentions,
+		CreatedAt:       createdAt,
 	}
 	if len(batches) != 0 {
 		return req, true, ""

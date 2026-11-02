@@ -461,6 +461,7 @@ type GraphBundle struct {
 	Edges      []GraphEdgeRecord
 	Evidence   []GraphEvidence
 	Unresolved []GraphUnresolved
+	Topology   *GraphTopologyWitness
 }
 
 func validStatus(s string) bool {
@@ -698,6 +699,24 @@ func (b *GraphBundle) validate(requireSealed bool) error {
 	}
 	if requireSealed && (g.GenerationID == (GraphDigest{}) || g.ContentDigest == (GraphDigest{})) {
 		return ErrGraphGenerationInvalid
+	}
+	hasGoClaims := false
+	for _, node := range b.Nodes {
+		hasGoClaims = hasGoClaims || node.Identity.BackendType == "go"
+	}
+	for _, edge := range b.Edges {
+		hasGoClaims = hasGoClaims || edge.SourceBackend == "go"
+	}
+	for _, unresolved := range b.Unresolved {
+		hasGoClaims = hasGoClaims || unresolved.Backend == "go"
+	}
+	if hasGoClaims && b.Topology == nil {
+		return ErrGraphTopologyWitnessInvalid
+	}
+	if b.Topology != nil {
+		if err := b.Topology.ValidateConfigFingerprint(g.ConfigFingerprint); err != nil || b.Topology.WorkspaceIdentity != g.WorkspaceIdentity || b.Topology.RepositoryIdentity != g.RepositoryIdentity {
+			return ErrGraphTopologyWitnessInvalid
+		}
 	}
 	nodes := map[int]GraphNodeRecord{}
 	nodeKeys := map[GraphDigest]NodeKeyFields{}

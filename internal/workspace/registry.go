@@ -300,6 +300,10 @@ func cloneRegistry(registry model.RegistryFile) model.RegistryFile {
 	for name, ws := range registry.Workspaces {
 		ws.Languages = append([]string(nil), ws.Languages...)
 		ws.CanonLinks = append([]model.WorkspaceCanonLink(nil), ws.CanonLinks...)
+		if ws.WorktreeIdentity != nil {
+			identity := *ws.WorktreeIdentity
+			ws.WorktreeIdentity = &identity
+		}
 		clone.Workspaces[name] = ws
 	}
 	return clone
@@ -372,6 +376,21 @@ func registerWorkspaceLocked(name string, registration model.WorkspaceRegistrati
 	}
 	if existing, ok := registry.Workspaces[name]; ok {
 		registration = preserveCanonLinks(existing, registration)
+		if sameFilePath(existing.Root, registration.Root) && existing.WorktreeIdentity != nil {
+			identity := *existing.WorktreeIdentity
+			registration.WorktreeIdentity = &identity
+			if identity.Version == 1 {
+				if _, err := registryRootStat(registration.Root); err == nil {
+					registration.WorktreeIdentity = refreshedWorktreeIdentity(registration.Root, &identity)
+				} else if !errors.Is(err, os.ErrNotExist) {
+					identity.Verification = "indeterminate"
+				}
+			}
+		} else {
+			registration.WorktreeIdentity = verifiedWorktreeIdentity(registration.Root)
+		}
+	} else {
+		registration.WorktreeIdentity = verifiedWorktreeIdentity(registration.Root)
 	}
 	registration.Name = name
 	registry.Workspaces[name] = registration
@@ -492,6 +511,33 @@ func GarbageCollectRegistry(apply bool) (WorkspacePruneReport, error) {
 	return report, err
 }
 
+// registryWorktreeRootMissing requires absence of the entry itself. Stat alone
+// follows dangling symlinks. Existing symlink ancestors are ambiguous even when
+// the final path yields ENOENT, so retain rather than infer a disappeared WT.
+func registryWorktreeRootMissing(root string) (bool, error) {
+	if _, err := os.Lstat(root); err == nil {
+		return false, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	for parent := filepath.Dir(root); ; parent = filepath.Dir(parent) {
+		info, err := os.Lstat(parent)
+		if err == nil {
+			if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+				return false, nil
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+		if filepath.Dir(parent) == parent {
+			break
+		}
+	}
+	return true, nil
+}
+
+// garbageCollectRegistryLocked maintains provenance for existing live entries and
+// automatically removes only verified linked worktrees whose roots are missing.
 func garbageCollectRegistryLocked(apply bool) (WorkspacePruneReport, error) {
 	registry, err := LoadRegistry()
 	if err != nil {
@@ -513,6 +559,7 @@ func garbageCollectRegistryLocked(apply bool) (WorkspacePruneReport, error) {
 		names = append(names, name)
 	}
 	sort.Strings(names)
+	identityUpdates := 0
 	for _, name := range names {
 		ws := registry.Workspaces[name]
 		if strings.TrimSpace(ws.Root) == "" {
@@ -520,20 +567,55 @@ func garbageCollectRegistryLocked(apply bool) (WorkspacePruneReport, error) {
 			continue
 		}
 		if _, statErr := registryRootStat(ws.Root); statErr == nil {
+			if apply && (ws.WorktreeIdentity == nil || ws.WorktreeIdentity.Version == 1) {
+				identity := refreshedWorktreeIdentity(ws.Root, ws.WorktreeIdentity)
+				changed := (ws.WorktreeIdentity == nil) != (identity == nil)
+				if ws.WorktreeIdentity != nil && identity != nil {
+					changed = *ws.WorktreeIdentity != *identity
+				}
+				if changed {
+					ws.WorktreeIdentity = identity
+					registry.Workspaces[name] = ws
+					identityUpdates++
+				}
+			}
 			continue
 		} else if errors.Is(statErr, os.ErrNotExist) {
-			candidate := WorkspaceStalePath{Alias: name, Root: ws.Root, Error: "path not found"}
+			if !validRecordedWorktreeIdentity(ws.Root, ws.WorktreeIdentity) {
+				report.Skipped = append(report.Skipped, WorkspaceStalePath{Alias: name, Root: ws.Root, Error: "identity_unknown; root retained"})
+				continue
+			}
+			missing, entryErr := registryWorktreeRootMissing(ws.Root)
+			if entryErr != nil || !missing {
+				report.Skipped = append(report.Skipped, WorkspaceStalePath{Alias: name, Root: ws.Root, Error: "root entry or ancestor is present or uncertain; root retained"})
+				continue
+			}
+			candidate := WorkspaceStalePath{Alias: name, Root: ws.Root, Error: "verified worktree root not found"}
 			report.Candidates = append(report.Candidates, candidate)
 			if apply {
+				if missing, err := registryWorktreeRootMissing(ws.Root); err != nil || !missing {
+					report.Skipped = append(report.Skipped, WorkspaceStalePath{Alias: name, Root: ws.Root, Error: "root changed or status unavailable; root retained"})
+					continue
+				}
 				delete(registry.Workspaces, name)
 				report.Removed = append(report.Removed, candidate)
 			}
 		} else {
+			if apply && ws.WorktreeIdentity != nil && ws.WorktreeIdentity.Version == 1 && ws.WorktreeIdentity.Verification != "indeterminate" {
+				identity := *ws.WorktreeIdentity
+				identity.Verification = "indeterminate"
+				ws.WorktreeIdentity = &identity
+				registry.Workspaces[name] = ws
+				identityUpdates++
+			}
 			report.Skipped = append(report.Skipped, WorkspaceStalePath{Alias: name, Root: ws.Root, Error: sanitizedRegistryRootError(statErr)})
 		}
 	}
 	report.RemovedCount = len(report.Removed)
-	if apply && len(report.Removed) > 0 {
+	if apply && (len(report.Removed) > 0 || identityUpdates > 0) {
+		if identityUpdates > 0 {
+			report.Warnings = append(report.Warnings, fmt.Sprintf("worktree identities refreshed or cleared: %d", identityUpdates))
+		}
 		// Create backup before writing
 		backupPath := registryPath + ".bak-" + time.Now().Format("20060102150405")
 		if data, err := os.ReadFile(registryPath); err == nil {

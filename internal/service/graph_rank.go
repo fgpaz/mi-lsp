@@ -72,7 +72,7 @@ func graphRankFailureFreshness(ctx context.Context, db *sql.DB, requestedGenerat
 
 // graphRankOnSnapshot is the single cache-aware rank path. Callers that already
 // own a graph snapshot must use it rather than opening a nested snapshot.
-func graphRankOnSnapshot(ctx context.Context, db *sql.DB, snapshot *store.GraphQuerySnapshot, request GraphRankRequest) (model.GraphRankEnvelope, error) {
+func graphRankOnSnapshot(ctx context.Context, db *sql.DB, snapshot graphReadSnapshot, request GraphRankRequest) (model.GraphRankEnvelope, error) {
 	generation, err := snapshot.Generation()
 	if err != nil {
 		return model.GraphRankEnvelope{}, err
@@ -183,7 +183,7 @@ func utilitySignalValue(signal string) float64 {
 	}
 }
 
-func graphRankSnapshot(ctx context.Context, snapshot *store.GraphQuerySnapshot, request GraphRankRequest) ([]model.GraphRank, string, bool, error) {
+func graphRankSnapshot(ctx context.Context, snapshot graphReadSnapshot, request GraphRankRequest) ([]model.GraphRank, string, bool, error) {
 	data, err := snapshot.BoundedData(ctx, request.MaxNodes, request.MaxEdges)
 	if err != nil {
 		return nil, "", false, err
@@ -292,7 +292,7 @@ func graphRankSnapshot(ctx context.Context, snapshot *store.GraphQuerySnapshot, 
 	return ranks, digest, truncated, nil
 }
 
-func generationString(snapshot *store.GraphQuerySnapshot) string {
+func generationString(snapshot graphReadSnapshot) string {
 	g, _ := snapshot.Generation()
 	return g.GenerationID.String()
 }

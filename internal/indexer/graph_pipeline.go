@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -26,15 +27,36 @@ type GraphObservationRequest struct {
 	ProjectOrModule    string
 	EntrypointKind     string
 	Backend            string
+	// AffectedPaths is nil for legacy observation, otherwise repo-relative.
+	AffectedPaths []string
+	// AppliedPaths receives the worker's exact acknowledged repo-relative paths.
+	AppliedPaths *[]string
 }
 
 // GraphObserver is the adapter boundary for external semantic compilers.
 type GraphObserver func(context.Context, GraphObservationRequest) (model.GraphObservationBatch, error)
 
+// GoGraphDeltaObserver executes the exact Go request selected by canonical
+// planning and returns its raw compiler receipt for canonical sealing.
+type GoGraphDeltaObserver func(context.Context, GraphObservationRequest, GoGraphObservationRequest, []string) (model.GraphObservationBatch, GoGraphDeltaReceipt, error)
+
 type GraphIndexOptions struct {
+	// TopologyWitnessOut receives the generation-owned native Go topology captured
+	// by the same observation request. It is never reconstructed from later files.
+	TopologyWitnessOut **model.GraphTopologyWitness
 	RoslynObserver     GraphObserver
+	GoDeltaObserver    GoGraphDeltaObserver
 	EntrypointSelector string
 	GoOffline          bool
+	// AffectedPaths is nil for legacy observation, otherwise workspace-relative.
+	AffectedPaths []string
+	// PreviousGoModulePaths maps workspace-relative go.mod paths to prior source
+	// owners, also workspace-relative. Root must populate these from the fixed base.
+	PreviousGoModulePaths map[string][]string
+	// PreviousGoPackageOwners holds pinned package-owner candidates keyed by workspace-relative go.mod.
+	PreviousGoPackageOwners map[string][]string
+	DeltaCoverage           *GraphDeltaCoverage
+	RoslynDeltaMembers      GraphDeltaMembership
 }
 
 type graphObservationTarget struct {
@@ -55,11 +77,28 @@ var errGraphTopologyAmbiguous = errors.New("graph topology is ambiguous; no repo
 // observer. Unsupported languages are recorded as gated omissions, never as
 // semantic graph claims.
 func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, options GraphIndexOptions, progress ProgressFunc) ([]model.GraphObservationBatch, []model.GraphObservationOmission, []string, error) {
+	if options.TopologyWitnessOut != nil {
+		*options.TopologyWitnessOut = nil
+	}
+	if options.AffectedPaths != nil && options.DeltaCoverage != nil {
+		options.DeltaCoverage.reset(options.AffectedPaths)
+	}
 	if err := reportProgress(ctx, progress, Progress{Stage: "graph.observe", Force: true}); err != nil {
 		return nil, nil, nil, err
 	}
+	if options.AffectedPaths != nil && len(options.AffectedPaths) == 0 {
+		return nil, nil, nil, nil
+	}
+	if options.AffectedPaths != nil {
+		if err := validateGraphDeltaPaths(options.AffectedPaths); err != nil {
+			return nil, nil, nil, err
+		}
+	}
 	_, configErr := os.Stat(workspace.ProjectConfigPath(root))
 	targets, ok := graphObservationTargets(root, project, configErr == nil)
+	if !ok && options.AffectedPaths != nil && options.DeltaCoverage != nil {
+		options.DeltaCoverage.TopologyAmbiguous = true
+	}
 	if project.Project.Kind == model.WorkspaceKindContainer && !ok && strings.TrimSpace(options.EntrypointSelector) == "" {
 		return nil, []model.GraphObservationOmission{{Backend: "roslyn", Capability: "declarations", ReasonCode: "ambiguous_repository", RecoveryHintCode: "select_repo"}}, []string{"graph omitted: container topology does not explicitly select one authoritative repository"}, nil
 	}
@@ -81,6 +120,9 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 	}
 
 	if explicitSelection != nil && explicitSelection.Backend == "kotlin-language-server" {
+		if options.AffectedPaths != nil {
+			return nil, nil, nil, &model.GraphObservationError{Code: "GPH_DELTA_UNAVAILABLE", Field: "affected_paths", Message: "explicit_incomplete: Kotlin selective observation is not stageable"}
+		}
 		selected := *explicitSelection
 		identity, err := workspace.ResolveRepositoryIdentity(ctx, root, project.Repos)
 		if err != nil {
@@ -189,6 +231,13 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 	warnings := make([]string, 0)
 
 	if len(goRepos) > 0 {
+		if options.AffectedPaths != nil && project.Project.Kind == model.WorkspaceKindContainer && explicitSelection == nil && len(goRepos) > 1 {
+			warnings = append(warnings, "explicit_incomplete: Go container has multiple repositories and a workspace-root legacy observation; select an entrypoint before masking Go paths")
+			if options.DeltaCoverage != nil {
+				options.DeltaCoverage.TopologyAmbiguous = true
+			}
+			goto skipGoObservation
+		}
 		module := ""
 		if explicitSelection != nil {
 			selected := goRepos[0]
@@ -219,17 +268,133 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 			if options.GoOffline {
 				warnings = append(warnings, "go_offline=true; Go observation uses local toolchain/cache, readonly module metadata and no workspace mode; inherited GOFLAGS ignored")
 			}
-			batch, observeErr := ObserveGoGraph(ctx, GoGraphObservationRequest{Root: requestRoot, RepositoryIdentity: identity, ProjectOrModule: module, GoOffline: options.GoOffline})
+			var topologyCapture GoGraphTopologyCapture
+			req := GoGraphObservationRequest{Root: requestRoot, RepositoryIdentity: identity, ProjectOrModule: module, GoOffline: options.GoOffline}
+			if options.TopologyWitnessOut != nil {
+				req.TopologyCapture = &topologyCapture
+			}
+			var selectedPaths []string
+			var goReceipt GoGraphDeltaReceipt
+			var goAppliedPaths []string
+			var batch model.GraphObservationBatch
+			var observeErr error
+			if options.AffectedPaths == nil {
+				batch, observeErr = ObserveGoGraph(ctx, req)
+			} else {
+				paths, err := graphDeltaPathsForRoot(root, requestRoot, options.AffectedPaths, "")
+				if err != nil {
+					return nil, omissions, warnings, err
+				}
+				moduleWorkspacePath, relErr := filepath.Rel(root, filepath.Join(requestRoot, filepath.FromSlash(module)))
+				if relErr != nil {
+					return nil, omissions, warnings, relErr
+				}
+				moduleWorkspacePath = filepath.ToSlash(moduleWorkspacePath)
+				moduleRequestPath := filepath.ToSlash(module)
+				controlPaths := map[string]bool{filepath.ToSlash(filepath.Join(filepath.Dir(moduleRequestPath), "go.sum")): true}
+				controlPaths[moduleRequestPath] = true
+				for _, path := range paths {
+					if strings.EqualFold(filepath.Ext(path), ".go") || controlPaths[path] {
+						selectedPaths = append(selectedPaths, path)
+					}
+				}
+				if len(selectedPaths) == 0 {
+					goto skipGoObservation
+				}
+				if previous := options.PreviousGoModulePaths[moduleWorkspacePath]; len(previous) > 0 {
+					prior, err := graphDeltaPathsForRoot(root, requestRoot, previous, ".go")
+					if err != nil {
+						return nil, omissions, warnings, err
+					}
+					req.PreviousModulePaths = prior
+				}
+				req.PreviousPackageOwners = append([]string(nil), options.PreviousGoPackageOwners[moduleWorkspacePath]...)
+				if options.GoDeltaObserver != nil {
+					request := GraphObservationRequest{WorkspaceRoot: root, WorkspaceIdentity: identity, RepositoryIdentity: identity, RepoID: goRepos[0].repo.ID, RepoName: goRepos[0].repo.Name, RepoRoot: requestRoot, ProjectOrModule: module, Backend: "go", AffectedPaths: append([]string(nil), selectedPaths...)}
+					batch, goReceipt, observeErr = options.GoDeltaObserver(ctx, request, req, selectedPaths)
+				} else {
+					batch, goReceipt, observeErr = ObserveGoGraphDeltaWithReceipt(ctx, req, selectedPaths)
+				}
+				if observeErr == nil && options.DeltaCoverage != nil {
+					bridge, bridgeErr := CanonicalizeGoGraphDelta(root, requestRoot, module, &batch, goReceipt)
+					if bridgeErr != nil {
+						return nil, omissions, warnings, bridgeErr
+					}
+					goAppliedPaths = append([]string(nil), bridge.RawReceipt.Applied...)
+					goReceipt = bridge.CanonicalReceipt
+					if options.DeltaCoverage != nil {
+						options.DeltaCoverage.GoReceiptBridges = append(options.DeltaCoverage.GoReceiptBridges, bridge)
+					}
+				}
+			}
 			if observeErr != nil {
 				return nil, omissions, warnings, fmt.Errorf("go graph observation failed: %w", observeErr)
 			}
 			if err := batch.ReadyForStaging(); err != nil {
 				return nil, omissions, warnings, wrapGoObservationStageError(batch, err)
 			}
+			if options.TopologyWitnessOut != nil {
+				requestPrefix, prefixErr := graphTopologyWorkspacePrefix(root, requestRoot)
+				if prefixErr != nil {
+					return nil, omissions, warnings, prefixErr
+				}
+				repoIDs := make([]string, 0, len(goRepos))
+				for _, selectedRepo := range goRepos {
+					if _, prefixErr := graphTopologyWorkspacePrefix(root, selectedRepo.root); prefixErr != nil {
+						return nil, omissions, warnings, prefixErr
+					}
+					repoIDs = append(repoIDs, selectedRepo.repo.ID)
+				}
+				modulePath := filepath.ToSlash(module)
+				goModPath := path.Join(requestPrefix, modulePath)
+				observedGoModPath, modPathErr := graphTopologyWorkspacePrefix(root, filepath.Join(requestRoot, filepath.FromSlash(modulePath)))
+				if modPathErr != nil || observedGoModPath != goModPath {
+					return nil, omissions, warnings, fmt.Errorf("explicit_incomplete: consumed go.mod has an unproven physical workspace projection")
+				}
+				witness, witnessErr := model.NewGraphTopologyWitness(project, identity)
+				if witnessErr != nil || topologyCapture.ProjectOrModule != modulePath || topologyCapture.ModulePath == "" || topologyCapture.GoModDigest == (model.GraphDigest{}) || topologyCapture.BatchConfigFingerprint != batch.ConfigFingerprint {
+					return nil, omissions, warnings, fmt.Errorf("explicit_incomplete: native Go topology capture is incomplete")
+				}
+				selectorKind, selectorID := "implicit_repo", "implicit:go.mod"
+				if project.Project.Kind == model.WorkspaceKindContainer && explicitSelection == nil {
+					selectorKind, selectorID = "container_root", "workspace-root:go.mod"
+				} else if explicitSelection != nil {
+					selectorKind, selectorID = "explicit", explicitSelection.Entrypoint.ID
+				} else if configured := strings.TrimSpace(goRepos[0].repo.DefaultEntrypoint); configured != "" {
+					selectorKind, selectorID = "configured", configured
+					for _, entry := range project.Entrypoints {
+						if entry.RepoID == goRepos[0].repo.ID && strings.EqualFold(entry.ID, configured) {
+							selectorID = entry.ID
+							break
+						}
+					}
+				}
+				witness.Modules = append(witness.Modules, model.GraphTopologyGoModule{
+					RepositoryIDs: repoIDs, SelectorID: selectorID, SelectorKind: selectorKind, SelectorPath: goModPath,
+					RequestRoot: requestPrefix, ProjectOrModule: modulePath,
+					GoModPath: goModPath, ModulePath: topologyCapture.ModulePath,
+					GoModDigest: topologyCapture.GoModDigest, BatchConfigFingerprint: topologyCapture.BatchConfigFingerprint,
+				})
+				*options.TopologyWitnessOut = witness
+			}
+			if options.DeltaCoverage != nil && options.AffectedPaths != nil {
+				projected, err := graphGoControlCoverage(root, requestRoot, module, goReceipt)
+				if err != nil {
+					return nil, omissions, warnings, err
+				}
+				options.DeltaCoverage.GoReceipts = append(options.DeltaCoverage.GoReceipts, goReceipt)
+				options.DeltaCoverage.GoControlCertificates = append(options.DeltaCoverage.GoControlCertificates, projected)
+				for _, certificate := range goReceipt.PackageOwnerCertificates {
+					certificate.Module = goReceipt.ProjectOrModule
+					options.DeltaCoverage.GoPackageCertificates = append(options.DeltaCoverage.GoPackageCertificates, certificate)
+				}
+				options.DeltaCoverage.record(root, requestRoot, "go", module, goAppliedPaths)
+			}
 			batches = append(batches, batch)
 		}
 	}
 
+skipGoObservation:
 	if len(csharpTargets) > 0 {
 		if options.RoslynObserver == nil {
 			return nil, omissions, warnings, errors.New("roslyn graph observer is not configured")
@@ -248,9 +413,37 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 				EntrypointKind:     target.Entrypoint.Kind,
 				Backend:            "roslyn",
 			}
+			if options.AffectedPaths != nil {
+				paths, err := graphDeltaPathsForRoot(root, target.RepoRoot, options.AffectedPaths, ".cs")
+				if err != nil {
+					return nil, omissions, warnings, err
+				}
+				if len(paths) == 0 {
+					continue
+				}
+				if options.RoslynDeltaMembers == nil {
+					warnings = append(warnings, "explicit_incomplete: Roslyn project membership unavailable for "+target.WorkspaceEntrypointPath)
+					continue
+				}
+				paths, err = options.RoslynDeltaMembers(ctx, request, paths)
+				if err != nil {
+					return nil, omissions, warnings, err
+				}
+				if err := graphDeltaValidateSubset(paths, options.AffectedPaths, root, target.RepoRoot); err != nil {
+					return nil, omissions, warnings, err
+				}
+				if len(paths) == 0 {
+					continue
+				}
+				request.AffectedPaths = paths
+				request.AppliedPaths = new([]string)
+			}
 			batch, observeErr := options.RoslynObserver(ctx, request)
 			if observeErr != nil {
 				return nil, omissions, warnings, observeErr
+			}
+			if options.AffectedPaths != nil && (request.AppliedPaths == nil || *request.AppliedPaths == nil || !graphDeltaSamePaths(request.AffectedPaths, *request.AppliedPaths)) {
+				return nil, omissions, warnings, errors.New("explicit_incomplete: Roslyn worker did not acknowledge the exact project paths")
 			}
 			if batch.Backend != "roslyn" {
 				return nil, omissions, warnings, errors.New("roslyn graph observer returned an unexpected backend")
@@ -276,6 +469,9 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 				return nil, omissions, warnings, fmt.Errorf("roslyn graph observation is not stageable: %w", err)
 			}
 			batches = append(batches, batch)
+			if options.DeltaCoverage != nil && options.AffectedPaths != nil {
+				options.DeltaCoverage.record(root, target.RepoRoot, "roslyn", target.ProjectOrModule, request.AffectedPaths)
+			}
 		}
 	}
 
@@ -285,6 +481,13 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 				backend := map[string]string{"typescript": "tsserver", "python": "pyright", "kotlin": "kotlin-language-server"}[language]
 				omissions = append(omissions, graphOmissionForRepo(backend, "declarations", "backend_gated", "enable_semantic_backend", repo))
 				warnings = append(warnings, "graph backend gated for "+language+"; no semantic claims were emitted")
+			}
+		}
+	}
+	if options.AffectedPaths != nil && options.DeltaCoverage != nil {
+		for _, path := range options.DeltaCoverage.Paths {
+			if len(path.Owners) == 0 {
+				warnings = append(warnings, "explicit_incomplete: uncovered affected path "+path.WorkspacePath)
 			}
 		}
 	}
@@ -551,6 +754,38 @@ func graphTargetsForExplicitSelection(root string, selection graphExplicitSelect
 		return nil
 	}
 	return graphCSharpProjects(root, selection.Repo, []model.WorkspaceEntrypoint{selection.Entrypoint})
+}
+
+func graphTopologyWorkspacePrefix(workspaceRoot, selectedRoot string) (string, error) {
+	rootAbs, err := filepath.Abs(workspaceRoot)
+	if err != nil {
+		return "", fmt.Errorf("explicit_incomplete: workspace topology root is unavailable")
+	}
+	selectedAbs := selectedRoot
+	if !filepath.IsAbs(selectedAbs) {
+		selectedAbs = filepath.Join(rootAbs, selectedAbs)
+	}
+	selectedAbs, err = filepath.Abs(selectedAbs)
+	if err != nil {
+		return "", fmt.Errorf("explicit_incomplete: selected topology root is unavailable")
+	}
+	rootReal, err := filepath.EvalSymlinks(rootAbs)
+	if err != nil {
+		return "", fmt.Errorf("explicit_incomplete: workspace topology root cannot be resolved")
+	}
+	selectedReal, err := filepath.EvalSymlinks(selectedAbs)
+	if err != nil {
+		return "", fmt.Errorf("explicit_incomplete: selected topology root cannot be resolved")
+	}
+	lexical, err := filepath.Rel(rootAbs, selectedAbs)
+	if err != nil || lexical == ".." || strings.HasPrefix(lexical, ".."+string(filepath.Separator)) || filepath.IsAbs(lexical) {
+		return "", fmt.Errorf("explicit_incomplete: selected topology root is outside the workspace")
+	}
+	physical, err := filepath.Rel(rootReal, selectedReal)
+	if err != nil || physical == ".." || strings.HasPrefix(physical, ".."+string(filepath.Separator)) || filepath.IsAbs(physical) || filepath.Clean(physical) != filepath.Clean(lexical) {
+		return "", fmt.Errorf("explicit_incomplete: selected topology root has an unproven symlink mapping")
+	}
+	return filepath.ToSlash(filepath.Clean(lexical)), nil
 }
 
 func graphGoRepos(root string, project model.ProjectFile, targets []graphObservationTarget) []graphGoRepo {

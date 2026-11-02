@@ -40,6 +40,10 @@ public sealed class RoslynService
                 _ => new WorkerResponse(false, "roslyn", Error: $"Unknown method '{request.Method}'", Stats: new WorkerStats(Ms: started.ElapsedMilliseconds)),
             };
         }
+        catch (OperationCanceledException)
+        {
+            return new WorkerResponse(false, "roslyn", Error: "Worker request canceled before completion", ErrorCode: request.Method == "graph_observe" ? "GPH_OBSERVATION_CANCELED" : "canceled", Stats: new WorkerStats());
+        }
         catch (Exception exception)
         {
             var errorCode = "";
@@ -296,6 +300,22 @@ public sealed class RoslynService
 
     private async Task<WorkerResponse> GraphObserveAsync(WorkerRequest request, Stopwatch started, CancellationToken cancellationToken)
     {
+        if (request.Payload is not null && request.Payload.TryGetValue("control_inputs", out var controlRequest))
+        {
+            if (controlRequest.ValueKind == System.Text.Json.JsonValueKind.True)
+                return await GraphObserveControlledAsync(request, started, cancellationToken).ConfigureAwait(false);
+            if (controlRequest.ValueKind != System.Text.Json.JsonValueKind.False)
+                return new WorkerResponse(false, "roslyn", Error: "control_inputs must be a boolean opt-in", ErrorCode: "GPH_CONTROL_REQUEST_INVALID", Stats: new WorkerStats(Ms: started.ElapsedMilliseconds));
+        }
+
+        // Do not silently substitute a full observation for a requested delta.
+        if (!GraphDeltaObservation.TryReadPaths(request.Payload, request.RepoRoot ?? request.Workspace, out var affectedPaths))
+            return new WorkerResponse(false, "roslyn", Error: "Invalid affected_paths", ErrorCode: "GPH_DELTA_SCOPE_INVALID", Stats: new WorkerStats(Ms: started.ElapsedMilliseconds));
+        var partition = request.Payload is not null && request.Payload.TryGetValue("partition_by_project", out var partitionValue) && partitionValue.ValueKind == System.Text.Json.JsonValueKind.True && affectedPaths is not null;
+        string[]? missingPaths = null;
+        string[]? unownedPaths = null;
+        string[]? dependencyPaths = null;
+        string[]? emittedPaths = null;
         var repository = request.Payload.GetString("repository_identity")?.Normalize(NormalizationForm.FormC).Trim();
         var rawModule = request.Payload.GetString("project_or_module");
         if (string.IsNullOrWhiteSpace(repository) || string.IsNullOrWhiteSpace(rawModule))
@@ -357,6 +377,34 @@ public sealed class RoslynService
             {
                 return ProjectNotFoundResponse(started.ElapsedMilliseconds);
             }
+            if (affectedPaths is not null)
+            {
+                var root = Path.GetFullPath(repoRoot);
+                var projectPaths = project.Documents.Where(document => document.FilePath is not null)
+                    .Select(document => Path.GetRelativePath(root, Path.GetFullPath(document.FilePath!)).Replace('\\', '/'))
+                    .ToHashSet(StringComparer.Ordinal);
+                if (partition)
+                {
+                    var applied = new List<string>();
+                    var missing = new List<string>();
+                    var unowned = new List<string>();
+                    foreach (var path in affectedPaths)
+                    {
+                        if (!GraphDeltaObservation.PathIsFile(root, path)) missing.Add(path);
+                        else if (projectPaths.Contains(path)) applied.Add(path);
+                        else unowned.Add(path);
+                    }
+                    affectedPaths = applied.ToArray();
+                    missingPaths = missing.ToArray();
+                    unownedPaths = unowned.ToArray();
+                }
+                else foreach (var affectedPath in affectedPaths)
+                {
+                    var fullPath = Path.GetFullPath(Path.Combine(root, affectedPath));
+                    if (!projectPaths.Contains(affectedPath) && (File.Exists(fullPath) || Directory.Exists(fullPath)))
+                        return new WorkerResponse(false, "roslyn", Error: "Affected path exists but is not an unambiguous project document", ErrorCode: "GPH_DELTA_SCOPE_INCOMPLETE", Stats: new WorkerStats(Ms: started.ElapsedMilliseconds));
+                }
+            }
 
             Compilation? compilation = null;
             try
@@ -381,9 +429,33 @@ public sealed class RoslynService
                 AddCapabilityOmissions(batch, "compiler_errors", "fix_compile_errors");
             }
 
-            var builder = new GraphObservationBuilder(batch, request, project);
+            var selectedPaths = affectedPaths;
+            Dictionary<string, string>? closureDigests = null;
+            if (partition)
+            {
+                (emittedPaths, closureDigests) = await GraphDeltaObservation.ExpandPartialClosureAsync(project, repoRoot, affectedPaths!, cancellationToken).ConfigureAwait(false);
+                var appliedSet = affectedPaths!.ToHashSet(StringComparer.Ordinal);
+                dependencyPaths = emittedPaths.Where(path => !appliedSet.Contains(path)).ToArray();
+                selectedPaths = emittedPaths;
+            }
+            var builder = new GraphObservationBuilder(batch, request, project, selectedPaths, partition);
             await builder.ExtractAsync(cancellationToken).ConfigureAwait(false);
             partial |= builder.Partial;
+            if (partition)
+            {
+                foreach (var path in affectedPaths!.Concat(unownedPaths!))
+                    if (!GraphDeltaObservation.PathIsFile(repoRoot, path))
+                        throw new IOException("Delta path changed during observation");
+                foreach (var entry in closureDigests!)
+                {
+                    if (!GraphDeltaObservation.PathIsFile(repoRoot, entry.Key) ||
+                        !string.Equals(entry.Value, GraphDeltaObservation.FileDigest(Path.Combine(repoRoot, entry.Key)), StringComparison.Ordinal))
+                        throw new IOException("Delta dependency changed during observation");
+                }
+                foreach (var path in missingPaths!)
+                    if (GraphDeltaObservation.PathIsFile(repoRoot, path))
+                        throw new IOException("Delta path changed during observation");
+            }
         }
         catch (OperationCanceledException)
         {
@@ -404,6 +476,8 @@ public sealed class RoslynService
             AddCapabilityOmissions(batch, "semantic_exception", "retry");
         }
 
+        if (affectedPaths is not null && partial)
+            return new WorkerResponse(false, "roslyn", Error: "Selective graph observation is incomplete", ErrorCode: "GPH_DELTA_INCOMPLETE", Stats: new WorkerStats(Ms: started.ElapsedMilliseconds));
         batch.Completeness = partial ? "partial" : "complete";
         NormalizeObservationIds(batch);
         foreach (var capability in GraphCapabilities)
@@ -421,7 +495,180 @@ public sealed class RoslynService
         batch.Unresolved = batch.Unresolved.OrderBy(item => item.Ref, StringComparer.Ordinal).ToList();
         batch.Omissions = batch.Omissions.OrderBy(item => item.Ref, StringComparer.Ordinal).ToList();
         batch.ResourceStats = new GraphObservationResourceStats { ElapsedMilliseconds = started.ElapsedMilliseconds, RssBytes = Environment.WorkingSet };
-        return new WorkerResponse(true, "roslyn", Warnings: batch.Completeness == "partial" ? new List<string> { "partial compiler observation" } : null, Stats: new WorkerStats(Symbols: batch.Nodes.Count, Files: batch.Evidence.Select(item => item.SourceUri).Distinct(StringComparer.Ordinal).Count(), Ms: started.ElapsedMilliseconds), Observation: batch);
+        var acknowledgement = affectedPaths is null ? null : new List<Dictionary<string, object?>>
+        {
+            partition
+                ? new() { ["observation_scope"] = "affected_paths/v2", ["applied_paths"] = affectedPaths, ["missing_paths"] = missingPaths, ["unowned_paths"] = unownedPaths, ["dependency_paths"] = dependencyPaths, ["emitted_paths"] = emittedPaths, ["project_or_module"] = module, ["source_fingerprint"] = batch.SourceFingerprint, ["config_fingerprint"] = batch.ConfigFingerprint }
+                : new() { ["observation_scope"] = "affected_paths/v1", ["applied_paths"] = affectedPaths }
+        };
+        return new WorkerResponse(true, "roslyn", acknowledgement, Warnings: batch.Completeness == "partial" ? new List<string> { "partial compiler observation" } : null, Stats: new WorkerStats(Symbols: batch.Nodes.Count, Files: batch.Evidence.Select(item => item.SourceUri).Distinct(StringComparer.Ordinal).Count(), Ms: started.ElapsedMilliseconds), Observation: batch);
+    }
+
+    private async Task<WorkerResponse> GraphObserveControlledAsync(WorkerRequest request, Stopwatch started, CancellationToken cancellationToken)
+    {
+        WorkerResponse unavailable(string code, string message) =>
+            new(false, "roslyn", Error: message, ErrorCode: code, Stats: new WorkerStats(Ms: started.ElapsedMilliseconds));
+        if (request.Payload is null ||
+            !request.Payload.TryGetValue("partition_by_project", out var partitionValue) ||
+            partitionValue.ValueKind != System.Text.Json.JsonValueKind.True ||
+            !GraphDeltaObservation.TryReadPaths(request.Payload, request.RepoRoot ?? request.Workspace, out var affectedPaths) ||
+            affectedPaths is null)
+            return unavailable("GPH_CONTROL_SCOPE_INCOMPLETE", "Controlled Roslyn observation requires an exact project-partitioned affected_paths request");
+
+        var repository = request.Payload.GetString("repository_identity")?.Normalize(NormalizationForm.FormC).Trim();
+        var rawModule = request.Payload.GetString("project_or_module");
+        if (string.IsNullOrWhiteSpace(repository) || !TryNormalizeProjectModule(rawModule, out var module))
+            return unavailable("GPH_BACKEND_PROVENANCE_MISSING", "Controlled Roslyn observation requires repository and project provenance");
+
+        try
+        {
+            var repoRoot = Path.GetFullPath(request.RepoRoot ?? request.Workspace);
+            if (!Directory.Exists(repoRoot) || GraphDeltaObservation.HasReparsePointInExistingPath(repoRoot, repoRoot))
+                return unavailable("GPH_CONTROL_ROOT_UNSAFE", "Controlled Roslyn repository root is unavailable or linked");
+            var projectPath = Path.GetFullPath(Path.Combine(repoRoot, module.Replace('/', Path.DirectorySeparatorChar)));
+            if (!IsPathInsideRoot(projectPath, repoRoot) || !File.Exists(projectPath) ||
+                GraphDeltaObservation.HasReparsePointInExistingPath(repoRoot, projectPath))
+                return unavailable("GPH_CONTROL_PROJECT_UNSAFE", "Controlled Roslyn project is missing, outside the repository or linked");
+
+            EnsureMsBuildRegistered();
+            using var evaluation = CapturedMsBuildEvaluation.Evaluate(projectPath);
+            var host = CapturedMsBuildToolchain.RequireHost(
+                evaluation.Project.GetPropertyValue("MSBuildToolsPath"),
+                evaluation.Project.GetPropertyValue("MSBuildSDKsPath"));
+            if (evaluation.FileSystem.Inputs.Any(input =>
+                    !IsPathInsideRoot(input.FullPath, repoRoot) && !host.Contains(input.FullPath)))
+                return unavailable("GPH_CONTROL_READSET_INCOMPLETE", "Controlled evaluator read outside the project and pinned SDK roots");
+
+            using var captured = await evaluation.CreateRoslynCompilationAsync(cancellationToken).ConfigureAwait(false);
+            var projectPaths = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var document in captured.Project.Documents)
+            {
+                if (document.FilePath is null) continue;
+                var relative = Path.GetRelativePath(repoRoot, Path.GetFullPath(document.FilePath)).Replace('\\', '/');
+                if (relative == "." || relative == ".." || relative.StartsWith("../", StringComparison.Ordinal) || Path.IsPathRooted(relative))
+                    return unavailable("GPH_CONTROL_SOURCE_OUTSIDE_ROOT", "Controlled compilation contains a source outside the selected repository");
+                projectPaths.Add(relative);
+            }
+
+            var applied = new List<string>();
+            var missing = new List<string>();
+            var unowned = new List<string>();
+            foreach (var path in affectedPaths)
+            {
+                if (!GraphDeltaObservation.PathIsFile(repoRoot, path)) missing.Add(path);
+                else if (projectPaths.Contains(path)) applied.Add(path);
+                else unowned.Add(path);
+            }
+
+            string[] emittedPaths = [];
+            string[] dependencyPaths = [];
+            Dictionary<string, string> closureDigests = new(StringComparer.Ordinal);
+            if (applied.Count > 0)
+            {
+                (emittedPaths, closureDigests) = await GraphDeltaObservation.ExpandPartialClosureAsync(
+                    captured.Project, repoRoot, applied.ToArray(), cancellationToken, captured).ConfigureAwait(false);
+                var capturedSourceDigests = captured.Inputs.Where(input => input.Kind == "source")
+                    .ToDictionary(input => Path.GetRelativePath(repoRoot, input.FullPath).Replace('\\', '/'),
+                        input => input.Sha256, StringComparer.Ordinal);
+                foreach (var entry in closureDigests)
+                    if (!capturedSourceDigests.TryGetValue(entry.Key, out var digest) ||
+                        !string.Equals(digest, entry.Value, StringComparison.OrdinalIgnoreCase))
+                        return unavailable("GPH_CONTROL_SOURCE_CHANGED", "Selected source closure differs from captured compiler bytes");
+                var appliedSet = applied.ToHashSet(StringComparer.Ordinal);
+                dependencyPaths = emittedPaths.Where(path => !appliedSet.Contains(path)).ToArray();
+            }
+
+            var backendVersion = typeof(Compilation).Assembly.GetName().Version?.ToString() ?? "unknown";
+            const string extractorVersion = "mi-lsp-roslyn-controlled-g1-v1";
+            var sourceMaterial = new List<string> { repository, module, backendVersion, extractorVersion, "captured-source-v1" };
+            sourceMaterial.AddRange(captured.Inputs.Where(input => input.Kind == "source")
+                .OrderBy(input => input.FullPath, StringComparer.Ordinal)
+                .Select(input => Path.GetRelativePath(repoRoot, input.FullPath).Replace('\\', '/') + ":" + input.Sha256.ToLowerInvariant()));
+            var configMaterial = string.Join("|", new[]
+            {
+                repository, module, backendVersion, extractorVersion, evaluation.SnapshotId,
+                captured.ReferenceResolutionSnapshotId, captured.SnapshotId, evaluation.Completeness,
+                string.Join(";", captured.CompilerProperties.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(item => item.Key + ":" + GraphObservationBuilder.Sha256(item.Value)))
+            });
+            var batch = new GraphObservationBatch
+            {
+                WorkspaceIdentity = repository,
+                RepositoryIdentity = repository,
+                BackendVersion = backendVersion,
+                ExtractorVersion = extractorVersion,
+                ProjectOrModule = module,
+                SourceFingerprint = GraphObservationBuilder.Sha256(string.Join("|", sourceMaterial)),
+                ConfigFingerprint = GraphObservationBuilder.Sha256(configMaterial),
+                Completeness = "partial"
+            };
+            batch.Capabilities.AddRange(GraphCapabilities.Select(capability => new GraphObservationCapability { Capability = capability }));
+            var builder = new GraphObservationBuilder(batch, request, captured.Project, emittedPaths, closureValidated: true, captured);
+            await builder.ExtractAsync(cancellationToken).ConfigureAwait(false);
+            captured.ValidateInputsUnchanged();
+            AddCapabilityOmissions(batch, "control_inputs_unproven", "capture_host_and_sdk_readset");
+            NormalizeObservationIds(batch);
+            foreach (var capability in GraphCapabilities)
+            {
+                var observed = capability == "declarations" ? batch.Nodes.Count : batch.Edges.Count(edge => edge.Relation == capability);
+                var unresolved = batch.Unresolved.Count(item => item.Capability == capability);
+                var omitted = batch.Omissions.Count(item => item.Capability == capability);
+                batch.Coverage.Add(new GraphObservationCoverage { Capability = capability, Eligible = observed + unresolved + omitted, Observed = observed, Unresolved = unresolved, Omitted = omitted });
+            }
+            batch.Coverage = batch.Coverage.OrderBy(item => item.Capability, StringComparer.Ordinal).ToList();
+            batch.Nodes = batch.Nodes.OrderBy(item => item.Ref, StringComparer.Ordinal).ToList();
+            batch.Edges = batch.Edges.OrderBy(item => item.Relation, StringComparer.Ordinal).ThenBy(item => item.FromRef, StringComparer.Ordinal).ThenBy(item => item.ToRef, StringComparer.Ordinal).ToList();
+            batch.Evidence = batch.Evidence.OrderBy(item => item.Ref, StringComparer.Ordinal).ToList();
+            batch.Unresolved = batch.Unresolved.OrderBy(item => item.Ref, StringComparer.Ordinal).ToList();
+            batch.Omissions = batch.Omissions.OrderBy(item => item.Ref, StringComparer.Ordinal).ToList();
+            batch.ResourceStats = new GraphObservationResourceStats { ElapsedMilliseconds = started.ElapsedMilliseconds, RssBytes = Environment.WorkingSet };
+            var inputs = captured.Inputs.Select(input => new Dictionary<string, object?>
+            {
+                ["path"] = IsPathInsideRoot(input.FullPath, repoRoot)
+                    ? Path.GetRelativePath(repoRoot, input.FullPath).Replace('\\', '/')
+                    : "@host-sdk/" + Path.GetRelativePath(host.ToolsPath, input.FullPath).Replace('\\', '/'),
+                ["kind"] = input.Kind, ["item_type"] = input.ItemType, ["sha256"] = input.Sha256,
+                ["length"] = input.Length, ["metadata"] = input.Metadata
+            }).ToList();
+            var acknowledgement = new List<Dictionary<string, object?>>
+            {
+                new()
+                {
+                    ["observation_scope"] = "affected_paths/v2",
+                    ["applied_paths"] = applied.OrderBy(path => path, StringComparer.Ordinal).ToArray(),
+                    ["missing_paths"] = missing.OrderBy(path => path, StringComparer.Ordinal).ToArray(),
+                    ["unowned_paths"] = unowned.OrderBy(path => path, StringComparer.Ordinal).ToArray(),
+                    ["dependency_paths"] = dependencyPaths,
+                    ["emitted_paths"] = emittedPaths,
+                    ["project_or_module"] = module,
+                    ["source_fingerprint"] = batch.SourceFingerprint,
+                    ["config_fingerprint"] = batch.ConfigFingerprint,
+                    ["control_inputs"] = new Dictionary<string, object?>
+                    {
+                        ["schema_version"] = 1, ["complete"] = false, ["status"] = "explicit_incomplete",
+                        ["evaluation_id"] = evaluation.EvaluationId,
+                        ["evaluation_snapshot_id"] = evaluation.SnapshotId,
+                        ["compiler_snapshot_id"] = captured.SnapshotId,
+                        ["reference_snapshot_id"] = captured.ReferenceResolutionSnapshotId,
+                        ["source_and_reference_bytes_captured"] = captured.SourceAndReferenceBytesCaptured,
+                        ["compiler_control_inputs_complete"] = false,
+                        ["evaluation_coverage"] = evaluation.FileSystem.Coverage,
+                        ["captured_inputs"] = inputs
+                    }
+                }
+            };
+            return new WorkerResponse(false, "roslyn", acknowledgement,
+                Warnings: ["Controlled compiler observation is partial; host/SDK DLL read-set proof is unavailable"],
+                Error: "Controlled Roslyn input receipt is incomplete",
+                ErrorCode: "GPH_CONTROL_RECEIPT_UNAVAILABLE",
+                // A non-OK controlled result never transports stageable IR.
+                Stats: new WorkerStats(Symbols: batch.Nodes.Count, Files: batch.Evidence.Select(item => item.SourceUri).Distinct(StringComparer.Ordinal).Count(), Ms: started.ElapsedMilliseconds));
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception)
+        {
+            return unavailable("GPH_CONTROL_RECEIPT_UNAVAILABLE", "Controlled Roslyn capture or compilation is incomplete");
+        }
     }
 
     private static WorkerResponse ProjectNotFoundResponse(long elapsedMs) => new(false, "roslyn", Error: "Requested project was not found in the repository", ErrorCode: "GPH_BACKEND_PROJECT_NOT_FOUND", Stats: new WorkerStats(Ms: elapsedMs));
@@ -599,6 +846,10 @@ public sealed class RoslynService
         private readonly GraphObservationBatch _batch;
         private readonly WorkerRequest _request;
         private readonly Project _project;
+        private readonly HashSet<string>? _affectedPaths;
+        private readonly bool _closureValidated;
+        private readonly CapturedRoslynCompilation? _capturedCompilation;
+        private readonly HashSet<string> _selectedPaths = new(StringComparer.Ordinal);
         private readonly Dictionary<ISymbol, string> _refs = new(SymbolEqualityComparer.Default);
         private readonly Dictionary<string, string> _refIdentities = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _sourceDigests = new(StringComparer.OrdinalIgnoreCase);
@@ -608,24 +859,60 @@ public sealed class RoslynService
         private int _edgeNumber;
         private int _evidenceNumber;
         public bool Partial { get; private set; }
-        public GraphObservationBuilder(GraphObservationBatch batch, WorkerRequest request, Project project) { _batch = batch; _request = request; _project = project; }
+        public GraphObservationBuilder(GraphObservationBatch batch, WorkerRequest request, Project project, string[]? affectedPaths, bool closureValidated, CapturedRoslynCompilation? capturedCompilation = null)
+        {
+            _batch = batch; _request = request; _project = project;
+            _affectedPaths = affectedPaths is null ? null : new HashSet<string>(affectedPaths, StringComparer.Ordinal);
+            _closureValidated = closureValidated;
+            _capturedCompilation = capturedCompilation;
+        }
 
         public async Task ExtractAsync(CancellationToken cancellationToken)
         {
+            var compilation = await _project.GetCompilationAsync(cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException("Roslyn project compilation is unavailable");
+            if (_capturedCompilation is not null)
+            {
+                if (!ReferenceEquals(compilation, _capturedCompilation.Compilation))
+                    throw new InvalidOperationException("Graph extraction did not use the captured Roslyn compilation instance");
+                foreach (var input in _capturedCompilation.Inputs.Where(input => input.Kind == "source"))
+                {
+                    var path = RelativePath(input.FullPath);
+                    if (!IsSafeSourcePath(path) || !_sourceDigests.TryAdd(path, input.Sha256.ToLowerInvariant()))
+                        throw new InvalidOperationException("Captured source inputs do not map to unique repository owners");
+                }
+            }
             var documents = new List<(Document Document, string Path, string Digest, SyntaxNode Root, SemanticModel Model)>();
             foreach (var document in _project.Documents.OrderBy(item => item.FilePath, StringComparer.Ordinal))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (document.FilePath is null) continue;
                 var path = RelativePath(document.FilePath);
+                if (_affectedPaths is not null && !_affectedPaths.Contains(path)) continue;
                 if (!IsSafeSourcePath(path)) { Partial = true; AddOmission(_batch.ProjectOrModule, "file", "linked_outside_root", "inspect_candidates"); continue; }
                 if (!IsEligibleSourcePath(path)) continue;
+                if (GraphDeltaObservation.HasReparsePointInExistingPath(Path.GetFullPath(_request.RepoRoot ?? _request.Workspace), Path.GetFullPath(document.FilePath)))
+                { Partial = true; continue; }
+                if (!File.Exists(document.FilePath)) continue; // A deleted source contributes no nodes or edges.
+                _selectedPaths.Add(path);
                 var text = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
                 var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-                var model = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
-                if (root is null || model is null) { Partial = true; continue; }
-                var sourceDigest = Sha256(File.ReadAllBytes(document.FilePath));
-                _sourceDigests[path] = sourceDigest;
+                if (root is null) { Partial = true; continue; }
+                var model = _capturedCompilation is null
+                    ? await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false)
+                    : compilation.GetSemanticModel(root.SyntaxTree);
+                if (model is null) { Partial = true; continue; }
+                string sourceDigest;
+                if (_capturedCompilation is not null)
+                {
+                    if (!_sourceDigests.TryGetValue(path, out sourceDigest!))
+                        throw new InvalidOperationException("Selected document is absent from the captured compiler source set");
+                }
+                else
+                {
+                    sourceDigest = Sha256(File.ReadAllBytes(document.FilePath));
+                    _sourceDigests[path] = sourceDigest;
+                }
                 documents.Add((document, path, sourceDigest, root, model));
                 foreach (var node in root.DescendantNodesAndSelf())
                 {
@@ -633,6 +920,11 @@ public sealed class RoslynService
                     if (!IsDeclaration(node)) continue;
                     var symbol = model.GetDeclaredSymbol(node, cancellationToken);
                     if (symbol is null || !symbol.Locations.Any(location => location.IsInSource)) { Partial = true; continue; }
+                    if (_affectedPaths is not null && symbol is not INamespaceSymbol &&
+                        (!_closureValidated
+                            ? symbol.DeclaringSyntaxReferences.Select(reference => reference.SyntaxTree.FilePath).Where(file => !string.IsNullOrEmpty(file)).Distinct(StringComparer.Ordinal).Skip(1).Any()
+                            : symbol.DeclaringSyntaxReferences.Any(reference => string.IsNullOrEmpty(reference.SyntaxTree.FilePath) || !_affectedPaths.Contains(RelativePath(reference.SyntaxTree.FilePath)))))
+                    { Partial = true; continue; }
                     AddNode(symbol, path, sourceDigest, node.GetLocation());
                 }
             }
@@ -665,9 +957,29 @@ public sealed class RoslynService
             AddTypeRelations();
         }
 
+        private void AddAnchorNode(ISymbol symbol, string path, string digest, Location location)
+        {
+            if (_capturedCompilation is not null && (_affectedPaths is null || !_affectedPaths.Contains(path)))
+                throw new InvalidOperationException("Controlled anchor is outside the acknowledged closure");
+            symbol = CanonicalSymbol(symbol);
+            var kind = Kind(symbol);
+            if (string.IsNullOrWhiteSpace(kind) || !IsObservableDeclarationSymbol(symbol, out var identity, out var displayName))
+            { Partial = true; return; }
+            var reference = "roslyn:" + Sha256(identity);
+            if (_refIdentities.TryGetValue(reference, out var existing) && !string.Equals(existing, identity, StringComparison.Ordinal))
+            { Partial = true; return; }
+            if (!_batch.Nodes.Any(node => node.Ref == reference))
+                _batch.Nodes.Add(new GraphObservationNode { Ref = reference, DisplayName = displayName, SourceDigest = digest, Key = new GraphNodeKey { RepositoryIdentity = _batch.RepositoryIdentity, ProjectOrModule = _batch.ProjectOrModule, OwnerPath = path, SymbolKind = kind, SemanticIdentity = identity } });
+            _refs[symbol] = reference;
+            _refIdentities[reference] = identity;
+            _sourceDigests[path] = digest;
+            AddEvidence(reference, null, path, location, digest, "declaration", identity);
+        }
         private static bool IsDeclaration(SyntaxNode node) => node is BaseNamespaceDeclarationSyntax or BaseTypeDeclarationSyntax or DelegateDeclarationSyntax or BaseMethodDeclarationSyntax or PropertyDeclarationSyntax or EventDeclarationSyntax or VariableDeclaratorSyntax;
         private void AddNode(ISymbol symbol, string path, string digest, Location location)
         {
+            if (_capturedCompilation is not null && (_affectedPaths is null || !_affectedPaths.Contains(path)))
+                throw new InvalidOperationException("Controlled declaration is outside the acknowledged closure");
             var kind = Kind(symbol);
             if (string.IsNullOrWhiteSpace(kind)) return;
             symbol = CanonicalSymbol(symbol);
@@ -698,6 +1010,8 @@ public sealed class RoslynService
                 }
                 else
                 {
+                    // The canonical node has one owner/digest. Closure permits
+                    // observing other parts, not attributing their source to it.
                     AddOmission(path, kind, "additional_owner_evidence", "inspect_candidates");
                 }
                 return;
@@ -766,6 +1080,7 @@ public sealed class RoslynService
             {
                 if (pair.Key is not INamedTypeSymbol type) continue;
                 var owner = pair.Key.Locations.FirstOrDefault(item => item.IsInSource);
+                if (owner?.SourceTree?.FilePath is not { } ownerFile || !_selectedPaths.Contains(RelativePath(ownerFile))) continue;
                 if (type.BaseType is { SpecialType: not SpecialType.System_Object } baseType) AddRelation(type, baseType, "extends", owner);
                 var inherited = type.BaseType?.AllInterfaces.Cast<ISymbol>().ToHashSet(SymbolEqualityComparer.Default) ?? new HashSet<ISymbol>(SymbolEqualityComparer.Default);
                 foreach (var iface in type.Interfaces.Where(item => !inherited.Contains(item))) AddRelation(type, iface, "implements", owner);
@@ -809,6 +1124,9 @@ public sealed class RoslynService
             from = CanonicalSymbol(from);
             to = CanonicalSymbol(to);
             var path = ownerPath ?? RelativePath(location?.SourceTree?.FilePath ?? "");
+            if (_capturedCompilation is not null &&
+                (!_selectedPaths.Contains(path) || !_sourceDigests.ContainsKey(path)))
+                throw new InvalidOperationException("Controlled relation source is outside the captured closure");
             var sourceDigest = digest ?? (_sourceDigests.TryGetValue(path, out var registeredDigest) ? registeredDigest : Sha256(FileText(location)));
             var sourceKind = SubjectKind(from);
             if (string.IsNullOrWhiteSpace(Kind(from)))
@@ -842,6 +1160,14 @@ public sealed class RoslynService
                 }
                 return;
             }
+            if (_capturedCompilation is not null && to.Locations.Any(item => item.IsInSource &&
+                (item.SourceTree is null || string.IsNullOrEmpty(item.SourceTree.FilePath) ||
+                 !_selectedPaths.Contains(RelativePath(item.SourceTree.FilePath)))))
+            {
+                Partial = true;
+                AddTypedOmission(path, sourceKind, relation, "source_target_outside_scope", "inspect_candidates");
+                return;
+            }
             if (!TryGetRef(to, out var toRef))
             {
                 if (IsUnsupportedTargetSymbol(to))
@@ -861,15 +1187,25 @@ public sealed class RoslynService
                 }
                 var targetLocation = to.Locations.FirstOrDefault(item => item.IsInSource);
                 var targetPath = targetLocation?.SourceTree?.FilePath is { } targetFile ? RelativePath(targetFile) : "";
-                if (targetLocation is not null && IsSafeSourcePath(targetPath) && _sourceDigests.TryGetValue(targetPath, out var targetDigest))
+                if (targetLocation is not null && IsSafeSourcePath(targetPath))
                 {
-                    AddNode(to, targetPath, targetDigest, targetLocation);
+                    if (!_sourceDigests.TryGetValue(targetPath, out var targetDigest))
+                    {
+                        var targetSourceFile = targetLocation.SourceTree?.FilePath;
+                        var root = Path.GetFullPath(_request.RepoRoot ?? _request.Workspace);
+                        if (targetSourceFile is null || !File.Exists(targetSourceFile) || GraphDeltaObservation.HasReparsePointInExistingPath(root, Path.GetFullPath(targetSourceFile)))
+                        { Partial = true; AddTypedOmission(path, sourceKind, relation, "source_target_not_declared", "inspect_candidates"); return; }
+                        targetDigest = Sha256(File.ReadAllBytes(targetSourceFile));
+                        AddAnchorNode(to, targetPath, targetDigest, targetLocation);
+                    }
+                    else AddNode(to, targetPath, targetDigest, targetLocation);
                     if (TryGetRef(to, out toRef))
                     {
                         AddRelation(from, to, relation, location, ownerPath, digest);
                         return;
                     }
                 }
+                if (_affectedPaths is not null) Partial = true;
                 AddTypedOmission(path, sourceKind, relation, "source_target_not_declared", "inspect_candidates");
                 return;
             }
@@ -1201,7 +1537,9 @@ public sealed class RoslynService
                 throw new InvalidOperationException("No MSBuild instance found for Roslyn worker");
             }
 
+            var toolchain = CapturedMsBuildToolchain.PrepareHost(instance.MSBuildPath);
             MSBuildLocator.RegisterInstance(instance);
+            CapturedMsBuildToolchain.PublishRegisteredHost(toolchain);
             _msbuildRegistered = true;
         }
     }

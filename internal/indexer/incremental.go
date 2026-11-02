@@ -373,6 +373,8 @@ func incrementalIndexWithGraphProgressAndChanges(ctx context.Context, workspaceR
 	var docs []model.DocRecord
 	var docEdges []model.DocEdge
 	var docMentions []model.DocMention
+	var topologyWitness *model.GraphTopologyWitness
+	graphOptions.TopologyWitnessOut = &topologyWitness
 	graphRepair, _, err := incrementalGraphRepairState(ctx, workspaceRoot, hasCodeChanges)
 	if err != nil {
 		return Result{}, err
@@ -409,7 +411,7 @@ func incrementalIndexWithGraphProgressAndChanges(ctx context.Context, workspaceR
 	publishGraph := false
 	if observeGraph {
 		var identityWarning string
-		graphRequest, publishGraph, identityWarning = documentationGraphRequest(ctx, workspaceRoot, projectFile, graphBatches, docs, docEdges, docMentions, time.Now().UTC())
+		graphRequest, publishGraph, identityWarning = documentationGraphRequest(ctx, workspaceRoot, projectFile, graphBatches, docs, docEdges, docMentions, topologyWitness, time.Now().UTC())
 		if identityWarning != "" {
 			graphWarnings = appendIfMissing(graphWarnings, identityWarning)
 		}
@@ -760,6 +762,8 @@ func legacyIncrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot,
 	var docs []model.DocRecord
 	var docEdges []model.DocEdge
 	var docMentions []model.DocMention
+	var topologyWitness *model.GraphTopologyWitness
+	graphOptions.TopologyWitnessOut = &topologyWitness
 	graphRepair, catalogGeneration, err := incrementalGraphRepairState(ctx, workspaceRoot, hasChanges)
 	if err != nil {
 		return Result{}, err
@@ -974,7 +978,7 @@ func legacyIncrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot,
 				if err := reportProgress(ctx, progress, Progress{Stage: "graph.activate", Files: processedFiles, Symbols: len(allSymbols), Docs: len(docs), Force: true}); err != nil {
 					return err
 				}
-				request := GraphAssemblyRequest{Batches: graphBatches, Docs: docs, DocEdges: docEdges, DocMentions: docMentions, CreatedAt: time.Now().UTC()}
+				request := GraphAssemblyRequest{Batches: graphBatches, TopologyWitness: topologyWitness, Docs: docs, DocEdges: docEdges, DocMentions: docMentions, CreatedAt: time.Now().UTC()}
 				bundle, assembleErr := AssembleGraphObservationBatches(request)
 				if assembleErr != nil {
 					return fmt.Errorf("incremental graph staging failed: %w", assembleErr)

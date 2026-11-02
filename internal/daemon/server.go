@@ -638,13 +638,13 @@ func SpawnBackgroundWithOptions(repoRoot string, maxWorkers int, idleTimeout tim
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		state, probeErr := probeDaemonWithClient(ctx, probeClient)
+		state, probeErr := probeLegacyOwner(ctx, probeClient)
 		cancel()
 		if probeErr == nil {
 			if healthLock != nil {
-				writeLegacyHealth(healthDir)
+				writeLegacyHealth(healthDir, state)
 			} else {
-				rememberLegacyHealth()
+				rememberLegacyHealthForOwner(state)
 			}
 			return state, true, nil
 		}
@@ -834,27 +834,38 @@ func daemonErrorEnvelope(request model.CommandRequest, err error, fallbackKind s
 }
 
 func probeDaemon(ctx context.Context) (model.DaemonState, error) {
-	return probeDaemonWithClient(ctx, healthProbeClientName("", ""))
+	state, err := probeDaemonWithClient(ctx, healthProbeClientName("", ""))
+	if err == nil && !elasticEnabled() {
+		rememberLegacyHealthForOwner(state)
+	}
+	return state, err
 }
 
 func probeDaemonWithClient(ctx context.Context, clientName string) (model.DaemonState, error) {
+	return probeDaemonWithTransport(ctx, clientName, NewClient())
+}
+
+func probeDaemonWithTransport(ctx context.Context, clientName string, client *Client) (model.DaemonState, error) {
 	if clientName == "" {
 		clientName = healthProbeClientName("", "")
 	}
-	response, err := NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: model.QueryOptions{ClientName: clientName}})
+	response, err := client.Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: model.QueryOptions{ClientName: clientName}})
 	if err != nil {
 		return model.DaemonState{}, err
 	}
-	if len(response.Warnings) > 0 && !response.Ok {
-		return model.DaemonState{}, errors.New(strings.Join(response.Warnings, "; "))
+	if !response.Ok {
+		return model.DaemonState{}, fmt.Errorf("daemon status unsuccessful: %s", strings.Join(response.Warnings, "; "))
 	}
 	body, marshalErr := json.Marshal(response.Items)
 	if marshalErr != nil {
 		return model.DaemonState{}, marshalErr
 	}
 	var decoded []map[string]any
-	if err := json.Unmarshal(body, &decoded); err != nil || len(decoded) == 0 {
-		return loadDaemonState()
+	if err := json.Unmarshal(body, &decoded); err != nil || len(decoded) != 1 {
+		return model.DaemonState{}, errors.New("invalid daemon status response: expected one state item")
+	}
+	if decoded[0]["state"] == nil {
+		return model.DaemonState{}, errors.New("invalid daemon status response: missing state")
 	}
 	stateBody, marshalErr := json.Marshal(decoded[0]["state"])
 	if marshalErr != nil {
@@ -863,6 +874,10 @@ func probeDaemonWithClient(ctx context.Context, clientName string) (model.Daemon
 	var state model.DaemonState
 	if err := json.Unmarshal(stateBody, &state); err != nil {
 		return model.DaemonState{}, err
+	}
+	if state.PID <= 0 || state.RunID <= 0 || state.StartedAt.IsZero() || state.Endpoint == "" || state.Version == "" ||
+		state.ProtocolVersion == "" || state.ExecutablePath == "" || state.ExecutableSHA256 == "" || state.AdminURL == "" || state.AdminToken == "" {
+		return model.DaemonState{}, errors.New("invalid daemon status response: incomplete owner state")
 	}
 	return state, nil
 }

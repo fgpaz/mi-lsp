@@ -1,10 +1,12 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io"
 	"sort"
 	"strings"
 
@@ -687,6 +689,44 @@ func (s *GraphQuerySnapshot) Validate(ctx context.Context) (model.GraphGeneratio
 		return model.GraphGeneration{}, model.ErrGraphGenerationInvalid
 	}
 	return validateGraphGenerationConn(ctx, s.tx, s.generation.GenerationID)
+}
+
+// GraphTopologyWitness returns only the canonical topology metadata committed
+// with this immutable generation. It never reads workspace files.
+func (s *GraphQuerySnapshot) GraphTopologyWitness(ctx context.Context) (model.GraphTopologyWitness, error) {
+	incomplete := func() (model.GraphTopologyWitness, error) {
+		return model.GraphTopologyWitness{}, &model.GraphQueryError{Code: "GPH_QUERY_TOPOLOGY_INCOMPLETE", Field: "topology_witness", Message: "explicit_incomplete: pinned generation has no valid native Go topology witness"}
+	}
+	if s == nil || s.closed || ctx == nil {
+		return incomplete()
+	}
+	if err := ctx.Err(); err != nil {
+		return model.GraphTopologyWitness{}, err
+	}
+	var version int
+	var raw string
+	var digest []byte
+	err := s.tx.QueryRowContext(ctx, `SELECT witness_version, topology_json, topology_digest FROM graph_generation_topology WHERE generation_id=?`, digestArg(s.generation.GenerationID)).Scan(&version, &raw, &digest)
+	if err != nil {
+		return incomplete()
+	}
+	if version != model.GraphTopologyWitnessVersion || len(digest) != len(model.GraphDigest{}) || len(raw) > model.GraphTopologyMaxJSONBytes {
+		return incomplete()
+	}
+	var witness model.GraphTopologyWitness
+	decoder := json.NewDecoder(bytes.NewBufferString(raw))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&witness) != nil {
+		return incomplete()
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return incomplete()
+	}
+	canonical, err := witness.CanonicalJSON()
+	if err != nil || !bytes.Equal(canonical, []byte(raw)) || !bytes.Equal(digest, witness.Digest[:]) || witness.ValidateConfigFingerprint(s.generation.ConfigFingerprint) != nil || witness.WorkspaceIdentity != s.generation.WorkspaceIdentity || witness.RepositoryIdentity != s.generation.RepositoryIdentity {
+		return incomplete()
+	}
+	return witness, nil
 }
 
 func DecodeGraphCandidates(raw string) []string {

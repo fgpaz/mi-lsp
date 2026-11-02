@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -182,6 +183,26 @@ func sortStringSet(values *[]string) {
 }
 
 func collectCanonicalDocFiles(ctx context.Context, root string, profile model.DocsReadProfile, matcher *workspace.IgnoreMatcher) ([]canonicalDocFile, []string, error) {
+	return collectCanonicalDocFilesWithBudget(ctx, root, profile, matcher, nil, nil)
+}
+
+func collectCanonicalDocFilesBounded(ctx context.Context, root string, profile model.DocsReadProfile, matcher *workspace.IgnoreMatcher, limits canonicalDocScanLimits) ([]canonicalDocFile, []string, error) {
+	if ctx == nil || limits.maxEntries < 1 || limits.maxDirectories < 1 || limits.maxFiles < 1 {
+		return nil, nil, fmt.Errorf("explicit_incomplete: invalid canonical document scan limits")
+	}
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	rootReal, setupSource, err := validateCanonicalDocScanInputs(root, profile, matcher)
+	if err != nil {
+		return nil, nil, err
+	}
+	budget := &canonicalDocScanBudget{limits: limits, rootReal: rootReal}
+	return collectCanonicalDocFilesWithBudget(ctx, root, profile, matcher, budget, &setupSource)
+}
+
+func collectCanonicalDocFilesWithBudget(ctx context.Context, root string, profile model.DocsReadProfile, matcher *workspace.IgnoreMatcher, budget *canonicalDocScanBudget, selectedSetup *docgraph.SetupWikiSource) ([]canonicalDocFile, []string, error) {
 	seen := make(map[string]canonicalDocFile)
 	excluded := make(map[string]struct{})
 	visit := func(path string) {
@@ -205,51 +226,86 @@ func collectCanonicalDocFiles(ctx context.Context, root string, profile model.Do
 		rel = filepath.ToSlash(rel)
 		seen[rel] = canonicalDocFile{path: path, relativePath: rel}
 	}
+	scanPattern := visitDocProfilePattern
+	if budget != nil {
+		scanPattern = func(ctx context.Context, root, pattern string, matcher *workspace.IgnoreMatcher, visit func(string)) error {
+			return visitDocProfilePatternBounded(ctx, root, pattern, matcher, budget, visit)
+		}
+	}
 	for _, family := range profile.Families {
 		for _, pattern := range family.Paths {
-			if err := visitDocProfilePattern(ctx, root, pattern, matcher, visit); err != nil {
+			if err := ctx.Err(); err != nil {
+				return nil, nil, err
+			}
+			if err := scanPattern(ctx, root, pattern, matcher, visit); err != nil {
 				return nil, nil, err
 			}
 		}
 	}
 	for _, pattern := range profile.GenericDocs.Paths {
-		if err := visitDocProfilePattern(ctx, root, pattern, matcher, visit); err != nil {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
+		if err := scanPattern(ctx, root, pattern, matcher, visit); err != nil {
 			return nil, nil, err
 		}
 	}
-	setupSource := docgraph.ResolveSetupWikiSource(root)
+	var setupSource docgraph.SetupWikiSource
+	if selectedSetup != nil {
+		setupSource = *selectedSetup
+	} else {
+		setupSource = docgraph.ResolveSetupWikiSource(root)
+	}
 	if setupSource.Configured && setupSource.State == "resolved" {
-		walkErr := filepath.WalkDir(setupSource.Root, func(path string, entry os.DirEntry, walkErr error) error {
-			if err := ctx.Err(); err != nil {
-				return err
+		if budget != nil {
+			setupVisit := func(path string) {
+				if err := ctx.Err(); err != nil {
+					return
+				}
+				if IsMarkdownPath(path) {
+					rel := docgraph.WorkspacePathForSource(root, path)
+					seen[rel] = canonicalDocFile{path: path, relativePath: rel}
+				}
 			}
-			if walkErr != nil {
-				return walkErr
+			if err := walkCanonicalDocDirBounded(ctx, root, setupSource.Root, nil, budget, true, setupVisit); err != nil {
+				return nil, nil, fmt.Errorf("scan Setup wiki source: %w", err)
 			}
-			if entry.Type()&os.ModeSymlink != 0 {
+		} else {
+			walkErr := filepath.WalkDir(setupSource.Root, func(path string, entry os.DirEntry, walkErr error) error {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				if walkErr != nil {
+					return walkErr
+				}
+				if entry.Type()&os.ModeSymlink != 0 {
+					if entry.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
+				}
 				if entry.IsDir() {
-					return filepath.SkipDir
+					if entry.Name() == ".git" {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				if IsMarkdownPath(path) {
+					rel := docgraph.WorkspacePathForSource(root, path)
+					seen[rel] = canonicalDocFile{path: path, relativePath: rel}
 				}
 				return nil
-			}
-			if entry.IsDir() {
-				if entry.Name() == ".git" {
-					return filepath.SkipDir
+			})
+			if walkErr != nil {
+				if ctx.Err() != nil {
+					return nil, nil, ctx.Err()
 				}
-				return nil
+				return nil, nil, fmt.Errorf("scan Setup wiki source: %w", walkErr)
 			}
-			if IsMarkdownPath(path) {
-				rel := docgraph.WorkspacePathForSource(root, path)
-				seen[rel] = canonicalDocFile{path: path, relativePath: rel}
-			}
-			return nil
-		})
-		if walkErr != nil {
-			if ctx.Err() != nil {
-				return nil, nil, ctx.Err()
-			}
-			return nil, nil, fmt.Errorf("scan Setup wiki source: %w", walkErr)
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
 	}
 	files := make([]canonicalDocFile, 0, len(seen))
 	for _, file := range seen {
@@ -338,6 +394,511 @@ func walkCanonicalDocDir(ctx context.Context, root, dir string, matcher *workspa
 		visit(path)
 		return nil
 	})
+}
+
+const (
+	canonicalDocScanMaxEntries = 16384
+	canonicalDocScanMaxDirs    = 4096
+	canonicalDocScanMaxFiles   = 4096
+)
+
+type canonicalDocScanLimits struct {
+	maxEntries, maxDirectories, maxFiles int
+}
+
+type canonicalDocScanBudget struct {
+	limits                      canonicalDocScanLimits
+	rootReal                    string
+	entries, directories, files int
+}
+
+func defaultCanonicalDocScanLimits() canonicalDocScanLimits {
+	return canonicalDocScanLimits{maxEntries: canonicalDocScanMaxEntries, maxDirectories: canonicalDocScanMaxDirs, maxFiles: canonicalDocScanMaxFiles}
+}
+
+func validateCanonicalDocScanInputs(root string, profile model.DocsReadProfile, matcher *workspace.IgnoreMatcher) (string, docgraph.SetupWikiSource, error) {
+	var noSource docgraph.SetupWikiSource
+	info, err := os.Lstat(root)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return "", noSource, fmt.Errorf("explicit_incomplete: canonical document scan root is unavailable or unsafe")
+	}
+	rootReal, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", noSource, fmt.Errorf("explicit_incomplete: canonical document scan root cannot be resolved")
+	}
+	for _, family := range profile.Families {
+		for _, pattern := range family.Paths {
+			if err := validateCanonicalDocPattern(root, rootReal, pattern, matcher); err != nil {
+				return "", noSource, err
+			}
+		}
+	}
+	for _, pattern := range profile.GenericDocs.Paths {
+		if err := validateCanonicalDocPattern(root, rootReal, pattern, matcher); err != nil {
+			return "", noSource, err
+		}
+	}
+	source := docgraph.ResolveSetupWikiSource(root)
+	if source.Configured {
+		if source.State != "resolved" || source.Root == "" {
+			return "", noSource, fmt.Errorf("explicit_incomplete: configured Setup document source is unresolved")
+		}
+		if err := validateCanonicalDocRoot(root, rootReal, source.Root); err != nil {
+			return "", noSource, fmt.Errorf("explicit_incomplete: configured Setup document root is unsafe")
+		}
+	}
+	return rootReal, source, nil
+}
+
+func validateCanonicalDocPattern(root, rootReal, pattern string, matcher *workspace.IgnoreMatcher) error {
+	raw := strings.TrimSpace(pattern)
+	if raw == "" {
+		return nil
+	}
+	if strings.Contains(raw, "\\") {
+		return fmt.Errorf("explicit_incomplete: canonical document pattern is not slash-normalized")
+	}
+	value := filepath.ToSlash(raw)
+	if strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") || (len(value) > 1 && value[1] == ':') || filepath.IsAbs(filepath.FromSlash(value)) {
+		return fmt.Errorf("explicit_incomplete: canonical document pattern is absolute")
+	}
+	trailingSlash := strings.HasSuffix(value, "/")
+	for strings.HasPrefix(value, "./") {
+		value = strings.TrimPrefix(value, "./")
+	}
+	if value == "" && trailingSlash {
+		value = "."
+	}
+	segments := strings.Split(strings.TrimSuffix(value, "/"), "/")
+	if len(segments) == 0 || (len(segments) == 1 && segments[0] == "") {
+		return fmt.Errorf("explicit_incomplete: canonical document pattern is empty")
+	}
+	for _, segment := range segments {
+		if segment == "" || segment == ".." {
+			return fmt.Errorf("explicit_incomplete: canonical document pattern traverses its root")
+		}
+		if segment == "." {
+			continue
+		}
+		if _, err := filepath.Match(segment, segment); err != nil {
+			return fmt.Errorf("explicit_incomplete: canonical document pattern is malformed")
+		}
+	}
+	current := root
+	for i, segment := range segments {
+		if segment == "." {
+			continue
+		}
+		if strings.ContainsAny(segment, "*?[") {
+			break
+		}
+		current = filepath.Join(current, filepath.FromSlash(segment))
+		info, err := os.Lstat(current)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("explicit_incomplete: canonical document scan prefix cannot be inspected")
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			if err := validateCanonicalDocSymlink(rootReal, current); err != nil {
+				return err
+			}
+			// Containment is checked above even for ignored literals. Only a
+			// fully specified path may use the same ignore decision as visit;
+			// glob prefixes cannot prove their descendants are all excluded.
+			if matcher != nil && !strings.ContainsAny(value, "*?[") && matcher.ShouldIgnore(root, filepath.Join(root, filepath.FromSlash(value))) {
+				return nil
+			}
+			return fmt.Errorf("explicit_incomplete: canonical document scan prefix is symlinked")
+		}
+		if err := validateCanonicalDocContainedPath(rootReal, current); err != nil {
+			return err
+		}
+		if i < len(segments)-1 && !info.IsDir() {
+			return nil
+		}
+	}
+	return nil
+}
+
+func validateCanonicalDocRoot(root, rootReal, candidate string) error {
+	candidateAbs, err := filepath.Abs(candidate)
+	if err != nil {
+		return fmt.Errorf("explicit_incomplete: canonical document scan root cannot be resolved")
+	}
+	rel, err := filepath.Rel(root, candidateAbs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return fmt.Errorf("explicit_incomplete: canonical document scan root escapes its workspace")
+	}
+	info, err := os.Lstat(candidateAbs)
+	if err != nil || !info.IsDir() {
+		return fmt.Errorf("explicit_incomplete: canonical document scan root is unavailable")
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		if err := validateCanonicalDocSymlink(rootReal, candidateAbs); err != nil {
+			return err
+		}
+		return fmt.Errorf("explicit_incomplete: canonical document scan root is symlinked")
+	}
+	return validateCanonicalDocContainedPath(rootReal, candidateAbs)
+}
+
+func validateCanonicalDocContainedPath(rootReal, candidate string) error {
+	real, err := filepath.EvalSymlinks(candidate)
+	if err != nil {
+		return fmt.Errorf("explicit_incomplete: canonical document path cannot be resolved")
+	}
+	rel, err := filepath.Rel(rootReal, real)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return fmt.Errorf("explicit_incomplete: canonical document path escapes its workspace")
+	}
+	return nil
+}
+
+func validateCanonicalDocSymlink(rootReal, candidate string) error {
+	real, err := filepath.EvalSymlinks(candidate)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("explicit_incomplete: canonical document symlink cannot be resolved")
+	}
+	rel, err := filepath.Rel(rootReal, real)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return fmt.Errorf("explicit_incomplete: canonical document symlink escapes its workspace")
+	}
+	return nil
+}
+
+func visitDocProfilePatternBounded(ctx context.Context, root, pattern string, matcher *workspace.IgnoreMatcher, budget *canonicalDocScanBudget, visit func(string)) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	trimmed := filepath.ToSlash(strings.TrimSpace(pattern))
+	if trimmed == "" {
+		return nil
+	}
+	if strings.HasSuffix(trimmed, "/") {
+		dir := filepath.Join(root, filepath.FromSlash(strings.TrimSuffix(trimmed, "/")))
+		return walkCanonicalDocDirBounded(ctx, root, dir, matcher, budget, false, visit)
+	}
+	if strings.ContainsAny(trimmed, "*?[") {
+		return walkCanonicalDocGlobBounded(ctx, root, trimmed, matcher, budget, visit)
+	}
+	path := filepath.Join(root, filepath.FromSlash(trimmed))
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("explicit_incomplete: canonical document path cannot be inspected")
+	}
+	if info.IsDir() {
+		return walkCanonicalDocDirBounded(ctx, root, path, matcher, budget, false, visit)
+	}
+	if err := budget.countFile(); err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return validateBoundedCanonicalDocSymlink(root, budget.rootReal, path, matcher)
+	}
+	if err := validateCanonicalDocContainedPath(budget.rootReal, path); err != nil {
+		return err
+	}
+	visit(path)
+	return ctx.Err()
+}
+
+func walkCanonicalDocGlobBounded(ctx context.Context, root, pattern string, matcher *workspace.IgnoreMatcher, budget *canonicalDocScanBudget, visit func(string)) error {
+	value := filepath.ToSlash(filepath.Clean(filepath.FromSlash(pattern)))
+	segments := strings.Split(value, "/")
+	current := []string{root}
+	for index, segment := range segments {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		last := index == len(segments)-1
+		next := make([]string, 0)
+		for _, base := range current {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if strings.ContainsAny(segment, "*?[") {
+				entries, err := budget.readDirectory(ctx, base)
+				if err != nil {
+					return err
+				}
+				for _, entry := range entries {
+					if err := ctx.Err(); err != nil {
+						return err
+					}
+					matched, err := filepath.Match(segment, entry.Name())
+					if err != nil {
+						return fmt.Errorf("explicit_incomplete: canonical document glob is malformed")
+					}
+					if !matched {
+						continue
+					}
+					candidate := filepath.Join(base, entry.Name())
+					if last {
+						if err := visitBoundedGlobMatch(ctx, root, candidate, matcher, budget, visit, true); err != nil {
+							return err
+						}
+						continue
+					}
+					info, err := os.Lstat(candidate)
+					if os.IsNotExist(err) {
+						return fmt.Errorf("explicit_incomplete: canonical document glob changed during enumeration")
+					}
+					if err != nil {
+						return fmt.Errorf("explicit_incomplete: canonical document glob entry cannot be inspected")
+					}
+					if info.Mode()&os.ModeSymlink != 0 {
+						if err := validateBoundedCanonicalDocGlobPrefixSymlink(budget.rootReal, candidate); err != nil {
+							return err
+						}
+						continue
+					}
+					if info.IsDir() {
+						if err := validateCanonicalDocContainedPath(budget.rootReal, candidate); err != nil {
+							return err
+						}
+						next = append(next, candidate)
+					}
+				}
+				continue
+			}
+			candidate := filepath.Join(base, filepath.FromSlash(segment))
+			info, err := os.Lstat(candidate)
+			if os.IsNotExist(err) {
+				continue
+			}
+			if err != nil {
+				return fmt.Errorf("explicit_incomplete: canonical document glob prefix cannot be inspected")
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				if last {
+					if err := visitBoundedGlobMatch(ctx, root, candidate, matcher, budget, visit, false); err != nil {
+						return err
+					}
+				} else if err := validateBoundedCanonicalDocGlobPrefixSymlink(budget.rootReal, candidate); err != nil {
+					return err
+				}
+				continue
+			}
+			if last {
+				if err := visitBoundedGlobMatch(ctx, root, candidate, matcher, budget, visit, false); err != nil {
+					return err
+				}
+			} else if info.IsDir() {
+				if err := validateCanonicalDocContainedPath(budget.rootReal, candidate); err != nil {
+					return err
+				}
+				next = append(next, candidate)
+			}
+		}
+		if last {
+			return nil
+		}
+		current = next
+		if len(current) == 0 {
+			return nil
+		}
+	}
+	return nil
+}
+
+func validateBoundedCanonicalDocSymlink(root, rootReal, path string, matcher *workspace.IgnoreMatcher) error {
+	if err := validateCanonicalDocSymlink(rootReal, path); err != nil {
+		return err
+	}
+	if matcher != nil && matcher.ShouldIgnore(root, path) {
+		return nil
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return fmt.Errorf("explicit_incomplete: canonical document symlink path cannot be assigned to this workspace")
+	}
+	if isCanonicalGraphDoc(filepath.ToSlash(rel), false) {
+		return fmt.Errorf("explicit_incomplete: canonical document symlink cannot be read as a physical owner")
+	}
+	return nil
+}
+
+func validateBoundedCanonicalDocGlobPrefixSymlink(rootReal, path string) error {
+	if err := validateCanonicalDocSymlink(rootReal, path); err != nil {
+		return err
+	}
+	return fmt.Errorf("explicit_incomplete: canonical document glob prefix is symlinked")
+}
+
+func visitBoundedGlobMatch(ctx context.Context, root, candidate string, matcher *workspace.IgnoreMatcher, budget *canonicalDocScanBudget, visit func(string), entryCounted bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	info, err := os.Lstat(candidate)
+	if err != nil {
+		return fmt.Errorf("explicit_incomplete: canonical document glob match changed during enumeration")
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return validateBoundedCanonicalDocSymlink(root, budget.rootReal, candidate, matcher)
+	}
+	if err := validateCanonicalDocContainedPath(budget.rootReal, candidate); err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return walkCanonicalDocDirBounded(ctx, root, candidate, matcher, budget, false, visit)
+	}
+	if !entryCounted {
+		if err := budget.countFile(); err != nil {
+			return err
+		}
+	}
+	visit(candidate)
+	return ctx.Err()
+}
+
+func walkCanonicalDocDirBounded(ctx context.Context, root, dir string, matcher *workspace.IgnoreMatcher, budget *canonicalDocScanBudget, skipGit bool, visit func(string)) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	info, err := os.Lstat(dir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("explicit_incomplete: canonical document directory cannot be inspected")
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return validateCanonicalDocSymlink(budget.rootReal, dir)
+	}
+	if !info.IsDir() {
+		return nil
+	}
+	if err := validateCanonicalDocContainedPath(budget.rootReal, dir); err != nil {
+		return err
+	}
+	if (skipGit && filepath.Base(filepath.Clean(dir)) == ".git") || (matcher != nil && matcher.ShouldIgnore(root, dir)) {
+		return nil
+	}
+	stack := []string{dir}
+	for len(stack) > 0 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		current := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		entries, err := budget.readDirectory(ctx, current)
+		if err != nil {
+			return err
+		}
+		children := make([]string, 0)
+		for _, entry := range entries {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			path := filepath.Join(current, entry.Name())
+			info, err := os.Lstat(path)
+			if err != nil {
+				return fmt.Errorf("explicit_incomplete: canonical document entry changed during enumeration")
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				if err := validateBoundedCanonicalDocSymlink(root, budget.rootReal, path, matcher); err != nil {
+					return err
+				}
+				continue
+			}
+			if err := validateCanonicalDocContainedPath(budget.rootReal, path); err != nil {
+				return err
+			}
+			if info.IsDir() {
+				if (skipGit && entry.Name() == ".git") || (matcher != nil && matcher.ShouldIgnore(root, path)) {
+					continue
+				}
+				children = append(children, path)
+				continue
+			}
+			visit(path)
+		}
+		for index := len(children) - 1; index >= 0; index-- {
+			stack = append(stack, children[index])
+		}
+	}
+	return ctx.Err()
+}
+
+func (budget *canonicalDocScanBudget) countFile() error {
+	budget.files++
+	if budget.files > budget.limits.maxFiles {
+		return fmt.Errorf("explicit_incomplete: canonical document scan file budget exceeded")
+	}
+	return nil
+}
+
+func (budget *canonicalDocScanBudget) readDirectory(ctx context.Context, dir string) ([]os.DirEntry, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := validateCanonicalDocContainedPath(budget.rootReal, dir); err != nil {
+		return nil, err
+	}
+	info, err := os.Lstat(dir)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("explicit_incomplete: canonical document scan directory is unsafe")
+	}
+	budget.directories++
+	if budget.directories > budget.limits.maxDirectories {
+		return nil, fmt.Errorf("explicit_incomplete: canonical document scan directory budget exceeded")
+	}
+	file, err := os.Open(dir)
+	if err != nil {
+		return nil, fmt.Errorf("explicit_incomplete: canonical document scan directory cannot be opened")
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !opened.IsDir() || !os.SameFile(info, opened) {
+		return nil, fmt.Errorf("explicit_incomplete: canonical document scan directory changed before read")
+	}
+	entries := make([]os.DirEntry, 0)
+	const chunkSize = 256
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		remaining := budget.limits.maxEntries - budget.entries
+		n := chunkSize
+		if remaining < n {
+			n = remaining + 1
+		}
+		if n < 1 {
+			n = 1
+		}
+		batch, readErr := file.ReadDir(n)
+		for _, entry := range batch {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			budget.entries++
+			if budget.entries > budget.limits.maxEntries {
+				return nil, fmt.Errorf("explicit_incomplete: canonical document scan entry budget exceeded")
+			}
+			if !entry.IsDir() {
+				if err := budget.countFile(); err != nil {
+					return nil, err
+				}
+			}
+			entries = append(entries, entry)
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return nil, fmt.Errorf("explicit_incomplete: canonical document directory read failed")
+		}
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	return entries, nil
 }
 
 // IsMarkdownPath reports whether a path has an extension supported by the docs indexer.

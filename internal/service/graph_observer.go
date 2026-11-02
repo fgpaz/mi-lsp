@@ -14,6 +14,9 @@ import (
 
 func (a *App) graphObserver() indexer.GraphObserver {
 	return func(ctx context.Context, request indexer.GraphObservationRequest) (model.GraphObservationBatch, error) {
+		if request.AffectedPaths != nil {
+			return a.observeSelectiveGraphRequest(ctx, request, request.AffectedPaths)
+		}
 		backend := request.Backend
 		if backend == "" {
 			backend = "roslyn"

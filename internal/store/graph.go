@@ -1,11 +1,13 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -178,6 +180,9 @@ func stageGraphGenerationConn(ctx context.Context, q graphConn, b *model.GraphBu
 			if _, validationErr := validateGraphGenerationConn(ctx, q, g.GenerationID); validationErr != nil {
 				return model.ErrGraphGenerationCorrupt
 			}
+			if b.Topology != nil && requireGraphTopologyWitnessConn(ctx, q, g, b.Topology) != nil {
+				return model.ErrGraphGenerationCorrupt
+			}
 			return nil
 		}
 		if existing.Status == model.GraphGenerationRetired {
@@ -191,6 +196,9 @@ func stageGraphGenerationConn(ctx context.Context, q graphConn, b *model.GraphBu
 			if _, validationErr := validateGraphGenerationConn(ctx, q, g.GenerationID); validationErr != nil {
 				return model.ErrGraphGenerationCorrupt
 			}
+			if b.Topology != nil && requireGraphTopologyWitnessConn(ctx, q, g, b.Topology) != nil {
+				return model.ErrGraphGenerationCorrupt
+			}
 			return nil
 		}
 		if !generationMetadataEqual(existing, g) {
@@ -199,7 +207,19 @@ func stageGraphGenerationConn(ctx context.Context, q graphConn, b *model.GraphBu
 		if _, loadErr = streamGraph(ctx, q, g.GenerationID, existing); loadErr != nil {
 			return model.ErrGraphGenerationCorrupt
 		}
+		if b.Topology != nil && requireGraphTopologyWitnessConn(ctx, q, g, b.Topology) != nil {
+			return model.ErrGraphGenerationCorrupt
+		}
 		return nil
+	}
+	if b.Topology != nil {
+		topologyJSON, topologyErr := b.Topology.CanonicalJSON()
+		if topologyErr != nil {
+			return model.ErrGraphGenerationCorrupt
+		}
+		if _, err = q.ExecContext(ctx, `INSERT INTO graph_generation_topology(generation_id,witness_version,topology_json,topology_digest) VALUES(?,?,?,?)`, digestArg(g.GenerationID), b.Topology.SchemaVersion, string(topologyJSON), digestArg(b.Topology.Digest)); err != nil {
+			return err
+		}
 	}
 	for _, n := range b.Nodes {
 		if _, err = q.ExecContext(ctx, `INSERT INTO graph_nodes(generation_id,node_id,node_key,identity_schema,repository_identity,backend_type,language,project_or_module,owner_path,symbol_kind,semantic_identity,display_name,source_digest,claim_status,cross_rid,sort_key) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, digestArg(g.GenerationID), n.NodeID, digestArg(n.NodeKey), n.IdentitySchema, n.Identity.RepositoryIdentity, n.Identity.BackendType, n.Identity.Language, n.Identity.ProjectOrModule, n.Identity.OwnerPath, n.Identity.SymbolKind, n.Identity.SemanticIdentity, n.DisplayName, digestArg(n.SourceDigest), n.ClaimStatus, n.CrossRID, n.SortKey); err != nil {
@@ -633,6 +653,52 @@ func (s *GraphReadSnapshot) Close() error {
 	return s.tx.Rollback()
 }
 
+func loadGraphTopologyWitnessConn(ctx context.Context, q graphConn, generation model.GraphGeneration) (*model.GraphTopologyWitness, bool, error) {
+	var version int
+	var raw string
+	var digest []byte
+	err := q.QueryRowContext(ctx, `SELECT witness_version,topology_json,topology_digest FROM graph_generation_topology WHERE generation_id=?`, digestArg(generation.GenerationID)).Scan(&version, &raw, &digest)
+	if err == sql.ErrNoRows {
+		return nil, false, nil
+	}
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no such table: graph_generation_topology") {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	if version != model.GraphTopologyWitnessVersion || len(digest) != len(model.GraphDigest{}) || len(raw) > model.GraphTopologyMaxJSONBytes {
+		return nil, true, model.ErrGraphGenerationCorrupt
+	}
+	var witness model.GraphTopologyWitness
+	decoder := json.NewDecoder(bytes.NewReader([]byte(raw)))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&witness) != nil {
+		return nil, true, model.ErrGraphGenerationCorrupt
+	}
+	if decoder.Decode(new(any)) != io.EOF {
+		return nil, true, model.ErrGraphGenerationCorrupt
+	}
+	canonical, canonicalErr := witness.CanonicalJSON()
+	if canonicalErr != nil || !bytes.Equal(canonical, []byte(raw)) || !bytes.Equal(digest, witness.Digest[:]) || witness.ValidateConfigFingerprint(generation.ConfigFingerprint) != nil || witness.WorkspaceIdentity != generation.WorkspaceIdentity || witness.RepositoryIdentity != generation.RepositoryIdentity {
+		return nil, true, model.ErrGraphGenerationCorrupt
+	}
+	return &witness, true, nil
+}
+
+func validateGraphTopologyWitnessConn(ctx context.Context, q graphConn, generation model.GraphGeneration) error {
+	_, _, err := loadGraphTopologyWitnessConn(ctx, q, generation)
+	return err
+}
+
+func requireGraphTopologyWitnessConn(ctx context.Context, q graphConn, generation model.GraphGeneration, expected *model.GraphTopologyWitness) error {
+	actual, found, err := loadGraphTopologyWitnessConn(ctx, q, generation)
+	if err != nil || !found || actual == nil || expected == nil || actual.Digest != expected.Digest {
+		return model.ErrGraphGenerationCorrupt
+	}
+	return nil
+}
+
 func validateGraphGenerationConn(ctx context.Context, q graphConn, id model.GraphDigest) (model.GraphGeneration, error) {
 	return validateGraphGenerationWithMode(ctx, q, id, graphContentValidationCurrent)
 }
@@ -664,6 +730,9 @@ func validateGraphGenerationWithMode(ctx context.Context, q graphConn, id model.
 	}
 	if n != g.NodeCount || e1 != g.EdgeCount || ev != g.EvidenceCount || u != g.UnresolvedCount {
 		return g, fmt.Errorf("%w: counts", model.ErrGraphGenerationInvalid)
+	}
+	if err := validateGraphTopologyWitnessConn(ctx, q, g); err != nil {
+		return g, fmt.Errorf("%w: topology witness", model.ErrGraphGenerationCorrupt)
 	}
 	{
 		var missing int

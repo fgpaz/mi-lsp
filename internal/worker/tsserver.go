@@ -34,6 +34,7 @@ type TsserverClient struct {
 	stderr     *boundedTailWriter
 	mu         sync.Mutex
 	sequence   int
+	openFiles  map[string]bool
 }
 
 type tsserverEnvelope struct {
@@ -160,6 +161,8 @@ func (c *TsserverClient) Call(ctx context.Context, request model.WorkerRequest) 
 	switch request.Method {
 	case "diagnostics":
 		return c.diagnostics(ctx, request)
+	case "document_symbols":
+		return c.documentSymbols(ctx, request)
 	case "find_refs":
 		return c.findReferences(ctx, request)
 	case "get_context":
@@ -181,6 +184,7 @@ func (c *TsserverClient) Close() error {
 	c.stdout = nil
 	c.reader = nil
 	c.stderr = nil
+	c.openFiles = nil
 	return err
 }
 
@@ -189,6 +193,73 @@ func (c *TsserverClient) PID() int {
 		return 0
 	}
 	return c.cmd.Process.Pid
+}
+
+// documentSymbols uses tsserver's structural navigation tree for the physical file.
+func (c *TsserverClient) documentSymbols(ctx context.Context, request model.WorkerRequest) (model.WorkerResponse, error) {
+	file, _, _, _, err := c.requestLocation(request.Payload)
+	if err != nil {
+		return model.WorkerResponse{}, err
+	}
+	if err = c.openFile(file); err != nil {
+		return model.WorkerResponse{}, err
+	}
+	body, err := c.sendRequest(ctx, "navtree", map[string]any{"file": file})
+	if err != nil {
+		return model.WorkerResponse{}, err
+	}
+	var tree struct {
+		Text  string `json:"text"`
+		Kind  string `json:"kind"`
+		Spans []struct {
+			Start tsLocation `json:"start"`
+			End   tsLocation `json:"end"`
+		} `json:"spans"`
+		ChildItems []json.RawMessage `json:"childItems"`
+	}
+	if err = json.Unmarshal(body, &tree); err != nil {
+		return model.WorkerResponse{}, err
+	}
+	items := []map[string]any{}
+	var walk func(json.RawMessage) error
+	walk = func(raw json.RawMessage) error {
+		var node struct {
+			Text  string `json:"text"`
+			Kind  string `json:"kind"`
+			Spans []struct {
+				Start tsLocation `json:"start"`
+				End   tsLocation `json:"end"`
+			} `json:"spans"`
+			NameSpan *struct {
+				Start tsLocation `json:"start"`
+				End   tsLocation `json:"end"`
+			} `json:"nameSpan"`
+			ChildItems []json.RawMessage `json:"childItems"`
+		}
+		if err := json.Unmarshal(raw, &node); err != nil {
+			return err
+		}
+		for _, span := range node.Spans {
+			item := map[string]any{"file": file, "name": node.Text, "kind": node.Kind, "line": span.Start.Line, "column": span.Start.Offset, "end_line": span.End.Line}
+			if node.NameSpan != nil {
+				item["selection_line"] = node.NameSpan.Start.Line
+				item["selection_column"] = node.NameSpan.Start.Offset
+			}
+			items = append(items, item)
+		}
+		for _, child := range node.ChildItems {
+			if err := walk(child); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, child := range tree.ChildItems {
+		if err := walk(child); err != nil {
+			return model.WorkerResponse{}, err
+		}
+	}
+	return model.WorkerResponse{Ok: true, Backend: "tsserver", Items: items, Stats: model.Stats{Symbols: len(items)}}, nil
 }
 
 func (c *TsserverClient) findReferences(ctx context.Context, request model.WorkerRequest) (model.WorkerResponse, error) {
@@ -260,13 +331,33 @@ func (c *TsserverClient) requestLocation(payload map[string]any) (string, int, i
 	}
 	lineValue := intFromPayload(payload, "line", 1)
 	symbol, _ := payload["symbol"].(string)
+	if _, supplied := payload["column"]; supplied {
+		offset := intFromPayload(payload, "column", 0)
+		if err := validateUTF16Position(absoluteFile, lineValue, offset); err != nil {
+			return "", 0, 0, "", err
+		}
+		return absoluteFile, lineValue, offset, symbol, nil
+	}
 	lineValue, offset := inferLineAndOffset(absoluteFile, lineValue, symbol)
 	return absoluteFile, lineValue, offset, symbol, nil
 }
 
 func (c *TsserverClient) openFile(filePath string) error {
-	_, err := c.sendEvent("open", map[string]any{"file": filePath})
-	return err
+	filePath = filepath.Clean(filePath)
+	if c.openFiles[filePath] {
+		if _, err := c.sendEvent("close", map[string]any{"file": filePath}); err != nil {
+			return err
+		}
+		delete(c.openFiles, filePath)
+	}
+	if _, err := c.sendEvent("open", map[string]any{"file": filePath}); err != nil {
+		return err
+	}
+	if c.openFiles == nil {
+		c.openFiles = make(map[string]bool)
+	}
+	c.openFiles[filePath] = true
+	return nil
 }
 
 func (c *TsserverClient) sendEvent(command string, arguments map[string]any) (int, error) {

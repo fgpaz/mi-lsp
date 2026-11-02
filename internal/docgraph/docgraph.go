@@ -253,6 +253,11 @@ func LoadProfile(root string) (model.DocsReadProfile, string, []string) {
 			profile.Version = 1
 		}
 	}
+	profile, warnings = normalizeDocReadProfile(profile, warnings)
+	return profile, source, warnings
+}
+
+func normalizeDocReadProfile(profile model.DocsReadProfile, warnings []string) (model.DocsReadProfile, []string) {
 	if profile.WikiMap != nil {
 		roots, rootWarnings := model.SafeRoots(profile.WikiMap.Roots)
 		profile.WikiMap.Roots = roots
@@ -276,7 +281,7 @@ func LoadProfile(root string) (model.DocsReadProfile, string, []string) {
 		profile.WikiMap.Hubs = hubs
 	}
 	profile.GenericDocs.Paths = model.AppendWikiMapRoots(profile.GenericDocs.Paths, &profile)
-	return profile, source, warnings
+	return profile, warnings
 }
 
 func IndexWorkspaceDocs(ctx context.Context, root string, matcher *workspace.IgnoreMatcher) ([]model.DocRecord, []model.DocEdge, []model.DocMention, []string, error) {
