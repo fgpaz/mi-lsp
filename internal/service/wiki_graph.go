@@ -28,9 +28,15 @@ func (a *App) wikiGraph(ctx context.Context, request model.CommandRequest) (mode
 	if err != nil {
 		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: "graph backend is unavailable"}
 	}
-	db, err := openWorkspaceDB(registration, request.Operation, true)
+	db, linkedWorktree, err := openNavigationGraphDB(registration, request.Operation)
 	if err != nil {
 		return model.Envelope{}, store.SanitizeGraphQueryError(err)
+	}
+	if linkedWorktree && db == nil {
+		return model.Envelope{}, worktreeGraphUnavailable()
+	}
+	if db == nil {
+		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: "graph backend is unavailable"}
 	}
 	defer db.Close()
 

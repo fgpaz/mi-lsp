@@ -141,11 +141,13 @@ func (a *App) changePack(ctx context.Context, request model.CommandRequest) (mod
 	}
 
 	// 3) Hub / community risk
-	db, dbErr := openWorkspaceDB(registration, "nav.change-pack", true)
+	db, linkedWorktree, dbErr := openNavigationGraphDB(registration, "nav.change-pack")
 	hubPaths := map[string]bool{}
 	if dbErr != nil {
 		warnings = append(warnings, "catalog unavailable for hub risk: "+sanitizeIntentError(dbErr))
-	} else {
+	} else if linkedWorktree && db == nil {
+		warnings = appendStringIfMissing(warnings, "worktree-local graph index unavailable; base graph not reused; hub risk omitted")
+	} else if db != nil {
 		defer db.Close()
 		focusSymbols := make([]string, 0, len(packet.ChangedSymbols))
 		for _, symbol := range packet.ChangedSymbols {

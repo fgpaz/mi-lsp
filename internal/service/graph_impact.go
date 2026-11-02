@@ -311,9 +311,15 @@ func (a *App) graphImpact(ctx context.Context, request model.CommandRequest) (mo
 	if err != nil {
 		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: "graph backend is unavailable"}
 	}
-	db, err := openWorkspaceDB(registration, request.Operation, true)
+	db, linkedWorktree, err := openNavigationGraphDB(registration, request.Operation)
 	if err != nil {
 		return model.Envelope{}, store.SanitizeGraphQueryError(err)
+	}
+	if db == nil && linkedWorktree {
+		return model.Envelope{}, worktreeGraphUnavailable()
+	}
+	if db == nil {
+		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: "graph backend is unavailable"}
 	}
 	defer db.Close()
 	impact, err := GraphImpact(ctx, db, q)

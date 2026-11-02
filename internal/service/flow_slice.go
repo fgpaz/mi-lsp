@@ -80,10 +80,12 @@ func (a *App) flowSlice(ctx context.Context, request model.CommandRequest) (mode
 		},
 	}
 
-	db, dbErr := openWorkspaceDB(registration, "nav.flow-slice", true)
+	db, linkedWorktree, dbErr := openNavigationGraphDB(registration, "nav.flow-slice")
 	if dbErr != nil {
 		warnings = append(warnings, "catalog unavailable: "+sanitizeIntentError(dbErr))
-	} else {
+	} else if linkedWorktree && db == nil {
+		warnings = appendStringIfMissing(warnings, "worktree-local graph index unavailable; base graph not reused; hub risk omitted")
+	} else if db != nil {
 		defer db.Close()
 	}
 

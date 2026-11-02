@@ -93,9 +93,15 @@ func (a *App) workspaceMap(ctx context.Context, request model.CommandRequest) (m
 	}
 
 	// Open catalog DB
-	db, err := openWorkspaceDB(registration, "nav.workspace-map", true)
-	if err != nil {
-		warnings = append(warnings, "catalog unavailable: "+err.Error())
+	db, linkedWorktree, err := openNavigationGraphDB(registration, "nav.workspace-map")
+	if err != nil || db == nil {
+		if linkedWorktree && db == nil {
+			warnings = append(warnings, "worktree-local graph index unavailable; base graph not reused; serving registry-only map")
+		} else if err != nil {
+			warnings = append(warnings, "catalog unavailable: "+err.Error())
+		} else {
+			warnings = append(warnings, "catalog unavailable; serving registry-only map")
+		}
 		freshness := model.GraphFreshness{State: model.GraphFreshnessUnknown, ReasonCode: "graph_backend_unavailable"}
 		return model.Envelope{
 			Ok:        true,

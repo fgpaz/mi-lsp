@@ -2,11 +2,15 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/reentry"
 	"github.com/fgpaz/mi-lsp/internal/store"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 type loadedReentryMemory struct {
@@ -16,12 +20,31 @@ type loadedReentryMemory struct {
 }
 
 func loadReentryMemory(ctx context.Context, root string) (*loadedReentryMemory, error) {
+	gitInfo, gitErr := os.Stat(filepath.Join(root, ".git"))
+	if gitErr == nil && gitInfo.Mode().IsRegular() {
+		_, linkedWorktree, resolveErr := workspace.TryResolveWorktreeOverlay(root)
+		if resolveErr != nil {
+			return nil, nil
+		}
+		if linkedWorktree {
+			db, _, err := openNavigationGraphDB(model.WorkspaceRegistration{Root: root}, "nav.reentry-memory")
+			if err != nil || db == nil {
+				return nil, nil
+			}
+			defer db.Close()
+			return loadReentryMemoryFromDB(ctx, root, db)
+		}
+	}
+
 	db, err := store.Open(root)
 	if err != nil {
 		return nil, nil
 	}
 	defer db.Close()
+	return loadReentryMemoryFromDB(ctx, root, db)
+}
 
+func loadReentryMemoryFromDB(ctx context.Context, root string, db *sql.DB) (*loadedReentryMemory, error) {
 	snapshot, ok, err := store.LoadReentrySnapshot(ctx, db)
 	if err != nil || !ok {
 		return nil, err

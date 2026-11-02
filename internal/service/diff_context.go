@@ -85,17 +85,26 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 		}, nil
 	}
 
-	// 4. Open database for symbol lookup
-	db, err := openWorkspaceDB(registration, "nav.diff-context", true)
-	if err != nil {
-		return model.Envelope{}, err
+	// 4. Open only a physical worktree DB; never create one or reuse the base.
+	db, linkedWorktree, dbErr := openNavigationGraphDB(registration, "nav.diff-context")
+	if dbErr != nil && !linkedWorktree {
+		return model.Envelope{}, dbErr
 	}
-	defer db.Close()
+	if dbErr != nil {
+		db = nil
+	}
+	if db != nil {
+		defer db.Close()
+	}
 
 	// 5. Reuse the read-only graph impact core for the same changed paths.
 	var graphImpact *model.GraphImpactEnvelope
 	graphBackend := "git+catalog+heuristic"
 	graphWarning := "graph impact unavailable; results are limited to git and catalog heuristics"
+	if linkedWorktree && db == nil {
+		graphBackend = "git+heuristic"
+		graphWarning = "worktree-local graph index unavailable; base graph not reused; changed-symbol and graph evidence use physical worktree files"
+	}
 	graphRequest := model.GraphImpactRequest{
 		Generation:   stringPayload(request.Payload, "generation"),
 		Mode:         stringPayload(request.Payload, "mode"),
@@ -116,7 +125,7 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 	if edges, ok := request.Payload["edge"].([]string); ok {
 		graphRequest.Relations = edges
 	}
-	if graphGenerationAvailable(ctx, db) {
+	if db != nil && graphGenerationAvailable(ctx, db) {
 		if impact, impactErr := GraphImpact(ctx, db, graphRequest); impactErr == nil && impact.GenerationID != "" {
 			graphImpact = &impact
 			graphBackend = "graph-native"
@@ -126,7 +135,7 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 				return model.Envelope{}, impactErr
 			}
 		}
-	} else {
+	} else if db != nil {
 		graphWarning = "graph generation unavailable; results are limited to git and catalog heuristics"
 	}
 
@@ -138,6 +147,20 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 		changingFiles = append(changingFiles, relFile)
 		lineRanges := changedMap[relFile]
 		foundInFile := false
+
+		if db == nil {
+			if changeType != "deleted" {
+				for _, diffSymbol := range fallbackDiffSymbols(ctx, nil, registration.Root, project, relFile, changeType, includeContent) {
+					key := fmt.Sprintf("%s:%d:%s", diffSymbol.File, diffSymbol.Line, diffSymbol.Name)
+					if _, exists := symbolMap[key]; exists {
+						continue
+					}
+					copy := diffSymbol
+					symbolMap[key] = &copy
+				}
+			}
+			continue
+		}
 
 		for _, lineNum := range lineRanges {
 			// Query for symbol containing this line

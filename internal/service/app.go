@@ -1551,9 +1551,15 @@ func (a *App) graphQuery(ctx context.Context, request model.CommandRequest) (mod
 	if err != nil {
 		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: "graph backend is unavailable"}
 	}
-	db, err := openWorkspaceDB(registration, request.Operation, true)
+	db, linkedWorktree, err := openNavigationGraphDB(registration, request.Operation)
 	if err != nil {
 		return model.Envelope{}, graphQueryErrorForWorkspace(store.SanitizeGraphQueryError(err), registration.Name)
+	}
+	if db == nil && linkedWorktree {
+		return model.Envelope{}, worktreeGraphUnavailable()
+	}
+	if db == nil {
+		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: "graph backend is unavailable"}
 	}
 	defer db.Close()
 	envelope, err := GraphQuery(ctx, db, q)

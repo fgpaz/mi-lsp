@@ -121,10 +121,13 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 	}
 
 	var db *sql.DB
-	db, err = openWorkspaceDB(registration, "nav.affected", true)
+	var linkedWorktree bool
+	db, linkedWorktree, err = openNavigationGraphDB(registration, "nav.affected")
 	if err != nil {
 		warnings = appendStringIfMissing(warnings, "catalog unavailable; symbol evidence omitted: "+sanitizeIntentError(err))
-	} else {
+	} else if db == nil && linkedWorktree {
+		warnings = appendStringIfMissing(warnings, "worktree-local graph index unavailable; base graph not reused; using git and path heuristics")
+	} else if db != nil {
 		defer db.Close()
 	}
 
@@ -251,10 +254,14 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 	}
 	items = rankAffectedForHarness(items, focusPaths, hubPaths)
 
+	backend := affectedBackend(graphUsed, legacyHeuristic)
+	if linkedWorktree && db == nil {
+		backend = "git+heuristic"
+	}
 	env := model.Envelope{
 		Ok:                 true,
 		Workspace:          registration.Name,
-		Backend:            affectedBackend(graphUsed, legacyHeuristic),
+		Backend:            backend,
 		Items:              items,
 		Warnings:           warnings,
 		Truncated:          graphTruncated,
