@@ -22,6 +22,21 @@ links:
     role: implementation
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-WIKI-AWARE-SEARCH
+kind: technical-architecture
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-DOC-ROUTER.md, .docs/wiki/07_technical/contracts/CT-NAV-WIKI.md]
+exports: [TECH-WIKI-AWARE-SEARCH]
+agent_must_read: [.docs/wiki/07_technical/TECH-WIKI-AWARE-SEARCH.md, internal/service/wiki_search.go, internal/indexer/indexer.go]
+agent_may_edit: [.docs/wiki/07_technical/TECH-WIKI-AWARE-SEARCH.md]
+agent_must_not_edit: [internal/store/, .docs/wiki/_mi-lsp/read-model.toml, .mi-lsp/index.db]
+verify: ["Leer .docs/wiki/07_technical/TECH-WIKI-AWARE-SEARCH.md y .docs/wiki/07_technical/TECH-DOC-ROUTER.md; cotejar las afirmaciones con la fuente publicada internal/service/wiki_search.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [La propuesta trate índices, raw/auditoría, snippets o materiales no canónicos como fuente primaria, o sugiera indexación durante BUILD.]
+evidence: [.docs/wiki/07_technical/TECH-WIKI-AWARE-SEARCH.md, .docs/wiki/07_technical/TECH-DOC-ROUTER.md, internal/service/wiki_search.go]
+```
+
 ## Resumen
 
 Describir el pipeline técnico de `nav wiki`, `nav ask`, `nav pack` y del índice documental repo-local.

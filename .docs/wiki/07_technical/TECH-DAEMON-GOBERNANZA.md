@@ -18,6 +18,21 @@ links:
     role: implementation
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-DAEMON-GOBERNANZA
+kind: technical
+audience: dual
+imports: [.docs/wiki/07_technical/contracts/CT-CLI-DAEMON-ADMIN.md, .docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md]
+exports: [TECH-DAEMON-GOBERNANZA]
+agent_must_read: [.docs/wiki/07_technical/TECH-DAEMON-GOBERNANZA.md, internal/daemon/admin.go, internal/daemon/state_store.go]
+agent_may_edit: [.docs/wiki/07_technical/TECH-DAEMON-GOBERNANZA.md]
+agent_must_not_edit: [internal/daemon/, .docs/wiki/_mi-lsp/read-model.toml]
+verify: ["Leer .docs/wiki/07_technical/TECH-DAEMON-GOBERNANZA.md y .docs/wiki/07_technical/contracts/CT-CLI-DAEMON-ADMIN.md; cotejar las afirmaciones con la fuente publicada internal/daemon/admin.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [El cambio implique auth remota, acciones destructivas en la UI o declarar verificado runtime que esta ficha marca sin verificar.]
+evidence: [.docs/wiki/07_technical/TECH-DAEMON-GOBERNANZA.md, .docs/wiki/07_technical/contracts/CT-CLI-DAEMON-ADMIN.md, internal/daemon/admin.go]
+```
+
 ## Resumen
 
 Define el modelo canónico del daemon global, su governance UI workspace-first y la gestion compartida de runtimes calientes entre multiples clientes locales.

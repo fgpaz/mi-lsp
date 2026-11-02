@@ -38,6 +38,7 @@ type WikiMatrixCriterionCoverage struct {
 }
 
 type WikiMatrixTestCaseRef struct {
+	Partial     bool   `json:"partial,omitempty"`
 	TPID        string `json:"tp_id"`
 	Line        string `json:"line,omitempty"`
 	Disposition string `json:"disposition,omitempty"`
@@ -168,6 +169,17 @@ func BuildWikiMatrixForLanguage(docs []WikiViewDoc, language model.WikiContractL
 		for _, warning := range parseWarnings {
 			result.Warnings = appendUniqueString(result.Warnings, "parser_warning:"+tpID+":"+warning.Message)
 		}
+		declared := make(map[string]bool, len(rfTargets))
+		for _, rfID := range rfTargets {
+			declared[strings.ToUpper(strings.TrimSpace(rfID))] = true
+		}
+		for _, tc := range cases {
+			if tc.RFID == "" && len(declared) != 1 {
+				result.Warnings = appendUniqueString(result.Warnings, "ambiguous_case_rf:"+tpID+":"+tc.Line)
+			} else if tc.RFID != "" && !declared[tc.RFID] {
+				result.Warnings = appendUniqueString(result.Warnings, "case_rf_not_declared:"+tpID+":"+tc.RFID)
+			}
+		}
 		for _, rfID := range rfTargets {
 			rfKey := strings.ToUpper(strings.TrimSpace(rfID))
 			if rfKey == "" {
@@ -183,7 +195,11 @@ func BuildWikiMatrixForLanguage(docs []WikiViewDoc, language model.WikiContractL
 				coverage[rfKey] = map[int][]WikiMatrixTestCaseRef{}
 			}
 			for _, tc := range cases {
+				if tc.RFID != "" && tc.RFID != rfKey || tc.RFID == "" && len(declared) != 1 {
+					continue
+				}
 				coverage[rfKey][tc.Number] = append(coverage[rfKey][tc.Number], WikiMatrixTestCaseRef{
+					Partial:     tc.Partial,
 					TPID:        tpID,
 					Line:        tc.Line,
 					Disposition: tc.Disposition,
@@ -214,17 +230,27 @@ func BuildWikiMatrixForLanguage(docs []WikiViewDoc, language model.WikiContractL
 		sort.Ints(nums)
 		for _, n := range nums {
 			tests := coverage[rfID][n]
+			fullyCovered := false
+			for _, test := range tests {
+				if !test.Partial {
+					fullyCovered = true
+					break
+				}
+			}
 			row := WikiMatrixCriterionCoverage{
 				RFID:      rfID,
 				Criterion: n,
 				Text:      criteria[n],
-				Covered:   len(tests) > 0,
+				Covered:   fullyCovered,
 				TestCases: tests,
 			}
 			row.CoverageStatus = "covered"
 			if !row.Covered {
 				row.CoverageStatus = "gap"
-				if parseUncertain[rfID] {
+				if len(tests) > 0 {
+					row.CoverageStatus = "partial"
+					result.UncoveredCriteria = append(result.UncoveredCriteria, row)
+				} else if parseUncertain[rfID] {
 					row.CoverageStatus = "parser_warning"
 				} else {
 					result.UncoveredCriteria = append(result.UncoveredCriteria, row)

@@ -137,3 +137,31 @@ Confiabilidad, rendimiento, memoria, portabilidad y experiencia de desarrollo, e
 - Mitigacion: metadata `client_name/session_id` + telemetry local con identidad canónica por `workspace_root`.
 - Riesgo: UI poco accionable.
 - Mitigacion: vista workspace-first, filtros, drawer, panel de logs y acciones seguras.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: FL-DAE-01
+kind: flow
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/02_outcomes/RS-MILSP-RUNTIME.md
+exports:
+  - FL-DAE-01
+agent_must_read:
+  - .docs/wiki/04_flows/FL-DAE-01.md
+agent_may_edit:
+  - .docs/wiki/04_flows/FL-DAE-01.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-DAE-001.md
+  - .docs/wiki/06_tests/TP-DAE.md
+verify:
+  - .docs/wiki/06_tests/TP-DAE.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - flow_scope_or_acceptance_would_change
+evidence:
+  - .docs/wiki/04_flows/FL-DAE-01.md
+  - .docs/wiki/06_tests/TP-DAE.md
+  - .docs/wiki/05_requirements/RF-DAE-001.md
+```

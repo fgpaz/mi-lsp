@@ -61,3 +61,38 @@ Los errores legacy originales siguen siendo: `IDX_GOV_DOC_MISSING` (falta gobier
 4. El TOML es derivado y versionado; el diagnóstico no afirma sincronización si la escritura falla.
 5. La sincronización solo escribe un destino seguro del workspace de código, nunca un canon ajeno read-only.
 6. Los cambios de fuente/proyección dejan visible la necesidad de reindexación; drift de proyección v1 permanece advisory y no acredita freshness.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-IDX-003
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-IDX-01.md
+exports:
+- RF-IDX-003
+- Proyectar y sincronizar el read-model desde el gobierno documental
+agent_must_read:
+- .docs/wiki/05_requirements/RF-IDX-003.md
+- .docs/wiki/04_flows/FL-IDX-01.md
+- .docs/wiki/06_tests/TP-IDX.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-IDX-003.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/docgraph/wiki_contract_governance.go
+- internal/docgraph/wiki_contract_projection.go
+- internal/docgraph/governance.go
+- internal/indexer/incremental.go
+verify:
+- Validar el contrato y sus referencias con `mi-lsp nav wiki validate-harness --workspace
+  <alias>`; contrastar los casos de .docs/wiki/06_tests/TP-IDX.md sin inferir que
+  fueron ejecutados.
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-IDX-003.
+evidence:
+- .docs/wiki/05_requirements/RF-IDX-003.md
+- .docs/wiki/06_tests/TP-IDX.md
+```

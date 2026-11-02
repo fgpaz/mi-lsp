@@ -15,6 +15,21 @@ links:
     role: implementation
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-GOVERNANCE-PROFILES
+kind: technical-governance
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-DOCUMENTARY-GOVERNANCE.md, .docs/wiki/07_technical/contracts/CT-GOVERNANCE-AE-KERNEL-V2.md]
+exports: [TECH-GOVERNANCE-PROFILES]
+agent_must_read: [.docs/wiki/07_technical/TECH-GOVERNANCE-PROFILES.md, internal/docgraph/wiki_contract_governance.go, internal/docgraph/wiki_contract_projection.go]
+agent_may_edit: [.docs/wiki/07_technical/TECH-GOVERNANCE-PROFILES.md]
+agent_must_not_edit: [internal/docgraph/, .docs/wiki/_mi-lsp/read-model.toml, .docs/ae/repo-policy.yaml]
+verify: ["Leer .docs/wiki/07_technical/TECH-GOVERNANCE-PROFILES.md y .docs/wiki/07_technical/TECH-DOCUMENTARY-GOVERNANCE.md; cotejar las afirmaciones con la fuente publicada internal/docgraph/wiki_contract_governance.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [El cambio convierta perfiles legacy, projection o ae/ histórico en nueva autoridad normativa.]
+evidence: [.docs/wiki/07_technical/TECH-GOVERNANCE-PROFILES.md, .docs/wiki/07_technical/TECH-DOCUMENTARY-GOVERNANCE.md, internal/docgraph/wiki_contract_governance.go]
+```
+
 ## Resumen
 
 Gobernanza por traits + kind para WIKI-CONTRACT-v1, con compatibilidad de lectura de perfiles legacy de otros repositorios. El ID estable de esta ficha no convierte los perfiles anteriores en autoridad de esta wiki.

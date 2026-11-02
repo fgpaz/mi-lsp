@@ -1547,11 +1547,28 @@ func (a *App) graphQuery(ctx context.Context, request model.CommandRequest) (mod
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
+	registration, project, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: "graph backend is unavailable"}
 	}
-	db, err := openWorkspaceDB(registration, request.Operation, true)
+	graphRegistration := registration
+	overlay, linkedOverlay, overlayErr := workspace.TryResolveWorktreeOverlay(registration.Root)
+	if overlayErr != nil {
+		return model.Envelope{}, overlayErr
+	}
+	if linkedOverlay {
+		baseRegistration, found, baseErr := workspace.RegisteredWorktreeBase(overlay)
+		if baseErr != nil {
+			return model.Envelope{}, baseErr
+		}
+		if found {
+			graphRegistration = baseRegistration
+		}
+		if len(overlay.Changed) > 0 || len(overlay.Deleted) > 0 {
+			return a.overlayGraphSnapshot(ctx, registration, project, overlay, q)
+		}
+	}
+	db, err := openWorkspaceDB(graphRegistration, request.Operation, true)
 	if err != nil {
 		return model.Envelope{}, graphQueryErrorForWorkspace(store.SanitizeGraphQueryError(err), registration.Name)
 	}
@@ -1858,6 +1875,7 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 	warnings := append([]string(nil), scopeWarnings...)
 	if linkedOverlay && baseIndexAvailable {
 		warnings = append(warnings, "worktree_overlay_index: shared common-dir base catalog with physical changed/deleted path overlay")
+		warnings = append(warnings, "worktree_overlay_fingerprint:"+overlay.Fingerprint)
 	}
 	if len(items) > 0 && !request.Context.NoIndexRefresh && !linkedOverlay {
 		paths := make([]string, 0, len(items))
@@ -1938,6 +1956,7 @@ func (a *App) overview(ctx context.Context, request model.CommandRequest) (model
 	warnings := []string(nil)
 	if linkedOverlay && baseIndexAvailable {
 		warnings = append(warnings, "worktree_overlay_index: shared common-dir base catalog with physical changed/deleted path overlay")
+		warnings = append(warnings, "worktree_overlay_fingerprint:"+overlay.Fingerprint)
 	}
 	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "catalog", Items: items, Stats: model.Stats{Symbols: len(items)}, Warnings: warnings}, nil
 }

@@ -14,16 +14,83 @@ links:
   - RF-WIKI-006
   - RF-WIKI-007
   - RF-WKS-008
+  - RF-WGRAPH-002
+  - RF-IDX-003
   code:
+  - path: internal/model/wiki_contract_pair_test.go
+    role: executable_test
+  - path: internal/docgraph/wiki_matrix_pair_test.go
+    role: executable_test
   - path: internal/docgraph/wiki_contract_projection_test.go
+    role: executable_test
+  - path: internal/docgraph/wiki_contract_ae_canon_state_test.go
+    role: executable_test
+  - path: internal/docgraph/wiki_harness_metadata_matrix_test.go
+    role: executable_test
+  - path: internal/docgraph/wiki_views_r2_test.go
+    role: executable_test
+  - path: internal/docgraph/wiki_views_test.go
+    role: executable_test
+  - path: internal/model/wiki_contract_harness_fences_test.go
+    role: executable_test
+  - path: internal/model/wiki_contract_harness_invalid_test.go
+    role: executable_test
+  - path: internal/model/wiki_contract_harness_metadata_test.go
+    role: executable_test
+  - path: internal/service/contract_machine_harness_test.go
+    role: executable_test
+  - path: internal/service/a14_wiki_consumers_test.go
+    role: executable_test
+  - path: internal/service/contract_validate_r2_test.go
+    role: executable_test
+  - path: internal/service/contract_retirement_acceptance_test.go
     role: executable_test
 ---
 
 ## Alcance
 
-RF-WIKI-001, RF-WIKI-002, RF-WIKI-003, RF-WIKI-004, RF-WIKI-005, RF-WIKI-006, RF-WIKI-007, RF-WKS-008. Se conserva el inventario de escenarios, límites, disposiciones y evidencia histórica, sin reejecución.
+RF-WIKI-001, RF-WIKI-002, RF-WIKI-003, RF-WIKI-004, RF-WIKI-005, RF-WIKI-006, RF-WIKI-007, RF-WKS-008 y facetas parciales de RF-WGRAPH-002 y RF-IDX-003. Se conserva el inventario de escenarios, límites, disposiciones y evidencia histórica, sin reejecución.
 
 ## Casos
+
+### Referencias de regresión documental y vínculos parciales
+
+Los siguientes oráculos son referencias a pruebas existentes, no aceptación ni evidencia de ejecución. Los casos parciales explícitos más abajo vinculan solo las facetas indicadas; otros vínculos y la cobertura completa de los criterios permanecen pendientes.
+
+- `internal/model/wiki_contract_harness_fences_test.go`: `TestWikiContractCasesHarnessFenceDialects` excluye metadata en seis formas de fence y conserva casos externos; `TestWikiContractCasesHarnessMentionIsNotMetadata` no clasifica como Harness inválido el YAML ordinario que menciona la clave y conserva los casos reales fuera del fence.
+- `internal/model/wiki_contract_harness_invalid_test.go`: `TestWikiContractCasesInvalidHarnessCannotCover` conserva la incertidumbre para metadata inválida en español e inglés, sin contarla como caso.
+- `internal/model/wiki_contract_harness_metadata_test.go`: `TestWikiContractCasesExcludeHarnessMetadata` impide casos o secciones aportados solo por metadata; `TestWikiContractCasesStillWarnOnOrdinaryContent` conserva el warning de contenido ordinario.
+- `internal/docgraph/wiki_harness_metadata_matrix_test.go`: `TestBuildWikiMatrixHarnessMetadataNeverCovers` impide que metadata aporte cobertura en la matriz y conserva warnings ante variantes inválidas.
+- `internal/docgraph/wiki_views_r2_test.go`: `TestBuildWikiMatrixParserWarningVersusGapR2` distingue gap, cobertura y `parser_warning` en fixtures.
+- `internal/docgraph/wiki_views_test.go`: `TestBuildWikiIndexFixture`, `TestBuildWikiMatrixFixture` y `TestParseDocContentWikiContractLinksDoNotBecomeLegacyMentions` comprueban respectivamente índice, matriz y separación de enlaces WIKI de menciones legacy.
+- `internal/docgraph/wiki_contract_ae_canon_state_test.go`: `TestWikiContractAECanonGovernanceStates` distingue bloque opcional ausente, configuración válida, incompleta y malformada; su autoridad técnica es `.docs/wiki/07_technical/contracts/CT-GOVERNANCE-AE-KERNEL-V2.md`. No prueba disponibilidad de todos los módulos externos.
+
+- `internal/service/contract_machine_harness_test.go`: `TestMachineRetirementsIgnoreHarnessFences` conserva el inventario YAML crudo ante metadata Harness y mantiene diagnósticos de YAML o archivo archivado inválidos; `TestMachineGovernanceDoesNotRequireArtifactHeader` verifica configuración machine en el path de governance y, separadamente, validación directa del header RF; esta referencia no prueba selección de path ni referencias activas a retirados. Son regresiones técnicas del contrato WIKI v1.1, no aprobación de criterios ni evidencia de ejecución nueva.
+
+### Casos por requisito y criterio
+
+Cada línea vincula exclusivamente el requisito y criterio expresados. Los casos con `Alcance parcial` no acreditan el criterio completo; ninguno acredita una ejecución nueva ni aceptación. Registrar recibo y skips antes de cualquier evaluación posterior.
+
+- **id**: TC-WIKI-PAIR-WGRAPH-001
+  - RF-WGRAPH-002 — Criterio 1. Alcance parcial: exclusión de metadata Harness y ejemplos fenced, asociación explícita RF/criterio y distinción de referencias reales/advertencias, sin cubrir todas las combinaciones de títulos e idiomas. Disposición: manual_evidence_pending. Evidencia prevista: `internal/model/wiki_contract_harness_fences_test.go::TestWikiContractCasesHarnessFenceDialects`, `::TestWikiContractCasesHarnessMentionIsNotMetadata`; `internal/model/wiki_contract_harness_invalid_test.go::TestWikiContractCasesInvalidHarnessCannotCover`; `internal/model/wiki_contract_harness_metadata_test.go::TestWikiContractCasesExcludeHarnessMetadata`, `::TestWikiContractCasesStillWarnOnOrdinaryContent`; `internal/docgraph/wiki_harness_metadata_matrix_test.go::TestBuildWikiMatrixHarnessMetadataNeverCovers`; `internal/docgraph/wiki_views_r2_test.go::TestBuildWikiMatrixParserWarningVersusGapR2`; `internal/model/wiki_contract_pair_test.go::TestWikiContractCaseRFPairsAndPartial`, `::TestWikiContractCaseEvidenceAndFenceIsolation`, `::TestWikiContractCasesFencedSectionSelection`; `internal/docgraph/wiki_matrix_pair_test.go::TestWikiMatrixPairIsolationAndPartial`, `::TestWikiMatrixEnglishRFPairs`, `::TestWikiMatrixEvidenceAndLegacyNonCases`, `::TestWikiMatrixFencedCasesSectionDoesNotCover`.
+- **id**: TC-WIKI-PAIR-WGRAPH-004
+  - RF-WGRAPH-002 — Criterio 4. Alcance parcial: selección de fuente/raíz y rechazo de decoys, Setup no resuelto, identidad contradictoria y escapes por symlink; no cubre todas las fuentes inválidas ni el scope vacío. Disposición: manual_evidence_pending. Evidencia prevista: `internal/service/contract_machine_harness_test.go::TestMachineGovernanceDecoysAreNotExempt`, `::TestMachineGovernanceSelectedSourceAndUnresolvedSetup`, `::TestMachineSelectedExternalWikiRoot`, `::TestMachineExternalUnidentifiedBodyAndContradictoryIDs`, `::TestMachineLifecycleSymlinkIdentity`; las pruebas de symlink pueden omitirse según plataforma.
+- **id**: TC-WIKI-PAIR-WGRAPH-005
+  - RF-WGRAPH-002 — Criterio 5. Alcance parcial: inventario crudo ante metadata válida, inválida o sin cierre, archivo archivado ausente y YAML roto; no cubre todas las formas de inventario o sucesores. Disposición: manual_evidence_pending. Evidencia prevista: `internal/service/contract_machine_harness_test.go::TestMachineRetirementsIgnoreHarnessFences`.
+- **id**: TC-WIKI-PAIR-WGRAPH-005-BASE
+  - RF-WGRAPH-002 — Criterio 5. Alcance parcial: fixtures `entries` y `retirements`, ausencia explícita, terminal/sucesor, YAML y filas inválidas, inventario ambiguo o contradictorio; no se demuestra con estas tres pruebas la falta individual de cada campo ni que cada variante negativa devuelva específicamente ADVISORY. Disposición: manual_evidence_pending. Evidencia prevista: `internal/service/a14_wiki_consumers_test.go::TestA14RetirementsExplicitNoneAndNegativeControls`, `::TestA14LegacyRetirementsYAMLAndEntrySemantics`; `internal/service/contract_validate_r2_test.go::TestCompileWikiContractRetirementsR2`. La presencia de estas referencias no acredita ejecución ni cobertura completa del criterio.
+- **id**: TC-WIKI-WGRAPH-005-STRUCTURAL
+  - RF-WGRAPH-002 — Criterio 5. Disposición: manual_evidence_pending. Evidencia prevista: `internal/service/contract_retirement_acceptance_test.go::TestRetirementCriterionFiveValidationOracles`; `internal/service/a14_wiki_consumers_test.go::TestA14RetirementsExplicitNoneAndNegativeControls`, `::TestA14LegacyRetirementsYAMLAndEntrySemantics`; `internal/service/contract_validate_r2_test.go::TestCompileWikiContractRetirementsR2`. Oráculo estructural: ambas formas de inventario, campos, terminal/sucesor y advertencias ADVISORY de entradas inválidas o ambiguas; ausencia explícita por prosa o listas vacías sin identificadores RF inventados en el resultado público. El resultado no expone filas internas; este caso no afirma inspeccionarlas ni acredita ejecución o aceptación.
+- **id**: TC-WIKI-PAIR-IDX-001
+  - RF-IDX-003 — Criterio 1. Alcance parcial: lectura de representación JSON de governance y representaciones alternativas; no acredita todas las fuentes ni módulos externos. Disposición: manual_evidence_pending. Evidencia prevista: `internal/docgraph/wiki_contract_projection_test.go::TestWikiContractProjectionReadsJSONGovernanceBlock`, `::TestWikiContractProjectionGovernanceRepresentations`; `internal/docgraph/wiki_contract_ae_canon_state_test.go::TestWikiContractAECanonGovernanceStates` distingue estados de canon declarado, no valida toda disponibilidad externa.
+- **id**: TC-WIKI-PAIR-IDX-002
+  - RF-IDX-003 — Criterio 2. Alcance parcial: proyección de traits, excepciones y capas core en fixtures; no demuestra todas las combinaciones ni todos los ui_roots. Disposición: manual_evidence_pending. Evidencia prevista: `internal/docgraph/wiki_contract_projection_test.go::TestWikiContractProjectionTraits`, `::TestWikiContractProjectionExceptionsAndCore`.
+- **id**: TC-WIKI-IDX-002-STRUCTURAL
+  - RF-IDX-003 — Criterio 2. Disposición: manual_evidence_pending. Evidencia prevista: `internal/docgraph/wiki_contract_projection_test.go::TestWikiContractProjectionTraitCombinationsCA2`, `::TestWikiContractProjectionUnsafeUIRootsCA2`, `::TestWikiContractProjectionTraits`, `::TestWikiContractProjectionExceptionsAndCore`. Oráculo estructural en fixtures: las 16 combinaciones determinan kinds y globs exactos de lectura/edición y familias; has_ui añade DESIGN.md, PRODUCT.md y raíces UI léxicamente seguras, stores_data añade DM/DB, exposes_api añade CT, y sold_product ausente excluye negocio. Incluye raíces inválidas, normalización y deduplicación; no prueba resolución física de symlinks, sincronización, freshness ni ejecución o aceptación de producto.
+- **id**: TC-WIKI-PAIR-IDX-003
+  - RF-IDX-003 — Criterio 3. Alcance parcial: proyección y superficies derivadas observadas por fixtures de traits y representaciones; no acredita todos los kinds ni sincronización efectiva. Disposición: manual_evidence_pending. Evidencia prevista: `internal/docgraph/wiki_contract_projection_test.go::TestWikiContractProjectionTraits`, `::TestWikiContractProjectionGovernanceRepresentations`.
+
+RF-IDX-003 criterios 4–6: pendiente de disposición y evidencia sobre escritura, seguridad de destino y freshness/reindexación; owner propuesto `wiki-test-plan` / TP-IDX. No se infiere cobertura de esos criterios desde las referencias anteriores.
 
 ### Cobertura objetivo
 
@@ -866,3 +933,37 @@ Fixtures: `testdata/documentary-graph/software/.docs/wiki/` y `testdata/document
   - installed_index
   - live_refresh
   - embeddings
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TP-WIKI
+kind: test-plan
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/05_requirements/RF-WIKI-001.md
+exports:
+  - TP-WIKI
+agent_must_read:
+  - .docs/wiki/06_tests/TP-WIKI.md
+agent_may_edit:
+  - .docs/wiki/06_tests/TP-WIKI.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - .docs/wiki/06_tests/TP-WIKI.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - pending_evidence_is_reported_as_pass
+  - test_oracle_or_acceptance_would_change
+evidence:
+  - .docs/wiki/06_tests/TP-WIKI.md
+  - .docs/wiki/05_requirements/RF-WIKI-001.md
+  - .docs/wiki/05_requirements/RF-WIKI-002.md
+  - .docs/wiki/05_requirements/RF-WIKI-003.md
+  - .docs/wiki/05_requirements/RF-WIKI-004.md
+  - .docs/wiki/05_requirements/RF-WIKI-005.md
+  - .docs/wiki/05_requirements/RF-WIKI-006.md
+  - .docs/wiki/05_requirements/RF-WIKI-007.md
+```

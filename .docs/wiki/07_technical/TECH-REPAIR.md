@@ -1,4 +1,41 @@
+---
+wiki_contract: WIKI-CONTRACT-v1
+id: TECH-REPAIR
+kind: technical
+status: draft
+title: Reparación local v1
+links:
+  code:
+    - path: internal/repair/engine.go
+      role: behavior
+    - path: internal/repair/actions/actions.go
+      role: behavior
+---
+
+## Resumen
+
+Plan y aplicación acotada de reparación local; una reparación no garantiza salud semántica sin comprobación posterior.
+
+## Mapa de componentes
+
+Motor en `internal/repair/`, acciones en `internal/repair/actions/` y recibos en runtimeinfo.
+
 # Reparación local v1
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-REPAIR
+kind: technical-contract
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-REPAIR-ACTIONS.md]
+exports: [TECH-REPAIR]
+agent_must_read: [.docs/wiki/07_technical/TECH-REPAIR.md, internal/repair/]
+agent_may_edit: [.docs/wiki/07_technical/TECH-REPAIR.md]
+agent_must_not_edit: [internal/repair/, ~/.mi-lsp/repair/, PATH, antivirus-policy]
+verify: ["Leer .docs/wiki/07_technical/TECH-REPAIR.md y .docs/wiki/07_technical/TECH-REPAIR-ACTIONS.md; cotejar las afirmaciones con la fuente publicada internal/repair/actions/inspect.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Se proponga descarga, elevación, cambio de políticas de seguridad o reinstalación automática tras un componente registrado ausente.]
+evidence: [.docs/wiki/07_technical/TECH-REPAIR.md, .docs/wiki/07_technical/TECH-REPAIR-ACTIONS.md, internal/repair/actions/inspect.go]
+```
 
 `mi-lsp repair --format json [--workspace <alias|ruta>] [--reindex] [--worker] [--worker-mode auto|framework-dependent|self-contained] [--apply]` diagnostica por defecto sin escribir. `--apply` intenta como máximo una vez cada acción independiente. No descarga ni sustituye el runtime, no pide elevación, no modifica PATH ni políticas de seguridad y no agrega exclusiones antivirus. No existe `doctor --fix` en v1.
 

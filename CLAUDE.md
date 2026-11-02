@@ -1,6 +1,6 @@
 # CLAUDE.md — mi-lsp Agentic Engineering Policy
 
-> **Authority**: Outcomes + AE-KERNEL-V2.md. **Language**: English. L0 operating policy for mi-lsp.
+> **Authority**: .docs/wiki/00_governance.md + AE-KERNEL-V2.md. **Language**: English. L0 operating policy for mi-lsp.
 
 ## North Star Cycle
 
@@ -106,7 +106,7 @@ A real invocation must produce runtime evidence only through existing native inv
 - **Completion default** remains full cycle to `origin/main` + **always** sanitize the goal's deprecated worktrees/branches (scope + liveness rules) unless the operator says local-only. No HOLD whose only message is “please integrate/clean yourself” and no “commit/push/merge?” question. Leaving known-deprecated artifacts is incomplete.
 - FAST close uses **collapsed verify_packet** (not two full trace+audit tours of the same evidence).
 
-## Kernel Fast Runtime v3
+## Kernel Fast Runtime v5
 
 ```toon
 policy_revision: kernel-fast-governance-v5
@@ -145,6 +145,8 @@ Keep `AGENTS.md`, `CLAUDE.md`, and project-local skills in English. All other pr
 
 **private network precondition**: before remote or deployment operations, confirm private access to the target environment.
 
+**Browser priority**: use mi-browser through mi-mcp as the primary browser. If a page requires login, first check other registered nodes for an existing session before asking the user. Use agent-browser or chrome-devtools-axi only as fallbacks, and try both before Claude in Chrome. Keep ClaudeInChromeDefaultEnabled disabled when the user's assistant policy has disabled it; never re-enable it as a fallback.
+
 
 ## Repository-Specific Contract
 
@@ -182,4 +184,4 @@ Local semantic CLI for large .NET/C# and TypeScript workspaces.
 **Status**: Generated from AE-POLICY-PROJECTION-V2
 **Last Updated**: 2026-08-25
 **Source**: repo-policy.yaml + template.claude
-<!-- kernel_version: 5e8cfea0 -->
+<!-- kernel_version: 39d7d76f -->

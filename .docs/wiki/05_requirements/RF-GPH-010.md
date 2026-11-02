@@ -100,3 +100,35 @@ Las entradas, salidas, enums y límites forman parte del contrato de comportamie
 - No-write del graph/wiki, no-network/no-MCP y process-tree containment por RID.
 - Resultado identical en 30 repeticiones cuando manifest declara deterministic.
 - `TP-GPH / TP-GPH-006 / TC-GPH-043..048`.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-GPH-010
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-GPH-03.md
+exports:
+- RF-GPH-010
+- RF-GPH-010 - Ejecutar extensiones aisladas mediante MILX-v1 sin MCP
+agent_must_read:
+- .docs/wiki/05_requirements/RF-GPH-010.md
+- .docs/wiki/04_flows/FL-GPH-03.md
+- .docs/wiki/06_tests/TP-GPH.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-GPH-010.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/app.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-GPH.md, ejecutar el
+  comando publicado: go test ./internal/model/... ./internal/indexer/... ./internal/service/...
+  ./internal/daemon/... (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-GPH-010.
+evidence:
+- .docs/wiki/05_requirements/RF-GPH-010.md
+- .docs/wiki/06_tests/TP-GPH.md
+```

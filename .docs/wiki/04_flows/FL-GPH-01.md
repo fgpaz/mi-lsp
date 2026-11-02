@@ -75,3 +75,32 @@ Confiabilidad, rendimiento, memoria, portabilidad y experiencia de desarrollo, e
 3. Publicación all-or-nothing; siempre se identifica la generación activa.
 4. Query no muta el snapshot ni el catalogo.
 5. No se afirma performance, p95 o RSS sin medicion reproducible en el gate correspondiente.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: FL-GPH-01
+kind: flow
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/02_outcomes/RS-MILSP-GRAPH.md
+exports:
+  - FL-GPH-01
+agent_must_read:
+  - .docs/wiki/04_flows/FL-GPH-01.md
+agent_may_edit:
+  - .docs/wiki/04_flows/FL-GPH-01.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-GPH-001.md
+  - .docs/wiki/06_tests/TP-GPH.md
+verify:
+  - .docs/wiki/06_tests/TP-GPH.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - flow_invariants_or_acceptance_would_change
+  - unpublished_or_incomplete_graph_is_called_stable
+evidence:
+  - .docs/wiki/04_flows/FL-GPH-01.md
+  - .docs/wiki/06_tests/TP-GPH.md
+  - .docs/wiki/05_requirements/RF-GPH-001.md
+```

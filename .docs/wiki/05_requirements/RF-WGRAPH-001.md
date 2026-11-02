@@ -43,3 +43,48 @@ Destinos ausentes o ambiguos son candidatos/omisiones, nunca aristas positivas i
 2. Una consulta de vecinos RF alcanza FL, TP, ADR, TECH y código; un camino RS→símbolo cruza la cadena, explain explica una arista y trace v1 consulta el mismo grafo.
 3. affected y change-pack ante un diff controlado incluyen RF, TP y TECH; una publicación incremental refleja el cambio sin indexar por consulta.
 4. Mermaid se deriva de la página sin escribir wiki; JSON y cursor permiten la siguiente página, y provider-manifest expone la operación para codemode sin lógica nueva en mi-mcp.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-WGRAPH-001
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-WGRAPH-001.md
+exports:
+- RF-WGRAPH-001
+- '"Consultar el grafo único wiki+código"'
+agent_must_read:
+- .docs/wiki/05_requirements/RF-WGRAPH-001.md
+- .docs/wiki/04_flows/FL-WGRAPH-001.md
+- .docs/wiki/06_tests/TP-GPH.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-WGRAPH-001.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/wikisource/wiki_contract.go
+- internal/wikisource/parser.go
+- internal/docgraph/docgraph.go
+- internal/indexer/graph_staging.go
+- internal/model/graph.go
+- internal/model/graph_impact.go
+- internal/model/wiki_graph.go
+- internal/model/types.go
+- internal/service/wiki_graph.go
+- internal/service/trace.go
+- internal/service/app.go
+- internal/cli/nav.go
+- internal/cli/provider_manifest.go
+- integrations/mi-mcp/provider-manifest.json
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-GPH.md, ejecutar el
+  comando publicado: go test ./internal/model/... ./internal/indexer/... ./internal/service/...
+  ./internal/daemon/... (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-WGRAPH-001.
+evidence:
+- .docs/wiki/05_requirements/RF-WGRAPH-001.md
+- .docs/wiki/06_tests/TP-GPH.md
+```

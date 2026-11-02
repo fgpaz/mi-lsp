@@ -133,3 +133,37 @@ Scenario: Saltar auto-start con flag
 - Positivo: `TP-DAE / TC-DAE-010`
 - Positivo: `TP-DAE / TC-DAE-011`
 - Negativo: `TP-DAE / TC-DAE-012`
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-DAE-003
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-DAE-01.md
+exports:
+- RF-DAE-003
+- RF-DAE-003 - Auto-iniciar daemon en la primera consulta semantica
+agent_must_read:
+- .docs/wiki/05_requirements/RF-DAE-003.md
+- .docs/wiki/04_flows/FL-DAE-01.md
+- .docs/wiki/06_tests/TP-DAE.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-DAE-003.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/app.go
+- internal/daemon/server.go
+- internal/daemon/instance_owner.go
+verify:
+- Validar el contrato y sus referencias con `mi-lsp nav wiki validate-harness --workspace
+  <alias>`; contrastar los casos de .docs/wiki/06_tests/TP-DAE.md sin inferir que
+  fueron ejecutados.
+stop_if:
+- 'Detenerse y escalar si el cambio contradice el límite documentado: - Supuestos
+  prohibidos:'
+evidence:
+- .docs/wiki/05_requirements/RF-DAE-003.md
+- .docs/wiki/06_tests/TP-DAE.md
+```

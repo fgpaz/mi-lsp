@@ -159,3 +159,51 @@ CLI `mi-lsp`, con operaciones y selectores detallados en el comportamiento del r
 5. Si el daemon responde, enruta al backend adecuado y devuelve el envelope.
 6. Si el daemon no responde o no aplica, la CLI ejecuta fallback directo y emite `hint: "daemon_unavailable; served from local text index"` en el envelope.
 7. Si el backend primario no esta disponible, el core usa un backend degradado, registra warnings y marca el envelope con `degraded=true`, `reason` tipificado y `fallback_used` (catálogo versionado en [[RF-QRY-001]], contrato `primitives-v2`).
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-QRY-002
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-QRY-01.md
+exports:
+- RF-QRY-002
+- RF-QRY-002 - Resolver routing con fallback de daemon y backend
+agent_must_read:
+- .docs/wiki/05_requirements/RF-QRY-002.md
+- .docs/wiki/04_flows/FL-QRY-01.md
+- .docs/wiki/06_tests/TP-QRY.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-QRY-002.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/cli/nav.go
+- internal/cli/root.go
+- internal/daemon/lifecycle.go
+- internal/daemon/server.go
+- internal/service/autoindex.go
+- internal/service/coach.go
+- internal/service/context.go
+- internal/service/search.go
+- internal/service/semantic.go
+- internal/service/semantic_errors.go
+- internal/service/semantic_kotlin.go
+- internal/service/semantic_refs.go
+- internal/telemetry/access_diagnostics.go
+- internal/telemetry/access_events.go
+- internal/worker/gopls.go
+- internal/worker/rust_analyzer.go
+- internal/worker/tsserver.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-QRY.md, ejecutar el
+  comando publicado: go test ./internal/model ./internal/service ./internal/cli ./internal/indexer
+  (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-QRY-002.
+evidence:
+- .docs/wiki/05_requirements/RF-QRY-002.md
+- .docs/wiki/06_tests/TP-QRY.md
+```

@@ -9,7 +9,7 @@ id: "AE-HARNESS-ORCHESTRATION"
 kind: "support-doc"
 audience: "llm-first"
 imports:
-  - '[[00_gobierno_documental]]'
+  - '[[00_governance]]'
   - '[[AE-HARNESS-MANIFEST]]'
   - '[[AE-PHASES]]'
   - '[[AE-SESSION-CONTRACT]]'

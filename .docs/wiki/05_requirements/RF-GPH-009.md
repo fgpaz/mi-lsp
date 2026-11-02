@@ -92,3 +92,35 @@ Las entradas, salidas, enums y límites forman parte del contrato de comportamie
 - Query global bounded, direct/daemon parity y cero writes a member stores.
 - Cross-RID y authority checks en Windows/Linux/macOS soportados.
 - `TP-GPH / TP-GPH-006 / TC-GPH-039..042`.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-GPH-009
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-GPH-02.md
+exports:
+- RF-GPH-009
+- RF-GPH-009 - Federar grafos entre workspaces por cross-RID
+agent_must_read:
+- .docs/wiki/05_requirements/RF-GPH-009.md
+- .docs/wiki/04_flows/FL-GPH-02.md
+- .docs/wiki/06_tests/TP-GPH.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-GPH-009.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/app.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-GPH.md, ejecutar el
+  comando publicado: go test ./internal/model/... ./internal/indexer/... ./internal/service/...
+  ./internal/daemon/... (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-GPH-009.
+evidence:
+- .docs/wiki/05_requirements/RF-GPH-009.md
+- .docs/wiki/06_tests/TP-GPH.md
+```

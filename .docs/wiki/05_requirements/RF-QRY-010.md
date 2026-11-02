@@ -112,3 +112,36 @@ Scenario: Normalizar meta-terminos SDD en preguntas de anclas
 - Positivo: `TP-QRY / TC-QRY-039`
 - Positivo: `TP-QRY / TC-QRY-107`
 - Negativo: `TP-QRY / TC-QRY-034`
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-QRY-010
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-QRY-01.md
+exports:
+- RF-QRY-010
+- RF-QRY-010 - Responder preguntas docs-first guiadas por wiki y relacionarlas con
+  evidencia de codigo
+agent_must_read:
+- .docs/wiki/05_requirements/RF-QRY-010.md
+- .docs/wiki/04_flows/FL-QRY-01.md
+- .docs/wiki/06_tests/TP-QRY.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-QRY-010.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/app.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-QRY.md, ejecutar el
+  comando publicado: go test ./internal/model ./internal/service ./internal/cli ./internal/indexer
+  (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-QRY-010.
+evidence:
+- .docs/wiki/05_requirements/RF-QRY-010.md
+- .docs/wiki/06_tests/TP-QRY.md
+```

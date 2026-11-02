@@ -6,6 +6,21 @@ status: active
 title: TECH-TS-BACKEND
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-TS-BACKEND
+kind: technical-backend
+audience: dual
+imports: [.docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md, .docs/wiki/07_technical/TECH-PYTHON-BACKEND.md]
+exports: [TECH-TS-BACKEND]
+agent_must_read: [.docs/wiki/07_technical/TECH-TS-BACKEND.md, internal/indexer/extractor_ts.go, internal/worker/tsserver.go]
+agent_may_edit: [.docs/wiki/07_technical/TECH-TS-BACKEND.md]
+agent_must_not_edit: [internal/indexer/extractor_ts.go, internal/worker/tsserver.go, .docs/wiki/_mi-lsp/read-model.toml]
+verify: ["Leer .docs/wiki/07_technical/TECH-TS-BACKEND.md y .docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md; cotejar las afirmaciones con la fuente publicada internal/indexer/extractor_ts.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Una descripción o cambio convierta tsserver opcional en descarga/instalación implícita o oculte la degradación.]
+evidence: [.docs/wiki/07_technical/TECH-TS-BACKEND.md, .docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md, internal/indexer/extractor_ts.go]
+```
+
 ## Resumen
 
 Define la estrategia técnica del backend TypeScript/JavaScript en `mi-lsp`: catálogo repo-local siempre disponible y backend semántico opcional via `tsserver`.

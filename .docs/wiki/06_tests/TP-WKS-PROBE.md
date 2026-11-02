@@ -191,3 +191,31 @@ wiki_source_table_exception: true
     - real_user_home
 
 La única oracle de formato para todos los Go tocados es la orden dinámica y no mutante declarada en `verify`. El conjunto se obtiene desde Git para incluir cambios staged y unstaged; no se aceptan listas manuales ni invocaciones mutantes del formateador, porque la verificación no debe mutar archivos. Los casos que requieren symlink/junction se marcan skip únicamente cuando el sistema operativo o permisos no los permiten; el motivo queda en el resultado de test.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TP-WKS-PROBE
+kind: test-plan
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/05_requirements/RF-WKS-007.md
+exports:
+  - TP-WKS-PROBE
+agent_must_read:
+  - .docs/wiki/06_tests/TP-WKS-PROBE.md
+agent_may_edit:
+  - .docs/wiki/06_tests/TP-WKS-PROBE.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-WKS-007.md
+  - internal/workspace/
+verify:
+  - .docs/wiki/06_tests/TP-WKS-PROBE.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - unavailable_platform_case_is_reported_as_pass
+  - test_oracle_or_acceptance_would_change
+evidence:
+  - .docs/wiki/06_tests/TP-WKS-PROBE.md
+  - .docs/wiki/05_requirements/RF-WKS-007.md
+```

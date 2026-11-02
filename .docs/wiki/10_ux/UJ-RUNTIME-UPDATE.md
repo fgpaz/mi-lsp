@@ -25,3 +25,36 @@ El desarrollador usa la CLI o un asistente consumidor del mismo runtime. Quiere 
 ## Límites de evidencia
 
 Es un recorrido CLI/notificación, no una pantalla nueva ni una afirmación de legibilidad visual. La fábrica de procesos y las pruebas runtime sustentan comportamiento técnico; la fuente pública y los readbacks de release permanecen separados en TP-UPD-001. Las versiones antiguas publicadas sin updater requieren primera adopción manual, no capacidad retroactiva.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: UJ-RUNTIME-UPDATE
+kind: journey
+audience: human
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/02_outcomes/RS-MILSP-RUNTIME.md
+  - .docs/wiki/04_flows/FL-UPD-001.md
+exports:
+  - UJ-RUNTIME-UPDATE
+agent_must_read:
+  - .docs/wiki/10_ux/UJ-RUNTIME-UPDATE.md
+agent_may_edit:
+  - .docs/wiki/10_ux/UJ-RUNTIME-UPDATE.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-UPD-001.md
+  - .docs/wiki/06_tests/TP-UPD-001.md
+verify:
+  - "Lectura/cotejo: cotejar cada paso, estado y límite de este journey con RF-UPD-001, FL-UPD-001 y TP-UPD-001 más internal/cli/update.go, internal/daemon/update.go e internal/selfupdate/engine.go; mantener readback/deferred/pending según fuentes y no inferir ejecución de casos."
+stop_if:
+  - harness_verdict=BLOCKED
+  - deferred_or_unverified_update_is_presented_as_installed
+  - journey_or_acceptance_would_change
+evidence:
+  - .docs/wiki/05_requirements/RF-UPD-001.md
+  - .docs/wiki/04_flows/FL-UPD-001.md
+  - .docs/wiki/06_tests/TP-UPD-001.md
+  - internal/cli/update.go
+  - internal/daemon/update.go
+  - internal/selfupdate/engine.go
+```

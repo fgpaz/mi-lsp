@@ -829,3 +829,31 @@ Los casos TC-QRY-140 a TC-QRY-146 son cobertura implementada del contrato y sus 
 - **Evidencia referenciada**:
   - .docs/wiki/06_tests/TP-QRY.md
   - .docs/wiki/05_requirements/RF-QRY-025.md
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TP-QRY
+kind: test-plan
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/05_requirements/RF-QRY-001.md
+exports:
+  - TP-QRY
+agent_must_read:
+  - .docs/wiki/06_tests/TP-QRY.md
+agent_may_edit:
+  - .docs/wiki/06_tests/TP-QRY.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/
+  - internal/service/
+verify:
+  - .docs/wiki/06_tests/TP-QRY.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - missing_or_unavailable_evidence_is_reported_as_pass
+  - test_oracle_or_acceptance_would_change
+evidence:
+  - .docs/wiki/06_tests/TP-QRY.md
+  - .docs/wiki/05_requirements/RF-QRY-001.md
+```

@@ -10,6 +10,21 @@ links:
     role: implementation
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-DEPENDENCY-HARDENING
+kind: technical
+audience: dual
+imports: [.docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md]
+exports: [TECH-DEPENDENCY-HARDENING]
+agent_must_read: [.docs/wiki/07_technical/TECH-DEPENDENCY-HARDENING.md, worker-dotnet/MiLsp.Worker/MiLsp.Worker.csproj]
+agent_may_edit: [.docs/wiki/07_technical/TECH-DEPENDENCY-HARDENING.md]
+agent_must_not_edit: [worker-dotnet/MiLsp.Worker/MiLsp.Worker.csproj, scripts/release/, .docs/ae/repo-policy.yaml]
+verify: ["Leer .docs/wiki/07_technical/TECH-DEPENDENCY-HARDENING.md y .docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md; cotejar las afirmaciones con la fuente publicada worker-dotnet/MiLsp.Worker/MiLsp.Worker.csproj y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Una auditoría registre paquetes vulnerables o NU1903, o se proponga suppression/relajar el gate de release.]
+evidence: [.docs/wiki/07_technical/TECH-DEPENDENCY-HARDENING.md, .docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md, worker-dotnet/MiLsp.Worker/MiLsp.Worker.csproj]
+```
+
 ## Resumen
 
 Documenta la postura de hardening de dependencias y bootstrap del worker .NET, incluyendo el tratamiento canónico de advisories NuGet del worker Roslyn y la estrategia de resolucion/instalacion desde cualquier `cwd`.

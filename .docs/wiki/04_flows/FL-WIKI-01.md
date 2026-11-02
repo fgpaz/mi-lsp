@@ -207,3 +207,32 @@ Código nuevo/modificado según plan:
   - mergea dos envelopes: local (host:"") + remote (host:"<nombre_host>")
   - consolida items, deduplicación si es necesario
   - expone hosts_failed[] si SSH falló
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: FL-WIKI-01
+kind: flow
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/02_outcomes/RS-MILSP-NAVIGATION.md
+exports:
+  - FL-WIKI-01
+agent_must_read:
+  - .docs/wiki/04_flows/FL-WIKI-01.md
+agent_may_edit:
+  - .docs/wiki/04_flows/FL-WIKI-01.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-WIKI-001.md
+  - .docs/wiki/06_tests/TP-WIKI-001.md
+verify:
+  - .docs/wiki/06_tests/TP-WIKI-001.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - flow_scope_or_acceptance_would_change
+  - remote_host_failure_is_silently_hidden
+evidence:
+  - .docs/wiki/04_flows/FL-WIKI-01.md
+  - .docs/wiki/06_tests/TP-WIKI-001.md
+  - .docs/wiki/05_requirements/RF-WIKI-001.md
+```

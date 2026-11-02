@@ -22,6 +22,14 @@ links:
     role: test
   - path: internal/indexer/incremental_graph_repair_test.go
     role: test
+  - path: internal/indexer/extractor_go_test.go
+    role: test
+  - path: internal/service/graph_query_cache_test.go
+    role: test
+  - path: internal/worker/graph_runtime_fingerprint_test.go
+    role: test
+  - path: internal/workspace/worktree_overlay_test.go
+    role: test
 ---
 
 ## Alcance
@@ -29,6 +37,22 @@ links:
 RF-GPH-001, RF-GPH-002, RF-GPH-003, RF-GPH-004, RF-GPH-005, RF-GPH-006, RF-GPH-007, RF-GPH-008, RF-GPH-009, RF-GPH-010, RF-GPH-011. Se conserva el inventario de escenarios, límites, disposiciones y evidencia histórica, sin reejecución.
 
 ## Casos
+
+### Regresiones Go acotadas
+
+Las referencias siguientes identifican oráculos existentes; no acreditan ejecución nueva ni completan por sí solas los criterios o la aceptación global.
+
+- **Caso**: TC-GPH-087; **RF**: RF-GPH-008 — Criterio 1; Alcance parcial: fixture Go test-only; **disposición**: manual_evidence_pending. `internal/indexer/extractor_go_test.go`: `TestObserveGoGraphIgnoresTestOnlyPackages` comprueba, en una fixture mixta que también contiene `fixture.go`, ausencia de `no_parseable_sources` y `type_check_no_sources`, batch `complete` y `ReadyForStaging`; es una regresión parcial de Go, no verificación íntegra de fixtures Go y Roslyn.
+- **Caso**: TC-GPH-088; **RF**: RF-GPH-008 — Criterio 1; Alcance parcial: symlink externo Go; **disposición**: manual_evidence_pending. `internal/indexer/extractor_go_test.go`: `TestObserveGoGraphMarksOutsideSymlinkSourceIncomplete` exige omisión `external_target`, batch parcial y rechazo de staging para symlink externo.
+- **Caso**: TC-GPH-089; **RF**: RF-GPH-008 — Criterio 1; Alcance parcial: fuente Go no resoluble; **disposición**: manual_evidence_pending. `internal/indexer/extractor_go_test.go`: `TestObserveGoGraphDoesNotStageUnresolvableSource` exige error o rechazo de staging para symlink sin destino.
+
+Referencias complementarias a los casos existentes de overlay, sin atribuirles oráculos que no ejecutan. Todas son evidencia prevista parcial, `manual_evidence_pending`, no ejecución nueva ni cobertura completa de criterios:
+
+- TC-GPH-081 — RF-GPH-005 — Criterio 3; RF-GPH-005 — Criterio 4; Alcance parcial: fingerprint de Go ignorado; `internal/workspace/worktree_overlay_test.go`, `TestWorktreeOverlayFingerprintsIgnoredGoSourceCreationAndModification`, verifica solo la detección y fingerprint de creación/modificación de Go ignorado, insumo para identidad del snapshot. No ejercita cursor stale, aislamiento entre branches ni hash/mtime de DB; esos oráculos del caso siguen pendientes.
+- TC-GPH-083 — RF-GPH-005 — Criterio 3; Alcance parcial: identidad y retry de caché; `internal/service/graph_query_cache_test.go`, `TestWorktreeGraphCacheHitAndDifferentIdentity` y `TestWorktreeGraphCacheCancelledFlightCannotReplaceRetry`, verifican solo hit, separación de identidad y que un vuelo cancelado no reemplace el retry. Son apoyo a identidad del snapshot, no pruebas de selector, generation, cursor ni budgets; tampoco acreditan dedupe concurrente, fairness o eviction del caso completo.
+- TC-GPH-084 — RF-GPH-005 — Criterio 3; Alcance parcial: fingerprint GoENV; `internal/worker/graph_runtime_fingerprint_test.go`, `TestGoEnvConfigDigestHashesContentsWithoutExposure`, `TestGoEnvConfigDigestResolvesDefaultPath`, `TestGoEnvConfigDigestHonorsOff` y `TestGraphObserverRuntimeFingerprintDoesNotCacheUnreadableGoEnv`, verifican solo digest y tratamiento GoENV acotados que contribuyen a la identidad del snapshot; no prueban cursor stale ni todos los toolchains o budgets.
+
+**Límites del slice Go:** los hunks de `internal/service/graph_query.go` y `internal/service/app.go` seleccionan topología, consulta y snapshot overlay; `internal/model/graph_query.go`, `internal/store/db.go`, `internal/worker/graph_runtime_fingerprint.go` y `internal/workspace/worktree_overlay.go` son componentes de ese recorrido. TC-GPH-081/083/084 son evidencia parcial prevista para RF-GPH-005 criterios 3/4, no prueba de esos criterios completos. El owner de TP debe conservar pendientes los oráculos de selector/generation/cursor/budget, aislamiento y lectura sin escritura que no se hayan observado. Para la admisión Go-only, TC-GPH-086 permanece pendiente; no se infiere soporte de otras topologías.
 
 ### Kotlin — oráculo futuro de la extensión fuente
 
@@ -652,6 +676,53 @@ mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
   - **Dado**: comando graph read-only publicado
   - **Cuando**: mi-lsp nav graph stats|validate --workspace <alias> --format toon
   - **Entonces**: stats/validate no escriben ni reparan index.db y exponen generation/status/omissions de forma estable
+  - **id**: TC-GPH-081
+  - RF-GPH-005 — Criterio 3; Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: dos linked worktrees con deltas distintos conservan generaciones/evidencias aisladas, la DB base no cambia y el cursor solo continúa en su branch. La evidencia observada de fixtures scratch y sus límites se documenta abajo; no prueba topologías no observadas ni aceptación global.
+  - **type**: positivo
+  - **Dado**: un repositorio base con graph current y dos linked worktrees con cambios semánticos distintos
+  - **Cuando**: se consultan GraphQuery y `nav.graph.validate` por la raíz física de cada worktree, se pagina y luego se reutiliza el cursor en la otra branch
+  - **Entonces**: cada snapshot contiene solo su delta, la generación es completa/current, la DB base permanece idéntica, la página continúa en la misma branch y el cursor cruzado responde `GPH_QUERY_CURSOR_STALE`
+  - **Evidencia observada / alcance**: Go multi-repo: `/home/tesla/.cache/mi-lsp-overlay-scratch/graph-multi-final.log` registra composición, aislamiento de dos branches, continuación/cursor cruzado, freshness y revert (PASS). C# dos branches: `/home/tesla/.cache/mi-lsp-overlay-scratch/overlay-final-evidence/csharp-two-branches.log` registra generaciones/evidencias atómicas, freshness y cursor cross-branch stale (PASS). Son fixtures scratch separados; el worktree mixto actual no valida GraphQuery completo y el caso global sigue `manual_evidence_pending`.
+  - **id**: TC-GPH-082
+  - RF-GPH-008 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: un overlay Kotlin experimental/no-stageable falla cerrado sin publicar nodos o edges parciales; no acredita soporte estable ni una ejecución de promoción.
+  - **type**: negativo
+  - **Dado**: un linked worktree cuya topología requiere el observer Kotlin experimental bajo el gate actual
+  - **Cuando**: se ejecuta una operación GraphQuery sobre el snapshot dirty
+  - **Entonces**: el gate `ReadyForStaging` no se relaja, la consulta devuelve error tipado (`GPH_QUERY_BACKEND_UNAVAILABLE`) y no se publica ni persiste un grafo parcial
+  - **Evidencia observada / alcance**: `/home/tesla/.cache/mi-lsp-overlay-scratch/overlay-final-evidence/kotlin-failclosed.log` confirma `GPH_QUERY_BACKEND_UNAVAILABLE` y cero nodos/edges parciales. Esto acredita solo el fail-closed de la fixture; no aceptación de semántica Kotlin ni promoción (sigue `manual_evidence_pending`).
+  - **id**: TC-GPH-083
+  - RF-GPH-005 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: una key lenta no bloquea una key distinta; la misma key deduplica; cancelación de un waiter no corta a los restantes y del último sí cancela; LRU no cierra DB en uso. La evidencia observada del harness scratch y sus límites se documenta abajo; no acredita aceptación global.
+  - **type**: positivo
+  - **Dado**: snapshots GraphQuery cacheados con observer lento y callers concurrentes
+  - **Cuando**: se ejecutan keys independientes, callers concurrentes de la misma key, cancelación y eviction con una DB en uso
+  - **Entonces**: la key independiente progresa; misma key comparte un build; la espera respeta contexto; solo la cancelación del último waiter cancela observer y la DB en uso sigue abierta
+  - **Evidencia observada / alcance**: `/home/tesla/.cache/mi-lsp-overlay-scratch/overlay-final-evidence/overlay-cache-selection-race-smoke.log`, `TestGraphQueryCacheConcurrencySmoke`, `go test -race`: PASS para keys independientes, dedupe, cancelación y LRU con DB en uso sobre harness scratch. No se añadieron unit tests al repo; el caso de producto conserva `manual_evidence_pending`.
+  - **id**: TC-GPH-084
+  - RF-GPH-005 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: cambiar runtime/configuración efectiva del observer cambia cache key; el fingerprint no emite valores crudos. La evidencia observada del selector probado y sus límites se documenta abajo; no acredita todos los toolchains ni aceptación global.
+  - **type**: negativo
+  - **Dado**: un snapshot cacheado con toolchain/runtime de observación seleccionado
+  - **Cuando**: cambia la configuración efectiva de Go, Roslyn o Kotlin en el mismo proceso
+  - **Entonces**: la key cambia y no se reutiliza el snapshot de runtime anterior
+  - **Evidencia observada / alcance**: el mismo log scratch `overlay-cache-selection-race-smoke.log`, `TestGraphQueryCacheKeyTracksObserverRuntimeSmoke`, cambia `MI_LSP_KOTLIN_LANGUAGE_SERVER_PATH` en proceso y observa key distinta (PASS). Alcance limitado a ese selector de entorno, no toolchains reales Go/Roslyn/Kotlin; permanece `manual_evidence_pending`.
+  - **id**: TC-GPH-085
+  - RF-GPH-005 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: en un repo Go+C# cuyo default apunta a solución C#, el observer Go selecciona el go.mod declarado/raíz y conserva el default C# para su backend; no rechaza ni confunde entrypoints. La evidencia observada de selección sintética y sus límites se documenta abajo; no acredita GraphQuery integrada ni aceptación global.
+  - **type**: positivo
+  - **Dado**: un linked worktree multi-lenguaje con un `go.mod` y default entrypoint de otro lenguaje
+  - **Cuando**: se prepara la topología de GraphQuery
+  - **Entonces**: Go usa su módulo seguro declarado o `go.mod` raíz; el default C# no lo suplanta y ningún backend se omite silenciosamente
+  - **Evidencia observada / alcance**: el mismo log scratch `overlay-cache-selection-race-smoke.log`, `TestWorktreeGraphGoModuleSelectionWhenDefaultIsSolutionSmoke`, selecciona `go.mod` raíz pese al default de solución C# (PASS). Es selección sintética, no ejecución GraphQuery integrada; permanece `manual_evidence_pending`.
+
+  - **id**: TC-GPH-086
+  - RF-GPH-005 — Criterio 4 (solo sustenta la comprobación de no escritura de la DB base). La frontera Go-only es una restricción explícita de entrega autorizada, no un criterio RF nuevo. Disposición: manual_evidence_pending. Evidencia esperada: una topología mixta se rechaza antes de observar/publicar y la DB base no cambia. No existe evidencia runtime adjunta ni se ejecutó este caso.
+  - **type**: negativo
+  - **Dado**: un linked worktree dirty con selección de graph Go y C#
+  - **Cuando**: GraphQuery prepara el overlay de la candidata 0.16.7
+  - **Entonces**: falla cerrado con `GPH_QUERY_BACKEND_UNAVAILABLE` antes del observer/publicación y sin modificar la DB base
+  - **Evidencia de implementación consultada (no runtime)**: `internal/service/graph_query.go`; resultado de ejecución: no realizado; disposición pendiente.
+
+Nota de alcance Go-only: la candidata 0.16.7 admite solo topologías Go completas. `TC-GPH-085` conserva como objetivo futuro el caso histórico Go+C# de selección de entrypoint, permanece `manual_evidence_pending` y está fuera de la admisión actual; no acredita aceptación. `TC-GPH-086` expresa el oráculo Go-only de mezcla fail-closed, también pendiente de evidencia runtime. No hay publicación 0.16.7 ni aceptación global por estos registros.
+
+Nota de trazabilidad de IDs: los oráculos base `TC-GPH-068..072` se preservan íntegros. Solo las cinco etiquetas duplicadas del bloque delivery overlay `TP-GPH-008` se renombran, derivando del máximo previo 080: overlay 068→081 (aislamiento de branches), 069→082 (Kotlin fail-closed), 070→083 (concurrencia/cache), 071→084 (fingerprint runtime) y 072→085 (objetivo futuro Go+C# fuera de admisión). El caso nuevo `TC-GPH-086` cubre la mezcla Go+C# rechazada por la frontera Go-only. Las referencias técnicas apuntan a estos IDs únicos; todo caso conserva `manual_evidence_pending` sin atribuir ejecución ni aceptación. Los oráculos base y su historial no se alteran.
 
 PASS final requiere los siete TP, comparadores fijados, raw evidence, cross-RID, rollback, seguridad y autoridad wiki. Un caso `planned` no cuenta como ejecutado hasta enlazar test automatizado o evidencia manual determinista.
 
@@ -903,3 +974,44 @@ El mapa F1-F11 demuestra cobertura automatizada del árbol actual, y la campaña
   - internal/store/queries_incremental.go
   - internal/service/wiki_code_bindings.go
   - .docs/wiki/06_tests/TP-GPH.md
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TP-GPH
+kind: test-plan
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/02_outcomes/RS-MILSP-GRAPH.md
+  - .docs/wiki/05_requirements/RF-GPH-001.md
+exports:
+  - TP-GPH
+agent_must_read:
+  - .docs/wiki/06_tests/TP-GPH.md
+agent_may_edit:
+  - .docs/wiki/06_tests/TP-GPH.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/
+  - internal/
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - .docs/wiki/06_tests/TP-GPH.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - existing_oracle_or_evidence_is_removed_or_rewritten
+  - not_run_or_manual_evidence_pending_is_reported_as_pass
+  - test_oracle_or_acceptance_would_change
+evidence:
+  - .docs/wiki/06_tests/TP-GPH.md
+  - .docs/wiki/05_requirements/RF-GPH-001.md
+  - .docs/wiki/05_requirements/RF-GPH-002.md
+  - .docs/wiki/05_requirements/RF-GPH-003.md
+  - .docs/wiki/05_requirements/RF-GPH-004.md
+  - .docs/wiki/05_requirements/RF-GPH-005.md
+  - .docs/wiki/05_requirements/RF-GPH-006.md
+  - .docs/wiki/05_requirements/RF-GPH-007.md
+  - .docs/wiki/05_requirements/RF-GPH-008.md
+  - .docs/wiki/05_requirements/RF-GPH-009.md
+  - .docs/wiki/05_requirements/RF-GPH-010.md
+  - .docs/wiki/05_requirements/RF-GPH-011.md
+```

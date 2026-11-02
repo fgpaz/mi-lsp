@@ -108,3 +108,35 @@ Las entradas, salidas, enums y límites forman parte del contrato de comportamie
 - Precision/recall por relation y backend, negative violations, omissions y coverage denominators.
 - Incremental versus clean, cancel/crash/restart y cross-RID en RIDs soportados.
 - `TP-GPH / TP-GPH-003 / TC-GPH-015..022`.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-GPH-008
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-GPH-01.md
+exports:
+- RF-GPH-008
+- RF-GPH-008 - Extraer evidencia compiler-first con madurez por backend
+agent_must_read:
+- .docs/wiki/05_requirements/RF-GPH-008.md
+- .docs/wiki/04_flows/FL-GPH-01.md
+- .docs/wiki/06_tests/TP-GPH.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-GPH-008.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/app.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-GPH.md, ejecutar el
+  comando publicado: go test ./internal/model/... ./internal/indexer/... ./internal/service/...
+  ./internal/daemon/... (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-GPH-008.
+evidence:
+- .docs/wiki/05_requirements/RF-GPH-008.md
+- .docs/wiki/06_tests/TP-GPH.md
+```

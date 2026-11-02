@@ -14,6 +14,21 @@ links:
     - path: integrations/mi-mcp/provider-manifest.json
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: CT-WIKI-001
+kind: wiki-graph-contract
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-WIKI-001.md, .docs/wiki/07_technical/contracts/CT-ROADMAP-001.md]
+exports: [CT-WIKI-001]
+agent_must_read: [.docs/wiki/07_technical/contracts/CT-WIKI-001.md, internal/model/wiki_graph.go, internal/model/wiki_contract.go]
+agent_may_edit: [.docs/wiki/07_technical/contracts/CT-WIKI-001.md]
+agent_must_not_edit: [internal/model/, internal/cli/provider_manifest.go, integrations/mi-mcp/provider-manifest.json]
+verify: ["Leer .docs/wiki/07_technical/contracts/CT-WIKI-001.md y .docs/wiki/07_technical/TECH-WIKI-001.md; cotejar las afirmaciones con la fuente publicada internal/model/wiki_graph.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Un cambio trate prosa como binding, infiera traducción/idioma o expanda Mermaid a grafo completo sin evidencia.]
+evidence: [.docs/wiki/07_technical/contracts/CT-WIKI-001.md, .docs/wiki/07_technical/TECH-WIKI-001.md, internal/model/wiki_graph.go]
+```
+
 ## Consumidor
 CLI y gateway codemode que descubre las operaciones wiki_graph y wiki_validate_contract del manifiesto del proveedor mi-lsp.
 

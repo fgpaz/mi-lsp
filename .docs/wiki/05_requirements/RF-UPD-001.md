@@ -54,3 +54,39 @@ Red sin aviso y reintento en ventana siguiente; checksum incorrecto fail-closed;
 ## Restricciones ADR
 
 No requiere admin, no logs con rutas de usuario, no modifica índices/registries por actualizar y no instala workers como efecto de consultas. Una primera adopción de updater desde versiones antiguas sin esa función se informa como bootstrap manual.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-UPD-001
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-UPD-001.md
+exports:
+- RF-UPD-001
+- Actualizar la CLI portable con estado común y promoción verificable
+agent_must_read:
+- .docs/wiki/05_requirements/RF-UPD-001.md
+- .docs/wiki/04_flows/FL-UPD-001.md
+- .docs/wiki/06_tests/TP-UPD-001.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-UPD-001.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/selfupdate/engine.go
+- internal/selfupdate/state.go
+- internal/selfupdate/source.go
+- internal/cli/update.go
+- internal/daemon/update.go
+verify:
+- Validar el contrato y sus referencias con `mi-lsp nav wiki validate-harness --workspace
+  <alias>`; contrastar los casos de .docs/wiki/06_tests/TP-UPD-001.md sin inferir
+  que fueron ejecutados.
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-UPD-001.
+evidence:
+- .docs/wiki/05_requirements/RF-UPD-001.md
+- .docs/wiki/06_tests/TP-UPD-001.md
+```

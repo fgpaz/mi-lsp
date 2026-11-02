@@ -8,24 +8,24 @@ id: "AE-RELEASE-DISTRIBUTION"
 kind: "support-doc"
 audience: "llm-first"
 imports:
-  - '[[00_gobierno_documental]]'
+  - '[[00_governance]]'
   - '[[TECH-DEPENDENCY-HARDENING]]'
   - '[[TECH-GRAPH-NATIVE]]'
   - '[[DB-SYMBOL-EDGE-GRAPH]]'
   - '[[CT-GRAPH-CLI]]'
   - '[[CT-MILX-V1]]'
-  - '[[09_contratos_tecnicos]]'
+  - '[[CT-TECHNICAL-BASELINE]]'
   - '[[AE-EVIDENCE-POLICY]]'
 exports:
   - 'AE-RELEASE-DISTRIBUTION'
 agent_must_read:
   - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
-  - .docs/wiki/07_tech/TECH-DEPENDENCY-HARDENING.md
-  - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
-  - .docs/wiki/08_db/DB-SYMBOL-EDGE-GRAPH.md
-  - .docs/wiki/09_contratos/CT-GRAPH-CLI.md
-  - .docs/wiki/09_contratos/CT-MILX-V1.md
-  - .docs/wiki/09_contratos_tecnicos.md
+  - .docs/wiki/07_technical/TECH-DEPENDENCY-HARDENING.md
+  - .docs/wiki/07_technical/TECH-GRAPH-NATIVE.md
+  - .docs/wiki/07_technical/db/DB-SYMBOL-EDGE-GRAPH.md
+  - .docs/wiki/07_technical/contracts/CT-GRAPH-CLI.md
+  - .docs/wiki/07_technical/contracts/CT-MILX-V1.md
+  - .docs/wiki/07_technical/contracts/CT-TECHNICAL-BASELINE.md
 agent_may_edit:
   - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
   - scripts/release/ae-release-binaries.ps1
@@ -219,13 +219,13 @@ kind: release-contract
 audience: llm-first
 source_of_truth: this
 imports:
-  - .docs/wiki/09_contratos/CT-DAEMON-WORKER.md
-  - .docs/wiki/09_contratos_tecnicos.md
+  - .docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md
+  - .docs/wiki/07_technical/contracts/CT-TECHNICAL-BASELINE.md
 exports:
   - daemon_start_lock_release_invariants
 evidence:
   - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
-  - .docs/wiki/09_contratos/CT-DAEMON-WORKER.md
+  - .docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md
   - internal/daemon/start_lock.go
   - internal/daemon/start_lock_windows.go
   - internal/daemon/start_lock_unix.go
@@ -295,7 +295,7 @@ verify:
   - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
 evidence:
   - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
-  - .docs/wiki/06_pruebas/TP-GPH.md
+  - .docs/wiki/06_tests/TP-GPH.md
   - scripts/release/ae-release-binaries.ps1
 applies_when:
   - graph-kernel-or-identity-code-changes
@@ -416,8 +416,8 @@ kind: release-readback-contract
 audience: llm-first
 source_of_truth: this
 imports:
-  - .docs/wiki/07_tech/TECH-DEPENDENCY-HARDENING.md
-  - .docs/wiki/09_contratos_tecnicos.md
+  - .docs/wiki/07_technical/TECH-DEPENDENCY-HARDENING.md
+  - .docs/wiki/07_technical/contracts/CT-TECHNICAL-BASELINE.md
 exports:
   - darwin_release_readback_mapping
 evidence:

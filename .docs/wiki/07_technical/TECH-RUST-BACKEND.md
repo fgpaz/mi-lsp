@@ -12,6 +12,21 @@ links:
   - RF-WKS-001
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-RUST-BACKEND
+kind: technical-backend
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-GRAPH-NATIVE.md, .docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md]
+exports: [TECH-RUST-BACKEND]
+agent_must_read: [.docs/wiki/07_technical/TECH-RUST-BACKEND.md, internal/indexer/extractor_rust.go, internal/worker/rust_analyzer.go]
+agent_may_edit: [.docs/wiki/07_technical/TECH-RUST-BACKEND.md]
+agent_must_not_edit: [internal/indexer/extractor_rust.go, internal/worker/rust_analyzer.go, .docs/wiki/_mi-lsp/read-model.toml]
+verify: ["Leer .docs/wiki/07_technical/TECH-RUST-BACKEND.md y .docs/wiki/07_technical/TECH-GRAPH-NATIVE.md; cotejar las afirmaciones con la fuente publicada internal/indexer/extractor_rust.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [La edición eleve heurística lexical a observación semántica o declare rust-analyzer disponible sin señal verificable.]
+evidence: [.docs/wiki/07_technical/TECH-RUST-BACKEND.md, .docs/wiki/07_technical/TECH-GRAPH-NATIVE.md, internal/indexer/extractor_rust.go]
+```
+
 ## Resumen
 
 Define el soporte de Rust en `mi-lsp`: detección de Cargo, catálogo lexical local y semántica opcional mediante `rust-analyzer`. No promete análisis de tipos ni observación graph-native para Rust.

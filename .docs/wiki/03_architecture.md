@@ -273,3 +273,40 @@ Contrato actual de consumo CLI/proveedor: [[RF-QRY-023]]. El [inventario de reti
   - .docs/wiki/06_tests/TP-GPH.md::TP-GPH.kotlin-compiler-export-v1
 
 [[ADR-KOTLIN-GRAPH-ADMISSION-V1]] registra exactamente `kotlin-language-server` / `kotlin` / `kotlin/binding-context` para declarations nombradas y references compiler locales main-jvm. Decisión delegada coord-milsp, no promoción ni aprobación humana/global inferida. NodeKey-v1/framing/tablas/ReadyForStaging intactos; sin DDL/querybackfill/migración en query. Lectores viejos rechazan el enum nuevo; mínimo lector con SHA/versión de primera release todavía pendiente. Rollback conserva prior generation y binario compatible. La autoridad de configuración es el exporter opt-in offline y su recibo; no se generó en BUILD. Publicar sigue bloqueado por los seis oráculos de RF-GPH-008, owner coord-milsp, 2026-10-17.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: ARCH-MILSP
+kind: architecture
+audience: dual
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/01_scope.md
+  - .docs/wiki/03_architecture/ADR-KOTLIN-GRAPH-ADMISSION-V1.md
+exports:
+  - ARCH-MILSP
+agent_must_read:
+  - .docs/wiki/03_architecture.md
+agent_may_edit:
+  - .docs/wiki/03_architecture.md
+agent_must_not_edit:
+  - .docs/ae/repo-policy.yaml
+  - <kernel_home>/canon/AE-KERNEL-V2.md
+  - .docs/wiki/05_requirements/
+verify:
+  - "Lectura/cotejo: contrastar los límites de actores/sistemas y lifecycle de grafo con RF-WIKI-001, RF-GPH-008, RF-DAE-002, FL-WIKI-01, FL-GPH-01 y FL-DAE-01; cotejar los bindings de implementación publicados, sin elevar estados experimentales ni pendientes a aprobados y sin cambiar el status WIKI."
+stop_if:
+  - harness_verdict=BLOCKED
+  - documented_architecture_lock_or_acceptance_would_change
+  - pending_oracles_are_reported_as_passed
+evidence:
+  - .docs/wiki/05_requirements/RF-WIKI-001.md
+  - .docs/wiki/05_requirements/RF-GPH-008.md
+  - .docs/wiki/05_requirements/RF-DAE-002.md
+  - .docs/wiki/04_flows/FL-WIKI-01.md
+  - .docs/wiki/04_flows/FL-GPH-01.md
+  - .docs/wiki/04_flows/FL-DAE-01.md
+  - internal/model/graph.go
+  - internal/indexer/graph_pipeline.go
+  - internal/daemon/admin_ui.html
+```

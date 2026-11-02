@@ -6,6 +6,21 @@ status: active
 title: TECH-SEMANTIC-RECALL
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-SEMANTIC-RECALL
+kind: technical-architecture
+audience: dual
+imports: [.docs/wiki/07_technical/db/DB-WIKI-EMBEDDINGS.md, .docs/wiki/07_technical.md]
+exports: [TECH-SEMANTIC-RECALL]
+agent_must_read: [.docs/wiki/07_technical/TECH-SEMANTIC-RECALL.md, internal/embed/, internal/wikichunk/]
+agent_may_edit: [.docs/wiki/07_technical/TECH-SEMANTIC-RECALL.md]
+agent_must_not_edit: [internal/embed/, internal/wikichunk/, .mi-lsp/project.toml]
+verify: ["Leer .docs/wiki/07_technical/TECH-SEMANTIC-RECALL.md y .docs/wiki/07_technical/db/DB-WIKI-EMBEDDINGS.md; cotejar las afirmaciones con la fuente publicada internal/embed/client.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Una propuesta persista o emita credenciales, introduzca proveedor implícito o convierta rerank opcional en requisito.]
+evidence: [.docs/wiki/07_technical/TECH-SEMANTIC-RECALL.md, .docs/wiki/07_technical/db/DB-WIKI-EMBEDDINGS.md, internal/embed/client.go]
+```
+
 ## Resumen
 
 Detallar la arquitectura técnica del backend de semantic recall: embeddings vectoriales pluggables sobre la wiki gobernada, store puro-Go, recurso sin CGO, hook local opcional de rerank y fallback documental seguro via `nav wiki search`.

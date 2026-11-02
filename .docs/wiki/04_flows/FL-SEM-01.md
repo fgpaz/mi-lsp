@@ -82,3 +82,32 @@ sequenceDiagram
 ## Restricciones ADR
 
 Sin CGO ni extensión sqlite-vec; no cliente privado de rerank en el core. Recall no requiere gobernanza válida ni daemon. No persiste consultas, snippets, stdout/stderr, tokens ni secretos. Se conservan la degradación y los hints documentados en CT-NAV-RECALL y TECH-SEMANTIC-RECALL, sin modificar el runtime.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: FL-SEM-01
+kind: flow
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/02_outcomes/RS-MILSP-NAVIGATION.md
+exports:
+  - FL-SEM-01
+agent_must_read:
+  - .docs/wiki/04_flows/FL-SEM-01.md
+agent_may_edit:
+  - .docs/wiki/04_flows/FL-SEM-01.md
+agent_must_not_edit:
+  - .docs/wiki/07_technical/contracts/CT-NAV-RECALL.md
+  - .docs/wiki/07_technical/TECH-SEMANTIC-RECALL.md
+verify:
+  - .docs/wiki/06_tests/TP-SEM.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - flow_scope_or_acceptance_would_change
+  - recall_is_claimed_to_persist_sensitive_query_data
+evidence:
+  - .docs/wiki/04_flows/FL-SEM-01.md
+  - .docs/wiki/06_tests/TP-SEM.md
+  - .docs/wiki/05_requirements/RF-SEM-001.md
+```

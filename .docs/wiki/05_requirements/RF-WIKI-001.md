@@ -201,3 +201,45 @@ Scenario: Aplicar offset y top correctamente
 - **limitations**:
   - **graph_activation_atomicity**: not_promised_by_document_snapshot_marker
   - **legacy_mentions**: bounded_source_hash_confirmation_when_marker_is_stale
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-WIKI-001
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-WIKI-01.md
+exports:
+- RF-WIKI-001
+- RF-WIKI-001 - Buscar en documentacion de todos los workspaces federados
+agent_must_read:
+- .docs/wiki/05_requirements/RF-WIKI-001.md
+- .docs/wiki/04_flows/FL-WIKI-01.md
+- .docs/wiki/06_tests/TP-WIKI.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-WIKI-001.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/docgraph/docgraph.go
+- internal/docidentity/identity.go
+- internal/indexer/indexer.go
+- internal/service/wiki_search.go
+- internal/store/doc_snapshot.go
+- internal/store/index_publish.go
+- internal/store/meta.go
+- internal/store/queries_docs.go
+- internal/store/queries_incremental.go
+- internal/wikisource/parser.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-WIKI.md, ejecutar el
+  comando publicado: go test ./internal/service ./internal/cli ./internal/docgraph
+  ./internal/indexer -count=1 -run ''TestClassifyWikiMapHubDefaultsRemainLocked|TestGroupWikiMapDocsUsesDefaultOrCustomDeclarationOrder|TestTrimWikiMapHubs|TestWalkWikiMapDocs|TestNavWikiMapUsesDirectExecution|TestKnowledgeWikiRoots|TestDocumentGraph''
+  (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- 'Detenerse y escalar si el cambio contradice el límite documentado: - Supuestos
+  prohibidos:'
+evidence:
+- .docs/wiki/05_requirements/RF-WIKI-001.md
+- .docs/wiki/06_tests/TP-WIKI.md
+```

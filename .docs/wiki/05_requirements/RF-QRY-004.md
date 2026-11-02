@@ -119,3 +119,35 @@ Scenario: Continuar con aviso en archivo no encontrado
 - Positivo: `TP-QRY / TC-QRY-014`
 - Positivo: `TP-QRY / TC-QRY-015`
 - Negativo: `TP-QRY / TC-QRY-016`
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-QRY-004
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-QRY-01.md
+exports:
+- RF-QRY-004
+- RF-QRY-004 - Leer multiples rangos de archivo en una sola invocacion
+agent_must_read:
+- .docs/wiki/05_requirements/RF-QRY-004.md
+- .docs/wiki/04_flows/FL-QRY-01.md
+- .docs/wiki/06_tests/TP-QRY.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-QRY-004.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/app.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-QRY.md, ejecutar el
+  comando publicado: go test ./internal/model ./internal/service ./internal/cli ./internal/indexer
+  (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- 'Detenerse y escalar si el cambio contradice el límite documentado: - Supuestos
+  prohibidos:'
+evidence:
+- .docs/wiki/05_requirements/RF-QRY-004.md
+- .docs/wiki/06_tests/TP-QRY.md
+```

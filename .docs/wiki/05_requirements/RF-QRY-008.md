@@ -119,3 +119,35 @@ Scenario: Detectar cuando no hay cambios
 - Positivo: `TP-QRY / TC-QRY-026`
 - Positivo: `TP-QRY / TC-QRY-027`
 - Negativo: `TP-QRY / TC-QRY-028`
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-QRY-008
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-QRY-01.md
+exports:
+- RF-QRY-008
+- RF-QRY-008 - Devolver contexto semantico de simbolos cambiados en un diff git
+agent_must_read:
+- .docs/wiki/05_requirements/RF-QRY-008.md
+- .docs/wiki/04_flows/FL-QRY-01.md
+- .docs/wiki/06_tests/TP-QRY.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-QRY-008.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/app.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-QRY.md, ejecutar el
+  comando publicado: go test ./internal/model ./internal/service ./internal/cli ./internal/indexer
+  (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- 'Detenerse y escalar si el cambio contradice el límite documentado: - Supuestos
+  prohibidos:'
+evidence:
+- .docs/wiki/05_requirements/RF-QRY-008.md
+- .docs/wiki/06_tests/TP-QRY.md
+```

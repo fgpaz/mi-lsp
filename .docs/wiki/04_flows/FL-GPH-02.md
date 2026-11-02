@@ -73,3 +73,32 @@ Confiabilidad, rendimiento, memoria, portabilidad y experiencia de desarrollo, e
 3. La profundidad y el presupuesto son límites de salida, no licencia para scan ilimitado.
 4. La evidencia se conserva junto al camino; no se presentan inferencias como hechos.
 5. Las respuestas siguen siendo validas aunque el daemon no este activo.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: FL-GPH-02
+kind: flow
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/02_outcomes/RS-MILSP-GRAPH.md
+exports:
+  - FL-GPH-02
+agent_must_read:
+  - .docs/wiki/04_flows/FL-GPH-02.md
+agent_may_edit:
+  - .docs/wiki/04_flows/FL-GPH-02.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-GPH-002.md
+  - .docs/wiki/06_tests/TP-GPH.md
+verify:
+  - .docs/wiki/06_tests/TP-GPH.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - flow_scope_or_acceptance_would_change
+  - unevidenced_claim_is_added
+evidence:
+  - .docs/wiki/04_flows/FL-GPH-02.md
+  - .docs/wiki/06_tests/TP-GPH.md
+  - .docs/wiki/05_requirements/RF-GPH-002.md
+```

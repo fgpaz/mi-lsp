@@ -53,3 +53,35 @@ No se declaran restricciones ADR adicionales en la decisión fuente.
 Búsqueda de archivos: [[RF-HARNESS-FIND-001]], [[TP-HARNESS-FIND-001]] y [[TECH-HARNESS-FIND-001]], entregados por el dueño findfiles.
 
 Diagnósticos: [[RF-HARNESS-DIAG-001]], [[TP-HARNESS-DIAG-001]] y [[TECH-HARNESS-DIAG-001]], entregados por el dueño diagnostics. Contrato JSON `diagnostics/v1`; fuente semántica real, sin fallback textual ni builds.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: FL-ALLHARNESS-001
+kind: flow
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/02_outcomes/RS-ALLHARNESS-001.md
+  - .docs/wiki/05_requirements/RF-HARNESS-FIND-001.md
+  - .docs/wiki/05_requirements/RF-HARNESS-DIAG-001.md
+exports:
+  - FL-ALLHARNESS-001
+agent_must_read:
+  - .docs/wiki/04_flows/FL-ALLHARNESS-001.md
+agent_may_edit:
+  - .docs/wiki/04_flows/FL-ALLHARNESS-001.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-HARNESS-FIND-001.md
+  - .docs/wiki/05_requirements/RF-HARNESS-DIAG-001.md
+  - .docs/wiki/06_tests/TP-HARNESS-FIND-001.md
+  - .docs/wiki/06_tests/TP-HARNESS-DIAG-001.md
+verify:
+  - .docs/wiki/06_tests/TP-ALLHARNESS-001.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - flow_scope_or_acceptance_would_change
+evidence:
+  - .docs/wiki/04_flows/FL-ALLHARNESS-001.md
+  - .docs/wiki/06_tests/TP-ALLHARNESS-001.md
+  - .docs/wiki/05_requirements/RF-ALLHARNESS-001.md
+```

@@ -17,6 +17,21 @@ links:
       role: behavior
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: CT-ROADMAP-001
+kind: cli-contract
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-ROADMAP-001.md]
+exports: [CT-ROADMAP-001]
+agent_must_read: [.docs/wiki/07_technical/contracts/CT-ROADMAP-001.md, internal/service/wiki_roadmap.go]
+agent_may_edit: [.docs/wiki/07_technical/contracts/CT-ROADMAP-001.md]
+agent_must_not_edit: [internal/service/wiki_roadmap.go, .docs/roadmap/roadmap.md]
+verify: ["Leer .docs/wiki/07_technical/contracts/CT-ROADMAP-001.md y .docs/wiki/07_technical/TECH-ROADMAP-001.md; cotejar las afirmaciones con la fuente publicada internal/service/wiki_roadmap.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [El artefacto opcional se convierta en canon o su ausencia/invalid fields bloqueen operaciones.]
+evidence: [.docs/wiki/07_technical/contracts/CT-ROADMAP-001.md, .docs/wiki/07_technical/TECH-ROADMAP-001.md, internal/service/wiki_roadmap.go]
+```
+
 ## Consumidor
 Personas y agentes que invocan `mi-lsp nav wiki graph --mode roadmap` o la operación equivalente del proveedor mi-mcp. No hay UI web.
 

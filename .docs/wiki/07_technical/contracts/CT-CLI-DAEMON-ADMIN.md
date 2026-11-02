@@ -12,6 +12,21 @@ links:
   - path: internal/service/doctor.go
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: CT-CLI-DAEMON-ADMIN
+kind: cli-contract
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-DAEMON-GOBERNANZA.md, .docs/wiki/07_technical/TECH-LOCAL-DAEMON.md]
+exports: [CT-CLI-DAEMON-ADMIN]
+agent_must_read: [.docs/wiki/07_technical/contracts/CT-CLI-DAEMON-ADMIN.md, internal/cli/daemon.go, internal/service/doctor.go]
+agent_may_edit: [.docs/wiki/07_technical/contracts/CT-CLI-DAEMON-ADMIN.md]
+agent_must_not_edit: [internal/cli/, internal/daemon/, ~/.mi-lsp/daemon/state.json]
+verify: ["Leer .docs/wiki/07_technical/contracts/CT-CLI-DAEMON-ADMIN.md y .docs/wiki/07_technical/TECH-DAEMON-GOBERNANZA.md; cotejar las afirmaciones con la fuente publicada internal/cli/daemon.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Una propuesta borre directorios/worktrees/índices o debilite aislamiento, permisos o autenticación local de endpoints mutantes.]
+evidence: [.docs/wiki/07_technical/contracts/CT-CLI-DAEMON-ADMIN.md, .docs/wiki/07_technical/TECH-DAEMON-GOBERNANZA.md, internal/cli/daemon.go]
+```
+
 ## Consumidor
 
 CLI, agentes y consumidores locales de las operaciones descritas; no se amplía la autoridad del consumidor.

@@ -86,3 +86,37 @@ Se aplican las condiciones de rechazo y los warnings descritos en el comportamie
 1. `q`, `nav intent` y `nav multi-read` publican `generation_id` con el snapshot de la generación ya publicada (`last_index`, `active_catalog`, `active_docs`, `active_memory`). Sirve para cachear: dos lecturas de la misma generación devuelven el mismo valor. Si otra ruta ya puso `generation_id`, se conserva.
 2. Cuando la pregunta de `nav intent` es un id de decisión (`D-056` y el resto de la forma `D-` más dígitos), mi-lsp lee `wiki/90-mapa-ids.md` del workspace y devuelve el rango de esa fila antes de buscar. El ítem lleva `origin=decision-map`, `result_kind=decision` y el texto del rango. Si no hay mapa, está vacío o el id no figura, el intent sigue su camino normal.
 3. Cada resultado con archivo trae `sensibilidad` copiada del frontmatter. Sin marca, el campo va vacío. mi-lsp no filtra por esa marca.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-QRY-025
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-QRY-01.md
+exports:
+- RF-QRY-025
+- Generación publicada, mapa de decisiones y marca de sensibilidad
+agent_must_read:
+- .docs/wiki/05_requirements/RF-QRY-025.md
+- .docs/wiki/04_flows/FL-QRY-01.md
+- .docs/wiki/06_tests/TP-QRY.md
+- .docs/wiki/06_tests/TP-QRY-PREPARATION.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-QRY-025.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/ask.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-QRY.md, ejecutar el
+  comando publicado: go test ./internal/model ./internal/service ./internal/cli ./internal/indexer
+  (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-QRY-025.
+evidence:
+- .docs/wiki/05_requirements/RF-QRY-025.md
+- .docs/wiki/06_tests/TP-QRY.md
+- .docs/wiki/06_tests/TP-QRY-PREPARATION.md
+```

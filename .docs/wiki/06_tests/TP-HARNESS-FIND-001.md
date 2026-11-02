@@ -29,3 +29,32 @@ Usar un repositorio Git temporal, fuera del checkout del producto, sin depender 
 
 ## Portabilidad y coste
 En la verificación del padre, ejecutar el mismo binario/receta en Linux y Windows/ARM64 según runners disponibles, sin afirmar soporte probado por compilación cruzada solamente. Medir por separado primera consulta y consultas dentro del TTL sobre el mismo fixture grande; registrar tiempo, backend, caché, bytes y cantidad devuelta. Los fixtures se generan en los tests; no contienen datos personales ni servicios externos.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TP-HARNESS-FIND-001
+kind: test-plan
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/05_requirements/RF-HARNESS-FIND-001.md
+exports:
+  - TP-HARNESS-FIND-001
+agent_must_read:
+  - .docs/wiki/06_tests/TP-HARNESS-FIND-001.md
+agent_may_edit:
+  - .docs/wiki/06_tests/TP-HARNESS-FIND-001.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-HARNESS-FIND-001.md
+  - internal/service/find_files_test.go
+  - internal/cli/find_files_test.go
+verify:
+  - .docs/wiki/06_tests/TP-HARNESS-FIND-001.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - unexecuted_platform_coverage_is_claimed
+  - test_oracle_or_acceptance_would_change
+evidence:
+  - .docs/wiki/06_tests/TP-HARNESS-FIND-001.md
+  - .docs/wiki/05_requirements/RF-HARNESS-FIND-001.md
+```

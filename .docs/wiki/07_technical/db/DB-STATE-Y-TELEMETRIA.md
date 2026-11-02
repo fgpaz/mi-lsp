@@ -9,6 +9,21 @@ links:
   - data-model
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: DB-STATE-Y-TELEMETRIA
+kind: data-model
+audience: dual
+imports: [.docs/wiki/07_technical/db/DB-PHYSICAL-MODEL.md, .docs/wiki/07_technical/contracts/CT-CLI-DAEMON-ADMIN.md]
+exports: [DB-STATE-Y-TELEMETRIA]
+agent_must_read: [.docs/wiki/07_technical/db/DB-STATE-Y-TELEMETRIA.md, internal/telemetry/access_events.go, internal/telemetry/access_diagnostics_test.go]
+agent_may_edit: [.docs/wiki/07_technical/db/DB-STATE-Y-TELEMETRIA.md]
+agent_must_not_edit: [internal/telemetry/, ~/.mi-lsp/daemon/daemon.db, .mi-lsp/index.db]
+verify: ["Leer .docs/wiki/07_technical/db/DB-STATE-Y-TELEMETRIA.md y .docs/wiki/07_technical/db/DB-PHYSICAL-MODEL.md; cotejar las afirmaciones con la fuente publicada internal/telemetry/access_events.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Se persistan prompts, argv, rutas crudas, contenido, secretos o valores que no figuran en el allowlist telemetry.]
+evidence: [.docs/wiki/07_technical/db/DB-STATE-Y-TELEMETRIA.md, .docs/wiki/07_technical/db/DB-PHYSICAL-MODEL.md, internal/telemetry/access_events.go]
+```
+
 ## Almacén
 
 - Owner logico: Workspace owner + Runtime supervision

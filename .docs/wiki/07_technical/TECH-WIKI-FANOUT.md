@@ -12,6 +12,21 @@ links:
     role: implementation
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-WIKI-FANOUT
+kind: technical-architecture
+audience: dual
+imports: [.docs/wiki/07_technical/contracts/CT-NAV-WIKI.md, .docs/wiki/07_technical/TECH-DAEMON-GOBERNANZA.md]
+exports: [TECH-WIKI-FANOUT]
+agent_must_read: [.docs/wiki/07_technical/TECH-WIKI-FANOUT.md, internal/nav/fanout_wiki.go, internal/service/ask.go]
+agent_may_edit: [.docs/wiki/07_technical/TECH-WIKI-FANOUT.md]
+agent_must_not_edit: [internal/nav/fanout_wiki.go, internal/service/ask.go, .docs/wiki/06_tests/]
+verify: ["Leer .docs/wiki/07_technical/TECH-WIKI-FANOUT.md y .docs/wiki/07_technical/contracts/CT-NAV-WIKI.md; cotejar las afirmaciones con la fuente publicada internal/nav/fanout_wiki.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [El cambio amplíe a hosts remotos, agregue cache distribuida o descarte workspaces stale sin warning accionable.]
+evidence: [.docs/wiki/07_technical/TECH-WIKI-FANOUT.md, .docs/wiki/07_technical/contracts/CT-NAV-WIKI.md, internal/nav/fanout_wiki.go]
+```
+
 ## Resumen
 
 Documentar la arquitectura técnica del fan-out wiki global (`nav ask/search/find --all-workspaces`) que implementa el patrón de paralelismo acotado, manejo de fallos graceful y merge determinista sobre multiples workspaces registrados.

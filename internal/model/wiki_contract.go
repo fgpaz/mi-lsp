@@ -54,6 +54,8 @@ type WikiContractCriterion struct {
 
 // WikiContractCaseCriterion is a TP case's reference to one RF criterion.
 type WikiContractCaseCriterion struct {
+	RFID        string `json:"rf_id,omitempty"`
+	Partial     bool   `json:"partial,omitempty"`
 	Number      int    `json:"number"`
 	Line        string `json:"line"`
 	Disposition string `json:"disposition,omitempty"`
@@ -139,10 +141,18 @@ var wikiContractLocalizedSections = map[string][]wikiContractSectionPair{
 
 var (
 	wikiGovernanceFencePattern = regexp.MustCompile("(?is)```(?:yaml|yml)\\s*\\r?\\n(.*?)\\r?\\n```")
+	wikiHarnessFencePattern    = regexp.MustCompile("^[ \\t]*(`{3,}|~{3,})(.*)$")
+	wikiHarnessMarkerPattern   = regexp.MustCompile("(?im)(?:^|[,{])[ \\t]*(?:harness_protocol|\"harness_protocol\"|'harness_protocol')(?:[ \\t]*:|[ \\t]+[^\\r\\n]+$|[ \\t]*$)")
 	wikiH2Pattern              = regexp.MustCompile(`(?m)^##\s+(.+?)\s*#*\s*$`)
 	wikiNumberedCriterion      = regexp.MustCompile(`^\s*(\d+)\.\s+(.+?)\s*$`)
 	wikiCaseCriterionES        = regexp.MustCompile(`(?i)\bcriterio\s+(\d+)\b`)
 	wikiCaseCriterionEN        = regexp.MustCompile(`(?i)\bcriterion\s+(\d+)\b`)
+	wikiCasePairES             = regexp.MustCompile(`(?i)\b(RF-[A-Z0-9][A-Z0-9_-]*)\s*(?:—|–|-|:)\s*criterio\s+(\d+)\b`)
+	wikiCasePairEN             = regexp.MustCompile(`(?i)\b(RF-[A-Z0-9][A-Z0-9_-]*)\s*(?:—|–|-|:)\s*criterion\s+(\d+)\b`)
+	wikiCaseRFMarker           = regexp.MustCompile(`(?i)\bRF-[A-Z0-9][A-Z0-9_-]*\b`)
+	wikiCasePartial            = regexp.MustCompile(`(?i)\b(?:alcance\s+parcial\s*:|coverage\s*:\s*partial\b)`)
+	wikiCaseEvidenceBoundary   = regexp.MustCompile(`(?i)\b(?:disposici[oó]n|disposition|evidencia|evidence)\*{0,2}\s*:`)
+	wikiCaseInlineCode         = regexp.MustCompile("`+[^`\\n]*`+")
 	wikiMermaidFencePattern    = regexp.MustCompile("(?is)```mermaid\\b(.*?)```")
 )
 
@@ -290,28 +300,75 @@ func ParseWikiContractTestCases(body string, language WikiContractLanguage) ([]W
 	if section.Key == "" {
 		return nil, nil
 	}
+	// Additive Harness metadata is not a TP case or evidence of coverage.
+	// Strip it before section extraction so metadata headings cannot create
+	// a cases section either. Ordinary case content keeps strict warnings.
+	body, metadataFindings := wikiContractWithoutHarnessMetadata(body)
+	body = wikiContractWithoutFencedExamples(body)
 	content, found := wikiContractSectionBody(body, section)
 	if !found {
-		return nil, []WikiContractFinding{{Code: "section_missing", Kind: "test", SectionKey: "cases", Expected: section.Title, Message: "section_missing:cases:" + section.Title, Blocking: false}}
+		return nil, append(metadataFindings, WikiContractFinding{Code: "section_missing", Kind: "test", SectionKey: "cases", Expected: section.Title, Message: "section_missing:cases:" + section.Title, Blocking: false})
 	}
 	pattern := wikiCaseCriterionES
+	pairs := wikiCasePairES
 	if language == WikiContractLanguageEN {
 		pattern = wikiCaseCriterionEN
+		pairs = wikiCasePairEN
 	}
 	cases := make([]WikiContractCaseCriterion, 0)
-	findings := make([]WikiContractFinding, 0)
+	findings := append([]WikiContractFinding{}, metadataFindings...)
+	fence := ""
 	for _, line := range strings.Split(strings.ReplaceAll(content, "\r", ""), "\n") {
 		trimmed := strings.TrimSpace(line)
+		if fence != "" {
+			if len(trimmed) >= len(fence) && strings.Trim(trimmed, fence[:1]) == "" {
+				fence = ""
+			}
+			continue
+		}
+		if opening := wikiHarnessFencePattern.FindStringSubmatch(line); len(opening) >= 2 {
+			fence = opening[1]
+			continue
+		}
 		if trimmed == "" {
 			continue
 		}
+		isListItem := strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") || wikiNumberedCriterion.MatchString(trimmed)
+		if !isListItem {
+			continue
+		}
 		item := strings.TrimSpace(strings.TrimLeft(trimmed, "-*# "))
-		match := pattern.FindStringSubmatch(item)
-		isListItem := strings.HasPrefix(trimmed, "-") || strings.HasPrefix(trimmed, "*") || wikiNumberedCriterion.MatchString(trimmed)
+		declaration := item
+		if boundary := wikiCaseEvidenceBoundary.FindStringIndex(declaration); boundary != nil {
+			declaration = declaration[:boundary[0]]
+		}
+		declaration = wikiCaseInlineCode.ReplaceAllString(declaration, "")
+		match := pattern.FindStringSubmatch(declaration)
 		if len(match) < 2 {
 			if isListItem {
 				findings = append(findings, WikiContractFinding{Code: "case_without_criterion", Kind: "test", SectionKey: "cases", Message: "case_without_criterion:" + item, Blocking: false})
 			}
+			continue
+		}
+		disposition, evidence := wikiContractDispositionEvidence(item, language)
+		partial := wikiCasePartial.MatchString(item)
+		explicit := pairs.FindAllStringSubmatch(declaration, -1)
+		if len(explicit) > 0 {
+			if len(pattern.FindAllStringSubmatch(declaration, -1)) > len(explicit) {
+				findings = append(findings, WikiContractFinding{Code: "unpaired_case_criterion", Kind: "test", SectionKey: "cases", Message: "unpaired_case_criterion:" + item, Blocking: false})
+			}
+			for _, pair := range explicit {
+				number, err := strconv.Atoi(pair[2])
+				if err != nil || number <= 0 {
+					findings = append(findings, WikiContractFinding{Code: "invalid_criterion", Kind: "test", SectionKey: "cases", Message: "invalid_criterion:" + item, Blocking: false})
+					continue
+				}
+				cases = append(cases, WikiContractCaseCriterion{RFID: strings.ToUpper(pair[1]), Partial: partial, Number: number, Line: item, Disposition: disposition, Evidence: evidence})
+			}
+			continue
+		}
+		if wikiCaseRFMarker.MatchString(declaration) {
+			findings = append(findings, WikiContractFinding{Code: "unpaired_case_rf", Kind: "test", SectionKey: "cases", Message: "unpaired_case_rf:" + item, Blocking: false})
 			continue
 		}
 		number, err := strconv.Atoi(match[1])
@@ -319,13 +376,106 @@ func ParseWikiContractTestCases(body string, language WikiContractLanguage) ([]W
 			findings = append(findings, WikiContractFinding{Code: "invalid_criterion", Kind: "test", SectionKey: "cases", Message: "invalid_criterion:" + item, Blocking: false})
 			continue
 		}
-		disposition, evidence := wikiContractDispositionEvidence(item, language)
-		cases = append(cases, WikiContractCaseCriterion{Number: number, Line: item, Disposition: disposition, Evidence: evidence})
+		cases = append(cases, WikiContractCaseCriterion{Partial: partial, Number: number, Line: item, Disposition: disposition, Evidence: evidence})
 	}
 	if len(cases) == 0 {
 		findings = append(findings, WikiContractFinding{Code: "no_parseable_cases", Kind: "test", SectionKey: "cases", Message: "no_parseable_cases", Blocking: false})
 	}
 	return cases, findings
+}
+
+// wikiContractWithoutFencedExamples masks fences before section boundaries are selected.
+func wikiContractWithoutFencedExamples(body string) string {
+	lines := strings.SplitAfter(body, "\n")
+	var cleaned strings.Builder
+	fence := ""
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if fence != "" {
+			cleaned.WriteString(strings.Repeat("\n", strings.Count(line, "\n")))
+			if len(trimmed) >= len(fence) && strings.Trim(trimmed, fence[:1]) == "" {
+				fence = ""
+			}
+			continue
+		}
+		if opening := wikiHarnessFencePattern.FindStringSubmatch(strings.TrimRight(line, "\r\n")); len(opening) >= 2 {
+			fence = opening[1]
+			cleaned.WriteString(strings.Repeat("\n", strings.Count(line, "\n")))
+			continue
+		}
+		cleaned.WriteString(line)
+	}
+	return cleaned.String()
+}
+
+// WikiContractWithoutHarnessMetadata excludes metadata fences without treating them as wiki content.
+func WikiContractWithoutHarnessMetadata(body string) (string, []WikiContractFinding) {
+	return wikiContractWithoutHarnessMetadata(body)
+}
+
+func wikiContractWithoutHarnessMetadata(body string) (string, []WikiContractFinding) {
+	findings := []WikiContractFinding{}
+	lines := strings.SplitAfter(body, "\n")
+	var cleaned strings.Builder
+	for i := 0; i < len(lines); {
+		opening := wikiHarnessFencePattern.FindStringSubmatch(strings.TrimRight(lines[i], "\r\n"))
+		if len(opening) < 3 {
+			cleaned.WriteString(lines[i])
+			i++
+			continue
+		}
+		fence := opening[1]
+		end := i + 1
+		for end < len(lines) {
+			closing := strings.TrimSpace(lines[end])
+			if len(closing) >= len(fence) && strings.Trim(closing, fence[:1]) == "" {
+				break
+			}
+			end++
+		}
+		closed := end < len(lines)
+		next := end
+		if closed {
+			next++
+		}
+		content := strings.Join(lines[i+1:end], "")
+		block := strings.Join(lines[i:next], "")
+		info := strings.Fields(strings.ToLower(opening[2]))
+		metadata, valid := false, false
+		if len(info) > 0 && (info[0] == "yaml" || info[0] == "yml") {
+			metadata, valid = wikiHarnessMetadataState(content)
+		}
+		if metadata {
+			if !valid || !closed {
+				findings = append(findings, WikiContractFinding{Code: "invalid_harness_metadata", Kind: "test", SectionKey: "cases", Message: "invalid_harness_metadata", Blocking: false})
+			}
+			cleaned.WriteString(strings.Repeat("\n", strings.Count(block, "\n")))
+		} else {
+			cleaned.WriteString(block)
+		}
+		i = next
+	}
+	return cleaned.String(), findings
+}
+
+func wikiHarnessMetadataState(content string) (bool, bool) {
+	var document yaml.Node
+	err := yaml.Unmarshal([]byte(content), &document)
+	if err == nil && len(document.Content) == 1 && document.Content[0].Kind == yaml.MappingNode {
+		mapping := document.Content[0].Content
+		count, valid := 0, false
+		for i := 0; i+1 < len(mapping); i += 2 {
+			key, value := mapping[i], mapping[i+1]
+			if strings.EqualFold(key.Value, "harness_protocol") {
+				count++
+				valid = key.Value == "harness_protocol" && value.Kind == yaml.ScalarNode && value.Tag == "!!str" && value.Value == "SDD-HARNESS-v1"
+			}
+		}
+		return count > 0, count == 1 && valid
+	}
+	// Invalid/scalar YAML may still be an intended metadata declaration.
+	// Match key-shaped text, not mentions in ordinary values or comments.
+	return wikiHarnessMarkerPattern.MatchString(content), false
 }
 
 // WikiContractDiagramFindings checks required diagram presence only; it is not a Mermaid linter.

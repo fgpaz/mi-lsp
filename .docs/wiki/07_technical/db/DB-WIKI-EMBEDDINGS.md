@@ -9,6 +9,21 @@ links:
   - data-model
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: DB-WIKI-EMBEDDINGS
+kind: data-model
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-SEMANTIC-RECALL.md]
+exports: [DB-WIKI-EMBEDDINGS]
+agent_must_read: [.docs/wiki/07_technical/db/DB-WIKI-EMBEDDINGS.md, internal/store/queries_embeddings.go, internal/wikichunk/]
+agent_may_edit: [.docs/wiki/07_technical/db/DB-WIKI-EMBEDDINGS.md]
+agent_must_not_edit: [internal/store/, .mi-lsp/index.db, .mi-lsp/project.toml]
+verify: ["Leer .docs/wiki/07_technical/db/DB-WIKI-EMBEDDINGS.md y .docs/wiki/07_technical/TECH-SEMANTIC-RECALL.md; cotejar las afirmaciones con la fuente publicada internal/store/queries_embeddings.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Una migración ocurra en esta edición, embeddings se copien a daemon.db o se active proveedor oculto/credencial implícita.]
+evidence: [.docs/wiki/07_technical/db/DB-WIKI-EMBEDDINGS.md, .docs/wiki/07_technical/TECH-SEMANTIC-RECALL.md, internal/store/queries_embeddings.go]
+```
+
 ## Almacén
 
 Detallar la tabla SQLite `wiki_chunk_embeddings` que persiste vectores de embeddings para recall semántico sobre la wiki canonica. La tabla es repo-local, recomputable y no transporta secretos.

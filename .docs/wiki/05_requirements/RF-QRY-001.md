@@ -232,3 +232,38 @@ Scenario: Distinguir un vacio verificado de un vacio sin indice
 - Negativo: `TP-QRY / TC-QRY-150`
 - Negativo: `TP-QRY / TC-QRY-152`
 - Negativo: `TP-QRY / TC-QRY-176`
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-QRY-001
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-QRY-01.md
+exports:
+- RF-QRY-001
+- RF-QRY-001 - Emitir envelope estable y truncacion determinista
+agent_must_read:
+- .docs/wiki/05_requirements/RF-QRY-001.md
+- .docs/wiki/04_flows/FL-QRY-01.md
+- .docs/wiki/06_tests/TP-QRY.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-QRY-001.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/cli/reason.go
+- internal/model/types.go
+- internal/output/formatter.go
+- internal/output/truncator.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-QRY.md, ejecutar el
+  comando publicado: go test ./internal/model ./internal/service ./internal/cli ./internal/indexer
+  (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- 'Detenerse y escalar si el cambio contradice el límite documentado: - Supuestos
+  prohibidos:'
+evidence:
+- .docs/wiki/05_requirements/RF-QRY-001.md
+- .docs/wiki/06_tests/TP-QRY.md
+```

@@ -8,7 +8,7 @@ id: "AE-EVIDENCE-POLICY"
 kind: "support-doc"
 audience: "llm-first"
 imports:
-  - '[[00_gobierno_documental]]'
+  - '[[00_governance]]'
   - '[[AE-HARNESS-MANIFEST]]'
 exports:
   - 'AE-EVIDENCE-POLICY'

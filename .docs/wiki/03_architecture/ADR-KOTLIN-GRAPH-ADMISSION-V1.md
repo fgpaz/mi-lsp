@@ -95,3 +95,38 @@ Siete fuentes manuales bajo `testdata/kotlin-graph-main-v1/`; no runner nuevo, f
 ## Alternativas descartadas
 
 No se promueve el guardrail local K2 a decisión global; no se acepta un pin o compilación fuente como sustituto de observación compiler, aislamiento ni conformance.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: ADR-KOTLIN-GRAPH-ADMISSION-V1
+kind: architecture-decision
+audience: dual
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/02_outcomes/RS-MILSP-GRAPH.md
+exports:
+  - ADR-KOTLIN-GRAPH-ADMISSION-V1
+agent_must_read:
+  - .docs/wiki/03_architecture/ADR-KOTLIN-GRAPH-ADMISSION-V1.md
+agent_may_edit:
+  - .docs/wiki/03_architecture/ADR-KOTLIN-GRAPH-ADMISSION-V1.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-GPH-008.md
+  - .docs/wiki/06_tests/TP-GPH.md
+verify:
+  - "Lectura/cotejo: comprobar identidad, export compiler, separación de módulos, límites de admisión y rollback contra RF-GPH-008, TP-GPH y los bindings listados; conservar explicit_incomplete, los seis oráculos NOTRUN y KotlinPromotionAllowed=false según las fuentes, sin correr tests ni declarar conformidad o promoción."
+stop_if:
+  - harness_verdict=BLOCKED
+  - decision_status_or_admission_guard_would_change
+  - source_pin_is_presented_as_runtime_conformance
+evidence:
+  - .docs/wiki/05_requirements/RF-GPH-008.md
+  - .docs/wiki/06_tests/TP-GPH.md
+  - internal/model/graph.go
+  - internal/model/graph_observation.go
+  - internal/indexer/extractor_kotlin.go
+  - internal/indexer/graph_pipeline.go
+  - internal/worker/kotlin_observation.go
+  - internal/worker/kotlin_config.go
+  - testdata/kotlin-graph-main-v1/README.md
+```

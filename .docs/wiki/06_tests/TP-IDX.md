@@ -179,3 +179,35 @@ RF-IDX-001, RF-IDX-002, RF-IDX-003. Se conserva el inventario de escenarios, lí
 - **execution_note**: FINAL_VERIFY1 parcial ya consumida; BUILD solo ajusta autoría code y wiki, sin corridas nuevas ni reescritura del packet; recheck1 reservado al verifier del parent
 - **manual_evidence_owner**: parent_final_verify
 - **manual_evidence_due**: FINAL_VERIFY del objetivo docs-clean-reparse-20261013, antes del cierre
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TP-IDX
+kind: test-plan
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/05_requirements/RF-IDX-001.md
+  - .docs/wiki/05_requirements/RF-IDX-002.md
+  - .docs/wiki/05_requirements/RF-IDX-003.md
+exports:
+  - TP-IDX
+agent_must_read:
+  - .docs/wiki/06_tests/TP-IDX.md
+agent_may_edit:
+  - .docs/wiki/06_tests/TP-IDX.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/
+  - internal/indexer/
+verify:
+  - .docs/wiki/06_tests/TP-IDX.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - manual_evidence_pending_is_reported_as_pass
+  - test_oracle_or_acceptance_would_change
+evidence:
+  - .docs/wiki/06_tests/TP-IDX.md
+  - .docs/wiki/05_requirements/RF-IDX-001.md
+  - .docs/wiki/05_requirements/RF-IDX-002.md
+  - .docs/wiki/05_requirements/RF-IDX-003.md
+```

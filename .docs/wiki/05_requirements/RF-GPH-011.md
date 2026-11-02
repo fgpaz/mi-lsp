@@ -108,3 +108,37 @@ Las entradas, salidas, enums y límites forman parte del contrato de comportamie
 - Raw 30-run evidence y report con commits, fixture digest, entorno, comando y unavailable fields.
 - Cross-RID y cross-OS para core/packs publicados por RID.
 - `TP-GPH / TP-GPH-006 / TC-GPH-039..048` y `TP-GPH-007 / TC-GPH-049..058`.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-GPH-011
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-GPH-02.md
+- .docs/wiki/04_flows/FL-GPH-03.md
+exports:
+- RF-GPH-011
+- RF-GPH-011 - Optimizar contexto y packs derivados con gates reproducibles
+agent_must_read:
+- .docs/wiki/05_requirements/RF-GPH-011.md
+- .docs/wiki/04_flows/FL-GPH-02.md
+- .docs/wiki/04_flows/FL-GPH-03.md
+- .docs/wiki/06_tests/TP-GPH.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-GPH-011.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/app.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-GPH.md, ejecutar el
+  comando publicado: go test ./internal/model/... ./internal/indexer/... ./internal/service/...
+  ./internal/daemon/... (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-GPH-011.
+evidence:
+- .docs/wiki/05_requirements/RF-GPH-011.md
+- .docs/wiki/06_tests/TP-GPH.md
+```

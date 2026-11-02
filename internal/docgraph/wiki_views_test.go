@@ -34,6 +34,20 @@ title: "Fixture TP"
 	}
 }
 
+// Coverage-gap fixtures must have the required RF sections; otherwise the
+// parser correctly reports uncertainty instead of proving an uncovered gap.
+const wikiMatrixRFRequiredSectionsFixture = `## Propósito
+Fixture del parser de cobertura.
+## Comportamiento ordenado
+Comparar criterios numerados con casos de prueba.
+## Entradas/salidas tipadas
+Entrada: documento RF; salida: matriz de cobertura.
+## Errores
+Reportar incertidumbre ante secciones o referencias ausentes.
+## Superficies
+BuildWikiMatrix en prueba unitaria.
+`
+
 func TestBuildWikiMatrixFixture(t *testing.T) {
 	rf := `---
 wiki_contract: WIKI-CONTRACT-v1
@@ -41,7 +55,7 @@ id: RF-FIX-01
 kind: requirement
 status: active
 ---
-## Criterios de aceptación
+` + wikiMatrixRFRequiredSectionsFixture + `## Criterios de aceptación
 1. Uno.
 2. Dos.
 `
@@ -52,6 +66,8 @@ kind: test
 links:
   verifies: [RF-FIX-01]
 ---
+## Alcance
+Criterios del RF de esta fixture.
 ## Casos
 - Criterio 1 — disposición: automated; evidencia: a.go
 `

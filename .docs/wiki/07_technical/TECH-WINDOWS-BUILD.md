@@ -43,6 +43,21 @@ links:
 
 # Recursos de versión en builds locales de Windows
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-WINDOWS-BUILD
+kind: technical-build
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-WINDOWS-HOST.md]
+exports: [TECH-WINDOWS-BUILD]
+agent_must_read: [.docs/wiki/07_technical/TECH-WINDOWS-BUILD.md, Makefile, internal/processutil/command.go]
+agent_may_edit: [.docs/wiki/07_technical/TECH-WINDOWS-BUILD.md]
+agent_must_not_edit: [cmd/mi-lsp/rsrc_windows_amd64.syso, cmd/mi-lsp/rsrc_windows_arm64.syso, scripts/release/]
+verify: ["Leer .docs/wiki/07_technical/TECH-WINDOWS-BUILD.md y .docs/wiki/07_technical/TECH-WINDOWS-HOST.md; cotejar las afirmaciones con la fuente publicada internal/processutil/command.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Se pretenda incluir binarios generados en Git o afirmar firma/aceptación del antivirus con base en recursos PE.]
+evidence: [.docs/wiki/07_technical/TECH-WINDOWS-BUILD.md, .docs/wiki/07_technical/TECH-WINDOWS-HOST.md, internal/processutil/command.go]
+```
+
 ## Resumen
 
 Los targets `make build-win-x64` y `make build-win-arm64` generan primero recursos PE para ambas arquitecturas mediante `go run github.com/tc-hib/go-winres@v0.3.3`. El generador es una herramienta de build, no una dependencia del runtime; su primera ejecución puede requerir acceso al proxy de módulos Go. Los archivos `cmd/mi-lsp/rsrc_windows_amd64.syso` y `cmd/mi-lsp/rsrc_windows_arm64.syso` son generados e ignorados por Git. Los sufijos limitan su inclusión a la plataforma y arquitectura correspondientes.

@@ -1,4 +1,42 @@
+---
+wiki_contract: WIKI-CONTRACT-v1
+id: TECH-WORKSPACE-STATUS
+kind: technical
+status: draft
+title: Estado del workspace
+links:
+  supports: [RF-WKS-005]
+  code:
+    - path: internal/service/workspace_ops.go
+      role: behavior
+    - path: internal/cli/workspace.go
+      role: behavior
+---
+
+## Resumen
+
+Vista de estado del workspace, conteos, readiness y límites de presentación.
+
+## Mapa de componentes
+
+CLI construye el payload; servicio resuelve y presenta estado y estadísticas.
+
 # Estado del workspace
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-WORKSPACE-STATUS
+kind: technical-contract
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-DAEMON-GOBERNANZA.md, .docs/wiki/07_technical.md]
+exports: [TECH-WORKSPACE-STATUS]
+agent_must_read: [.docs/wiki/07_technical/TECH-WORKSPACE-STATUS.md, internal/service/workspace_ops.go]
+agent_may_edit: [.docs/wiki/07_technical/TECH-WORKSPACE-STATUS.md]
+agent_must_not_edit: [internal/service/workspace_ops.go, .mi-lsp/index.db, .docs/wiki/_mi-lsp/read-model.toml]
+verify: ["Leer .docs/wiki/07_technical/TECH-WORKSPACE-STATUS.md y .docs/wiki/07_technical/TECH-DAEMON-GOBERNANZA.md; cotejar las afirmaciones con la fuente publicada internal/service/workspace_ops.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Una interpretación convierta truncation en corrupción o suponga que truncation siempre recorta entrypoints.]
+evidence: [.docs/wiki/07_technical/TECH-WORKSPACE-STATUS.md, .docs/wiki/07_technical/TECH-DAEMON-GOBERNANZA.md, internal/service/workspace_ops.go]
+```
 
 `workspace status` devuelve `entrypoint_count` para la topología completa y `stats.files`/`stats.symbols` para el catálogo consultado, no para el tamaño de la lista presentada. El índice puede estar ausente o desactualizado: consultar `index_ready` y las advertencias por separado. Los conteos cero de `stats` pueden omitirse por el contrato JSON existente y equivalen a cero, no a un conteo desconocido.
 

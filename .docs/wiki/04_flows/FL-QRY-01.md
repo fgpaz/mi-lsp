@@ -165,3 +165,32 @@ Confiabilidad, rendimiento, memoria, portabilidad y experiencia de desarrollo, e
 
 ### 8. Corte de arquitectura
 `output/formatter.go`, `output/truncator.go`, `daemon/client.go`, `daemon/server.go`, `service/app.go`, `service/ask.go`, `service/service_exploration.go`, `docgraph/*`.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: FL-QRY-01
+kind: flow
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/02_outcomes/RS-MILSP-NAVIGATION.md
+exports:
+  - FL-QRY-01
+agent_must_read:
+  - .docs/wiki/04_flows/FL-QRY-01.md
+agent_may_edit:
+  - .docs/wiki/04_flows/FL-QRY-01.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-QRY-001.md
+  - .docs/wiki/06_tests/TP-QRY.md
+verify:
+  - .docs/wiki/06_tests/TP-QRY.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - flow_contract_or_acceptance_would_change
+  - omissions_or_unknowns_are_suppressed
+evidence:
+  - .docs/wiki/04_flows/FL-QRY-01.md
+  - .docs/wiki/06_tests/TP-QRY.md
+  - .docs/wiki/05_requirements/RF-QRY-001.md
+```

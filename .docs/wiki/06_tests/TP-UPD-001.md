@@ -28,6 +28,8 @@ links:
     role: test
   - path: internal/cli/update_hooks_test.go
     role: test
+  - path: internal/daemon/update_owner_cache_test.go
+    role: test
   - path: internal/daemon/update_lifecycle_test.go
     role: test
   - path: internal/daemon/update_foundation_test.go
@@ -66,6 +68,11 @@ RF-UPD-001 criterios 1–8, sin convertir fuentes de pruebas en afirmación de e
 
 ## Casos
 
+### Regresión acotada del dueño de actualización
+
+- **Caso**: TC-UPD-CACHE-001; **RF**: RF-UPD-001 — Criterio 2; Alcance parcial: selección y caché de dueño; **disposición**: manual_evidence_pending.
+- **Evidencia prevista**: `internal/daemon/update_owner_cache_test.go`: `TestUpdateOwnerCacheConcurrencyAndInvalidation` comprueba concurrencia e invalidación de caché; `TestUpdateOwnerCacheRejectsDeadCachedPID` no reutiliza sin reprobar un PID cacheado considerado muerto; `TestUpdateOwnerLockCancellation` comprueba cancelación del lock. Corresponden solo a la faceta de selección del dueño y caché del cambio en `internal/daemon/update.go`; no prueban throttle de metadata por 24 horas, reinicio ni aplicación por dos instalaciones. No reemplazan la prueba de lock entre procesos del caso 2 ni acreditan una ejecución nueva.
+
 1. Criterio 1: checksum incorrecto, downgrade, piso, semver, origen/redirect y extracción limitada. Disposición: verified_automated. Suite ab3e6cb y ejecución nativa WSL ARM64; las descargas públicas 0.16.0 Windows ARM64 y Linux x64 verificaron el SHA antes de promocionar. No convierte compilación macOS en prueba nativa.
 2. Criterio 2: lock real entre dos procesos, throttle persistido y dos instalaciones con metadata común. Disposición: verified_automated. Suite final Windows y WSL ARM64; 30 repeticiones del snapshot lock/check pasan con stat fresco por handle, sin suprimir mtime/hash/size/mode. El plazo 24 h se verifica con reloj de prueba, no con una espera real de 24 h.
 3. Criterio 3: pin/opt-out explícitos y user-bin no pin. Disposición: verified_automated. Pruebas de política/estado pasan en la suite final; las instalaciones personales no introdujeron pin ni cambiaron políticas globales.
@@ -102,3 +109,32 @@ RED123 conductual: archivo fixture de escala oficial rechazado y deadline de ass
 ## Restricciones ADR
 
 No hay green global inferido, no se silencian los cinco fallos baseline ni se fabrica un sexto. No se toca daemon compartido con sesiones ajenas; el test real usa perfil/endpoint y procesos propios.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TP-UPD-001
+kind: test-plan
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/05_requirements/RF-UPD-001.md
+  - .docs/wiki/04_flows/FL-UPD-001.md
+exports:
+  - TP-UPD-001
+agent_must_read:
+  - .docs/wiki/06_tests/TP-UPD-001.md
+agent_may_edit:
+  - .docs/wiki/06_tests/TP-UPD-001.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-UPD-001.md
+  - internal/daemon/
+verify:
+  - .docs/wiki/06_tests/TP-UPD-001.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - unrelated_daemon_or_session_is_touched
+  - baseline_failures_are_hidden_or_relabelled
+evidence:
+  - .docs/wiki/06_tests/TP-UPD-001.md
+  - .docs/wiki/05_requirements/RF-UPD-001.md
+```

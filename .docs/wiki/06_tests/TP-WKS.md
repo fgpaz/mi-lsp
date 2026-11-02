@@ -588,3 +588,41 @@ Los casos `TC-WKS-048..060` se definen únicamente en estos bloques TOON; las fi
   - **assert_git_commit**: coincide con git -C <ruta> rev-parse HEAD
   - **assert_generations**: null o valores del store bajo <ruta>/.mi-lsp; generation_reasons tipados si falta DB; nunca valores del main salvo que el path sea el main
   - **assert_omitted_control**: mi-lsp nav git-frontier desde cwd del linked sin --workspace resuelve alias del main cuando está registrado
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TP-WKS
+kind: test-plan
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/05_requirements/RF-WKS-001.md
+exports:
+  - TP-WKS
+agent_must_read:
+  - .docs/wiki/06_tests/TP-WKS.md
+agent_may_edit:
+  - .docs/wiki/06_tests/TP-WKS.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - .docs/wiki/06_tests/TP-WKS.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - test_oracle_or_acceptance_would_change
+  - linked_worktree_facts_are_derived_from_the_wrong_worktree
+evidence:
+  - .docs/wiki/06_tests/TP-WKS.md
+  - .docs/wiki/05_requirements/RF-IDX-001.md
+  - .docs/wiki/05_requirements/RF-QRY-013.md
+  - .docs/wiki/05_requirements/RF-WKS-001.md
+  - .docs/wiki/05_requirements/RF-WKS-002.md
+  - .docs/wiki/05_requirements/RF-WKS-003.md
+  - .docs/wiki/05_requirements/RF-WKS-004.md
+  - .docs/wiki/05_requirements/RF-WKS-005.md
+  - .docs/wiki/05_requirements/RF-WKS-006.md
+  - .docs/wiki/05_requirements/RF-WKS-007.md
+  - .docs/wiki/05_requirements/RF-WKS-008.md
+  - .docs/wiki/05_requirements/RF-WKS-009.md
+```

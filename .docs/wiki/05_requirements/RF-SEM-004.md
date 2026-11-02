@@ -163,3 +163,38 @@ Scenario: Embeddings inactivos no invocan rerank
 - Negativo: `TP-SEM / TC-SEM-012`
 - Negativo: `TP-SEM / TC-SEM-013`
 - Negativo: `TP-SEM / TC-SEM-014`
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-SEM-004
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-SEM-01.md
+exports:
+- RF-SEM-004
+- RF-SEM-004 - Reordenar candidatos de recall mediante hook local externo y seguro
+agent_must_read:
+- .docs/wiki/05_requirements/RF-SEM-004.md
+- .docs/wiki/04_flows/FL-SEM-01.md
+- .docs/wiki/06_tests/TP-SEM.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-SEM-004.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/model/types.go
+- internal/rerank/extension.go
+- internal/service/recall.go
+- internal/service/workspace_ops.go
+verify:
+- Validar el contrato y sus referencias con `mi-lsp nav wiki validate-harness --workspace
+  <alias>`; contrastar los casos de .docs/wiki/06_tests/TP-SEM.md sin inferir que
+  fueron ejecutados.
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-SEM-004.
+evidence:
+- .docs/wiki/05_requirements/RF-SEM-004.md
+- .docs/wiki/06_tests/TP-SEM.md
+```

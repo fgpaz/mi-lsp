@@ -19,3 +19,31 @@ Personas y agentes que navegan una wiki con mi-lsp.
 
 ## Fuera de alcance del RS
 Sincronizar un tracker remoto, crear o activar RS desde el roadmap, persistir Mermaid y planificar fechas.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RS-ROADMAP-001
+kind: outcome
+audience: dual
+imports:
+  - .docs/wiki/00_governance.md
+exports:
+  - RS-ROADMAP-001
+agent_must_read:
+  - .docs/wiki/02_outcomes/RS-ROADMAP-001.md
+agent_may_edit:
+  - .docs/wiki/02_outcomes/RS-ROADMAP-001.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-ROADMAP-001.md
+verify:
+  - "Lectura/cotejo: contrastar no-canonicidad, horizontes, estados, dependencias y avisos no bloqueantes con RF-ROADMAP-001 y FL-ROADMAP-01; cotejar criterios y disposiciones con TP-ROADMAP-001 sin afirmar que sus casos fueron ejecutados."
+stop_if:
+  - harness_verdict=BLOCKED
+  - outcome_status_or_acceptance_would_change
+evidence:
+  - .docs/wiki/05_requirements/RF-ROADMAP-001.md
+  - .docs/wiki/04_flows/FL-ROADMAP-01.md
+  - .docs/wiki/06_tests/TP-ROADMAP-001.md
+  - internal/model/wiki_roadmap.go
+  - internal/service/wiki_roadmap.go
+```

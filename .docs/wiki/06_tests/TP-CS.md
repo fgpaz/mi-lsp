@@ -32,3 +32,31 @@ RF-CS-001. Se conserva el inventario de escenarios, límites, disposiciones y ev
   - RF-CS-001 — Criterio 7. Disposición: manual_evidence_pending. Evidencia esperada: si Roslyn no puede enriquecer pero el archivo existe, el core devuelve el slice con warning accionable. No acredita una ejecución de esta migración.
 - **Caso**: TC-CS-006; **Tipo**: positivo; **RF**: RF-CS-001; **Descripción**: si el primer candidato Roslyn falla por bootstrap, el core reintenta una sola vez con el siguiente sin reprobe en cascada
   - RF-CS-001 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: si el primer candidato Roslyn falla por bootstrap, el core reintenta una sola vez con el siguiente sin reprobe en cascada. No acredita una ejecución de esta migración.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TP-CS
+kind: test-plan
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/05_requirements/RF-CS-001.md
+exports:
+  - TP-CS
+agent_must_read:
+  - .docs/wiki/06_tests/TP-CS.md
+agent_may_edit:
+  - .docs/wiki/06_tests/TP-CS.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-CS-001.md
+  - internal/
+verify:
+  - .docs/wiki/06_tests/TP-CS.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - manual_evidence_pending_is_reported_as_pass
+  - test_oracle_or_acceptance_would_change
+evidence:
+  - .docs/wiki/06_tests/TP-CS.md
+  - .docs/wiki/05_requirements/RF-CS-001.md
+```

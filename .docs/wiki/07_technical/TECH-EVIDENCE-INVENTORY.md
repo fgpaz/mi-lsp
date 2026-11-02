@@ -12,6 +12,21 @@ links:
     role: implementation
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-EVIDENCE-INVENTORY
+kind: technical
+audience: llm-first
+imports: [.docs/wiki/07_technical/contracts/CT-NAV-EVIDENCE.md]
+exports: [TECH-EVIDENCE-INVENTORY]
+agent_must_read: [.docs/wiki/07_technical/TECH-EVIDENCE-INVENTORY.md, internal/service/evidence_inventory.go]
+agent_may_edit: [.docs/wiki/07_technical/TECH-EVIDENCE-INVENTORY.md]
+agent_must_not_edit: [internal/service/evidence_inventory.go, .docs/auditoria/, .docs/raw/]
+verify: ["Leer .docs/wiki/07_technical/TECH-EVIDENCE-INVENTORY.md y .docs/wiki/07_technical/contracts/CT-NAV-EVIDENCE.md; cotejar las afirmaciones con la fuente publicada internal/service/evidence_inventory.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [La propuesta requiera leer o emitir contenido raw, ampliar raíces o tratar artefactos de evidencia como canon.]
+evidence: [.docs/wiki/07_technical/TECH-EVIDENCE-INVENTORY.md, .docs/wiki/07_technical/contracts/CT-NAV-EVIDENCE.md, internal/service/evidence_inventory.go]
+```
+
 ## Resumen
 
 Documentar la arquitectura técnica de `nav evidence inventory`: una lectura directa, preview-first y metadata-only para que agentes decidan si deben leer canon, manifests/verdicts o evidencia raw puntual.

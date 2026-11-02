@@ -38,3 +38,32 @@ Las consultas no vuelven a indexar cada vez. Un cambio de fuente necesita public
 
 ## Restricciones ADR
 Se reutiliza el kernel de grafo existente; se mantienen los checks previos de contrato. El texto prevalece sobre los diagramas.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: FL-WGRAPH-001
+kind: flow
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/02_outcomes/RS-WIKI-001.md
+exports:
+  - FL-WGRAPH-001
+agent_must_read:
+  - .docs/wiki/04_flows/FL-WGRAPH-001.md
+agent_may_edit:
+  - .docs/wiki/04_flows/FL-WGRAPH-001.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-WGRAPH-001.md
+  - .docs/wiki/07_technical/contracts/CT-WIKI-001.md
+verify:
+  - .docs/wiki/06_tests/TP-WIKI-001.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - flow_contract_or_acceptance_would_change
+  - diagram_overrides_contract_text
+evidence:
+  - .docs/wiki/04_flows/FL-WGRAPH-001.md
+  - .docs/wiki/06_tests/TP-WIKI-001.md
+  - .docs/wiki/05_requirements/RF-WGRAPH-001.md
+```

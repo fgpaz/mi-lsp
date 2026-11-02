@@ -70,3 +70,37 @@ CLI `mi-lsp`, con operaciones y selectores detallados en el comportamiento del r
 4. Verifica sincronización con `.docs/wiki/_mi-lsp/read-model.toml`.
 5. Informa si el índice del workspace quedo stale respecto de las fuentes de gobernanza e incluye timestamps comparados (`index.db`, `00`, `read-model`) para explicar la causa.
 6. Devuelve pasos accionables de reparación o siguientes pasos si la gobernanza es valida.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-QRY-013
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-QRY-01.md
+exports:
+- RF-QRY-013
+- RF-QRY-013 - Diagnosticar gobernanza y perfil efectivo con nav governance
+agent_must_read:
+- .docs/wiki/05_requirements/RF-QRY-013.md
+- .docs/wiki/04_flows/FL-QRY-01.md
+- .docs/wiki/06_tests/TP-QRY.md
+- .docs/wiki/06_tests/TP-QRY-PREPARATION.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-QRY-013.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/service/app.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-QRY.md, ejecutar el
+  comando publicado: go test ./internal/model ./internal/service ./internal/cli ./internal/indexer
+  (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-QRY-013.
+evidence:
+- .docs/wiki/05_requirements/RF-QRY-013.md
+- .docs/wiki/06_tests/TP-QRY.md
+- .docs/wiki/06_tests/TP-QRY-PREPARATION.md
+```

@@ -148,3 +148,37 @@ Las entradas, salidas, enums y límites forman parte del contrato de comportamie
 - Pruebas de migración additive, dual-read/write, downgrade y rollback con schema viejo intacto.
 - Tras cualquier fallo, lectores ven la generación valida anterior o un bloqueo explícito; nunca una mezcla.
 - `TP-GPH / TP-GPH-002 / TC-GPH-007..014`.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-GPH-002
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-GPH-01.md
+exports:
+- RF-GPH-002
+- RF-GPH-002 - Construir y publicar GraphGeneration de forma atomica
+agent_must_read:
+- .docs/wiki/05_requirements/RF-GPH-002.md
+- .docs/wiki/04_flows/FL-GPH-01.md
+- .docs/wiki/06_tests/TP-GPH.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-GPH-002.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/indexer/graph_staging.go
+- internal/indexer/indexer.go
+- internal/store/index_publish.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-GPH.md, ejecutar el
+  comando publicado: go test ./internal/model/... ./internal/indexer/... ./internal/service/...
+  ./internal/daemon/... (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-GPH-002.
+evidence:
+- .docs/wiki/05_requirements/RF-GPH-002.md
+- .docs/wiki/06_tests/TP-GPH.md
+```

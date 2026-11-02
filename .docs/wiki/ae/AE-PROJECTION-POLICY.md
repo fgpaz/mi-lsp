@@ -9,7 +9,7 @@ id: "AE-PROJECTION-POLICY"
 kind: "support-doc"
 audience: "llm-first"
 imports:
-  - '[[00_gobierno_documental]]'
+  - '[[00_governance]]'
   - '[[AE-HARNESS-MANIFEST]]'
   - '[[AE-HARNESS-ORCHESTRATION]]'
 exports:

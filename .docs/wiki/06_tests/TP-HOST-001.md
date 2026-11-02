@@ -8,9 +8,24 @@ links:
   verifies: [RF-HOST-001]
 ---
 
+## Alcance
+
+Verifica [[RF-HOST-001]] y [[TECH-WINDOWS-HOST]]; las fuentes de pruebas no acreditan ejecución ni conformidad y la admisión del consumidor es separada.
+
 ## Alcance y evidencia
 
 Verifica [[RF-HOST-001]] y [[TECH-WINDOWS-HOST]]. Las fuentes de pruebas son bindings, no evidencia de ejecución ni de conformidad. La aceptación requiere Windows ARM64 nativo, artefactos verificables y evidencia sanitizada de cada oráculo; conservar fallos y limitaciones, no convertir ausencia de evidencia en PASS. La admisión de un consumidor es una decisión separada.
+
+## Casos
+
+Los siguientes índices remiten a oráculos existentes en las secciones posteriores. Los criterios del RF son draft; estas referencias son parciales y `manual_evidence_pending`, sin evidencia nueva de ejecución ni aceptación.
+
+- Criterio 1 — disposición: manual_evidence_pending; evidencia prevista: driver y fixtures de argumentos en «Driver de aceptación y PE». No acredita por sí solo control privado ni ausencia de búsqueda PATH.
+- Criterio 2 — disposición: manual_evidence_pending; evidencia prevista: fixtures de bytes crudos en «Driver de aceptación y PE». No acredita por sí solo exclusividad de handles ni ausencia de logs.
+- Criterio 3 — disposición: manual_evidence_pending; evidencia prevista: parser de resultado y pruebas separadas del consumidor en «Driver de aceptación y PE» y «Costuras Go y consumidor». No acredita integración de consumidor.
+- Criterio 4 — disposición: manual_evidence_pending; evidencia prevista: fixtures de job y seam de asignación en «Driver de aceptación y PE» y «Costuras Go y consumidor». Revisar resultados y cobertura real de cada condición.
+- Criterio 5 — disposición: manual_evidence_pending; evidencia prevista: precheck PE y verificación de release en «Driver de aceptación y PE» y «Provenance y release». Precheck por sí solo no demuestra asset público ni CLI CUI.
+- Criterio 6 — disposición: manual_evidence_pending; evidencia prevista: «Observador global conservador», con limitación de calibración SHOW y observación nativa requerida. No atribuye causalidad ni garantiza cobertura completa.
 
 ## Driver de aceptación y PE
 
@@ -37,3 +52,31 @@ Todo evento SHOW global o ventana visible nueva impide PASS, incluso si pertenec
 ## Provenance y release
 
 Comprobar fuente VCS limpia y revisión, recursos PE y versión de archivo/producto, `go version -m`, y `--version --format json` en arquitectura ejecutable. Para aceptación de distribución, verificar tag público, source, nueve assets (seis CLI/worker, dos host, checksum), inclusión y SHA-256 de ambos host y readback de los assets descargados. Una release parcial requiere inspección, no reintento ciego. Registrar plataforma y evidencias; cada gate sin evidencia queda BLOCKED o NOT_MEASURED según corresponda.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TP-HOST-001
+kind: test-plan
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/05_requirements/RF-HOST-001.md
+exports:
+  - TP-HOST-001
+agent_must_read:
+  - .docs/wiki/06_tests/TP-HOST-001.md
+agent_may_edit:
+  - .docs/wiki/06_tests/TP-HOST-001.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-HOST-001.md
+  - .docs/wiki/07_technical/TECH-WINDOWS-HOST.md
+verify:
+  - .docs/wiki/06_tests/TP-HOST-001.md#alcance-y-evidencia
+stop_if:
+  - harness_verdict=BLOCKED
+  - release_asset_or_runtime_evidence_is_missing
+  - test_oracle_or_acceptance_would_change
+evidence:
+  - .docs/wiki/06_tests/TP-HOST-001.md
+  - .docs/wiki/05_requirements/RF-HOST-001.md
+```

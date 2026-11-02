@@ -41,3 +41,39 @@ Los códigos tipados son `invalid_budget`, `invalid_pattern`, `invalid_workspace
 
 ## Límites
 La operación tiene un plazo de diez segundos y una lista nativa máxima de 32 MiB; falla explícitamente antes que entregar resultados incompletos como si fueran exhaustivos. No se añaden servicios ni dependencias Go. La caché es best-effort y vive fuera del repositorio. La búsqueda de extensiones no necesita fd: Git sirve como alternativa portable.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-HARNESS-FIND-001
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-ALLHARNESS-001.md
+exports:
+- RF-HARNESS-FIND-001
+- '"Buscar archivos por nombre con presupuesto explícito"'
+agent_must_read:
+- .docs/wiki/05_requirements/RF-HARNESS-FIND-001.md
+- .docs/wiki/04_flows/FL-ALLHARNESS-001.md
+- .docs/wiki/06_tests/TP-HARNESS-DIAG-001.md
+- .docs/wiki/06_tests/TP-HARNESS-FIND-001.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-HARNESS-FIND-001.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/cli/find_files.go
+- internal/service/find_files.go
+- internal/model/find_files.go
+verify:
+- Validar el contrato y sus referencias con `mi-lsp nav wiki validate-harness --workspace
+  <alias>`; contrastar los casos de .docs/wiki/06_tests/TP-HARNESS-DIAG-001.md sin
+  inferir que fueron ejecutados.
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-HARNESS-FIND-001.
+evidence:
+- .docs/wiki/05_requirements/RF-HARNESS-FIND-001.md
+- .docs/wiki/06_tests/TP-HARNESS-DIAG-001.md
+- .docs/wiki/06_tests/TP-HARNESS-FIND-001.md
+```

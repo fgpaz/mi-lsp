@@ -6,6 +6,21 @@ status: active
 title: CT-CLI-AXI-MODE
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: CT-CLI-AXI-MODE
+kind: cli-contract
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-AXI-DISCOVERY.md]
+exports: [CT-CLI-AXI-MODE]
+agent_must_read: [.docs/wiki/07_technical/contracts/CT-CLI-AXI-MODE.md, internal/cli/axi_mode.go]
+agent_may_edit: [.docs/wiki/07_technical/contracts/CT-CLI-AXI-MODE.md]
+agent_must_not_edit: [internal/cli/axi_mode.go, internal/model/types.go, .docs/wiki/_mi-lsp/read-model.toml]
+verify: ["Leer .docs/wiki/07_technical/contracts/CT-CLI-AXI-MODE.md y .docs/wiki/07_technical/TECH-AXI-DISCOVERY.md; cotejar las afirmaciones con la fuente publicada internal/cli/axi_mode.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Se modifique protocolo runtime, se amplíe AXI a todas las superficies o se cambie routing desde este contrato documental.]
+evidence: [.docs/wiki/07_technical/contracts/CT-CLI-AXI-MODE.md, .docs/wiki/07_technical/TECH-AXI-DISCOVERY.md, internal/cli/axi_mode.go]
+```
+
 ## Consumidor
 
 CLI, agentes y consumidores locales de las operaciones descritas; no se amplía la autoridad del consumidor.

@@ -9,6 +9,21 @@ links:
   - RF-WKS-007
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: CT-WORKSPACE-PROBE
+kind: read-only-cli-contract
+audience: dual
+imports: [.docs/wiki/07_technical/TECH-WORKSPACE-STATUS.md]
+exports: [CT-WORKSPACE-PROBE]
+agent_must_read: [.docs/wiki/07_technical/contracts/CT-WORKSPACE-PROBE.md, internal/service/probe.go]
+agent_may_edit: [.docs/wiki/07_technical/contracts/CT-WORKSPACE-PROBE.md]
+agent_must_not_edit: [internal/service/workspace_probe.go, .mi-lsp/index.db, registry.toml]
+verify: ["Leer .docs/wiki/07_technical/contracts/CT-WORKSPACE-PROBE.md y .docs/wiki/07_technical/TECH-WORKSPACE-STATUS.md; cotejar las afirmaciones con la fuente publicada internal/service/probe.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Alias explícito inválido reciba fallback, root Git se resuelva por contención lexical o probe escriba config/registry/índice.]
+evidence: [.docs/wiki/07_technical/contracts/CT-WORKSPACE-PROBE.md, .docs/wiki/07_technical/TECH-WORKSPACE-STATUS.md, internal/service/probe.go]
+```
+
 ## Consumidor
 
 CLI, agentes y consumidores locales de las operaciones descritas; no se amplía la autoridad del consumidor.

@@ -198,3 +198,42 @@ Workspace/registry posee aliases y configuración; indexer/store posee catálogo
 - `GraphAnalysis` y `ContextPack` se derivan de generation(s), authority/profile digest, pack/extension version y parameters digest; invalidar cualquiera inválida el cache.
 - `GlobalGraphSnapshot` referencia member generations inmutables por `(workspace_identity, generation_id)` y resuelve cross-edges por cross-RID sin adquirir ownership de sus datos.
 - `MILXExecution` consume un pack/snapshot read-only y puede producir `GraphAnalysis`; no crea o modifica `GraphNode`, `GraphEdge`, wiki ni generation activa.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: data-model
+kind: data_model
+audience: dual
+imports:
+- .docs/wiki/05_requirements/RF-WKS-001.md
+- .docs/wiki/05_requirements/RF-WKS-002.md
+- .docs/wiki/05_requirements/RF-WKS-003.md
+- .docs/wiki/05_requirements/RF-WKS-005.md
+- .docs/wiki/05_requirements/RF-WKS-008.md
+- .docs/wiki/05_requirements/RF-IDX-001.md
+exports:
+- data-model
+- 5. Modelo de datos
+agent_must_read:
+- .docs/wiki/05_requirements/data-model.md
+- .docs/wiki/05_requirements/RF-WKS-001.md
+- .docs/wiki/05_requirements/RF-WKS-002.md
+- .docs/wiki/05_requirements/RF-WKS-003.md
+- .docs/wiki/05_requirements/RF-WKS-005.md
+- .docs/wiki/05_requirements/RF-WKS-008.md
+- .docs/wiki/05_requirements/RF-IDX-001.md
+agent_may_edit:
+- .docs/wiki/05_requirements/data-model.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+verify:
+- Validar el contrato y sus referencias con `mi-lsp nav wiki validate-harness --workspace
+  <alias>`; contrastar los casos de .docs/wiki/05_requirements/data-model.md sin inferir
+  que fueron ejecutados.
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de data-model.
+evidence:
+- .docs/wiki/05_requirements/data-model.md
+```

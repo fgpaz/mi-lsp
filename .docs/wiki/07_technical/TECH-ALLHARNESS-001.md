@@ -8,6 +8,21 @@ links:
   supports: [RF-ALLHARNESS-001]
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-ALLHARNESS-001
+kind: technical
+audience: dual
+imports: [.docs/wiki/07_technical/contracts/CT-ALLHARNESS-001.md]
+exports: [TECH-ALLHARNESS-001]
+agent_must_read: [.docs/wiki/07_technical/TECH-ALLHARNESS-001.md, skills/mi-lsp/SKILL.md]
+agent_may_edit: [.docs/wiki/07_technical/TECH-ALLHARNESS-001.md]
+agent_must_not_edit: [internal/cli/provider_manifest.go, integrations/mi-mcp/provider-manifest.json, skills/mi-lsp/SKILL.md]
+verify: ["Leer .docs/wiki/07_technical/TECH-ALLHARNESS-001.md y .docs/wiki/07_technical/contracts/CT-ALLHARNESS-001.md; cotejar las afirmaciones con la fuente publicada internal/cli/provider_manifest.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [El cambio requiriese atribuir ejecución automática, telemetría o disponibilidad de backend no demostrada por la fuente documental.]
+evidence: [.docs/wiki/07_technical/TECH-ALLHARNESS-001.md, .docs/wiki/07_technical/contracts/CT-ALLHARNESS-001.md, internal/cli/provider_manifest.go]
+```
+
 # TECH-ALLHARNESS-001 — mi-lsp para todos los harness
 
 ## Resumen

@@ -63,6 +63,7 @@ wrappers:
     authority: repository policy
 
 wiki:
+  wiki_governance: .docs/wiki/00_governance.md
   layers_map:
     "00": Governance and terminal retirements (WIKI-CONTRACT-v1)
     "01": Scope
@@ -74,6 +75,8 @@ wiki:
     "07": Technical baseline, physical data and contracts
     "10": UI journeys and modules; DESIGN.md and PRODUCT.md at repo root
     "ae": Compatibility history only; universal AE authority is the external Kernel v2 canon
+  # buildWikiContractReadProfile (internal/docgraph/wiki_contract_projection.go) derives the governance read surface from WIKI-CONTRACT-v1 and includes .docs/wiki/ae/** in the functional family.
+  # This is generator behavior, not an executable or configurable repo-policy input. AE compatibility history is readable but intentionally absent from the generated governance edit surface; inclusion grants no Harness authority or acceptance.
   paths_file: PATHS.md
   subagents_file: AGENTS.md
   workspace_alias: mi-lsp

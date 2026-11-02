@@ -28,3 +28,31 @@ Estado: plan de aceptación, **sin evidencia de ejecución en BUILDING**.
 - TS: observar backend2322 → corregir fixture → 0 sin stale. El padre acredita el smoke manual execute por host/harness; solo jefe-harness-web acredita el enganche tras-edit real al integrar su adaptador. No confundir con H1Yoga binding39 de C165 ni declarar alias PASS desde CLI129.
 
 Evidencia final sanitizada a cargo del padre; [[TECH-ALLHARNESS-001]].
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TP-ALLHARNESS-001
+kind: test-plan
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/05_requirements/RF-ALLHARNESS-001.md
+exports:
+  - TP-ALLHARNESS-001
+agent_must_read:
+  - .docs/wiki/06_tests/TP-ALLHARNESS-001.md
+agent_may_edit:
+  - .docs/wiki/06_tests/TP-ALLHARNESS-001.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/RF-ALLHARNESS-001.md
+  - .docs/wiki/07_technical/TECH-ALLHARNESS-001.md
+verify:
+  - .docs/wiki/06_tests/TP-ALLHARNESS-001.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - manual_evidence_pending_is_reported_as_pass
+  - test_oracle_or_acceptance_would_change
+evidence:
+  - .docs/wiki/06_tests/TP-ALLHARNESS-001.md
+  - .docs/wiki/05_requirements/RF-ALLHARNESS-001.md
+```

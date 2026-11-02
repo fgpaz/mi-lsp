@@ -517,3 +517,35 @@ Enlaces relacionados: [[RF-IDX-004]] · [[CT-INDEX-JOB-OWNERSHIP]] · [[TP-IDX]]
   - **setup**: cambios de files y symbols publicados mediante PublishIncrementalGenerationWithChanges
   - **Oráculo**: las APIs públicas de publicación mantienen files y symbols en una transacción atómica; ReplaceFileSymbols y DeleteFileSymbols no son APIs exportadas ni tienen callers productivos
   - **Condiciones de rechazo**: incremental_private_query_bypass=true
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TP-IDX-OWNERSHIP
+kind: test-plan
+audience: llm-first
+imports:
+  - .docs/wiki/00_governance.md
+  - .docs/wiki/05_requirements/RF-IDX-001.md
+  - .docs/wiki/05_requirements/RF-IDX-003.md
+  - .docs/wiki/05_requirements/RF-IDX-004.md
+exports:
+  - TP-IDX-OWNERSHIP
+agent_must_read:
+  - .docs/wiki/06_tests/TP-IDX-OWNERSHIP.md
+agent_may_edit:
+  - .docs/wiki/06_tests/TP-IDX-OWNERSHIP.md
+agent_must_not_edit:
+  - .docs/wiki/05_requirements/
+  - internal/store/
+verify:
+  - .docs/wiki/06_tests/TP-IDX-OWNERSHIP.md#Casos
+stop_if:
+  - harness_verdict=BLOCKED
+  - atomicity_or_fencing_oracle_is_changed
+  - test_oracle_or_acceptance_would_change
+evidence:
+  - .docs/wiki/06_tests/TP-IDX-OWNERSHIP.md
+  - .docs/wiki/05_requirements/RF-IDX-001.md
+  - .docs/wiki/05_requirements/RF-IDX-003.md
+  - .docs/wiki/05_requirements/RF-IDX-004.md
+```

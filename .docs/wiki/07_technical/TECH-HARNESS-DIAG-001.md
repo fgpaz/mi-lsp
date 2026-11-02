@@ -19,6 +19,21 @@ links:
     - path: internal/output/diagnostics.go
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-HARNESS-DIAG-001
+kind: technical-contract
+audience: dual
+imports: [.docs/wiki/07_technical.md]
+exports: [TECH-HARNESS-DIAG-001]
+agent_must_read: [.docs/wiki/07_technical/TECH-HARNESS-DIAG-001.md, internal/service/diagnostics.go, internal/worker/diagnostics.go]
+agent_may_edit: [.docs/wiki/07_technical/TECH-HARNESS-DIAG-001.md]
+agent_must_not_edit: [internal/service/diagnostics.go, worker-dotnet/MiLsp.Worker/RoslynService.cs, .docs/wiki/06_tests/]
+verify: ["Leer .docs/wiki/07_technical/TECH-HARNESS-DIAG-001.md y .docs/wiki/07_technical.md; cotejar las afirmaciones con la fuente publicada internal/service/diagnostics.go y sus límites. Registrar únicamente comandos y resultados efectivamente ejecutados; esta especificación no afirma una ejecución."]
+stop_if: [Una modificación convierta resultados parciales o push sin barrera en garantía de diagnóstico completo.]
+evidence: [.docs/wiki/07_technical/TECH-HARNESS-DIAG-001.md, .docs/wiki/07_technical.md, internal/service/diagnostics.go]
+```
+
 ## Resumen
 `newDiagnosticsCommand(*rootState)` → `nav.diagnostics` → routing semántico habitual → worker `Method="diagnostics"`. No añade método público de filesystem arbitrario, contenido del documento ni argv suministrables por el consumidor. El servicio omite enriquecimiento wiki/catálogo e indexación para esta operación. `Workspace` se resuelve read-only; los worktrees se distinguen por raíz física y solo se corrige el alias al comprobar igualdad de `git-common-dir`.
 

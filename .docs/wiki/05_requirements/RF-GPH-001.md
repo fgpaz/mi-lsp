@@ -125,3 +125,37 @@ El root absoluto, timestamps, orden de enumeracion, separadores del SO y rangos 
 - 30 repeticiones por fixture y validación cross-RID byte-identical entre RIDs soportados.
 - Casos de relocation, Unicode, separadores, case, missing field y colision simulada.
 - `TP-GPH / TP-GPH-001 / TC-GPH-001..006`.
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: RF-GPH-001
+kind: requirement
+audience: llm-first
+imports:
+- .docs/wiki/04_flows/FL-GPH-01.md
+exports:
+- RF-GPH-001
+- RF-GPH-001 - Derivar identidad durable y cross-RID de nodos
+agent_must_read:
+- .docs/wiki/05_requirements/RF-GPH-001.md
+- .docs/wiki/04_flows/FL-GPH-01.md
+- .docs/wiki/06_tests/TP-GPH.md
+agent_may_edit:
+- .docs/wiki/05_requirements/RF-GPH-001.md
+agent_must_not_edit:
+- .docs/wiki/00_governance.md
+- AGENTS.md
+- internal/indexer/extractor_kotlin.go
+- internal/model/graph.go
+- internal/model/graph_observation.go
+verify:
+- 'Para los casos de este requisito en .docs/wiki/06_tests/TP-GPH.md, ejecutar el
+  comando publicado: go test ./internal/model/... ./internal/indexer/... ./internal/service/...
+  ./internal/daemon/... (la evidencia de ejecución debe registrarse por separado).'
+stop_if:
+- Detenerse si la propuesta requiere alterar criterios, decisiones o comportamiento
+  más allá de RF-GPH-001.
+evidence:
+- .docs/wiki/05_requirements/RF-GPH-001.md
+- .docs/wiki/06_tests/TP-GPH.md
+```
