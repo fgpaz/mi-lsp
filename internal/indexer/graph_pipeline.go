@@ -26,6 +26,10 @@ type GraphObservationRequest struct {
 	ProjectOrModule    string
 	EntrypointKind     string
 	Backend            string
+	// AffectedPaths is nil for legacy observation, otherwise repo-relative.
+	AffectedPaths []string
+	// AppliedPaths receives the worker's exact acknowledged repo-relative paths.
+	AppliedPaths *[]string
 }
 
 // GraphObserver is the adapter boundary for external semantic compilers.
@@ -35,6 +39,10 @@ type GraphIndexOptions struct {
 	RoslynObserver     GraphObserver
 	EntrypointSelector string
 	GoOffline          bool
+	// AffectedPaths is nil for legacy observation, otherwise workspace-relative.
+	AffectedPaths      []string
+	DeltaCoverage      *GraphDeltaCoverage
+	RoslynDeltaMembers GraphDeltaMembership
 }
 
 type graphObservationTarget struct {
@@ -55,11 +63,25 @@ var errGraphTopologyAmbiguous = errors.New("graph topology is ambiguous; no repo
 // observer. Unsupported languages are recorded as gated omissions, never as
 // semantic graph claims.
 func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, options GraphIndexOptions, progress ProgressFunc) ([]model.GraphObservationBatch, []model.GraphObservationOmission, []string, error) {
+	if options.AffectedPaths != nil && options.DeltaCoverage != nil {
+		options.DeltaCoverage.reset(options.AffectedPaths)
+	}
 	if err := reportProgress(ctx, progress, Progress{Stage: "graph.observe", Force: true}); err != nil {
 		return nil, nil, nil, err
 	}
+	if options.AffectedPaths != nil && len(options.AffectedPaths) == 0 {
+		return nil, nil, nil, nil
+	}
+	if options.AffectedPaths != nil {
+		if err := validateGraphDeltaPaths(options.AffectedPaths); err != nil {
+			return nil, nil, nil, err
+		}
+	}
 	_, configErr := os.Stat(workspace.ProjectConfigPath(root))
 	targets, ok := graphObservationTargets(root, project, configErr == nil)
+	if !ok && options.AffectedPaths != nil && options.DeltaCoverage != nil {
+		options.DeltaCoverage.TopologyAmbiguous = true
+	}
 	if project.Project.Kind == model.WorkspaceKindContainer && !ok && strings.TrimSpace(options.EntrypointSelector) == "" {
 		return nil, []model.GraphObservationOmission{{Backend: "roslyn", Capability: "declarations", ReasonCode: "ambiguous_repository", RecoveryHintCode: "select_repo"}}, []string{"graph omitted: container topology does not explicitly select one authoritative repository"}, nil
 	}
@@ -81,6 +103,9 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 	}
 
 	if explicitSelection != nil && explicitSelection.Backend == "kotlin-language-server" {
+		if options.AffectedPaths != nil {
+			return nil, nil, nil, &model.GraphObservationError{Code: "GPH_DELTA_UNAVAILABLE", Field: "affected_paths", Message: "explicit_incomplete: Kotlin selective observation is not stageable"}
+		}
 		selected := *explicitSelection
 		identity, err := workspace.ResolveRepositoryIdentity(ctx, root, project.Repos)
 		if err != nil {
@@ -189,6 +214,13 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 	warnings := make([]string, 0)
 
 	if len(goRepos) > 0 {
+		if options.AffectedPaths != nil && project.Project.Kind == model.WorkspaceKindContainer && explicitSelection == nil && len(goRepos) > 1 {
+			warnings = append(warnings, "explicit_incomplete: Go container has multiple repositories and a workspace-root legacy observation; select an entrypoint before masking Go paths")
+			if options.DeltaCoverage != nil {
+				options.DeltaCoverage.TopologyAmbiguous = true
+			}
+			goto skipGoObservation
+		}
 		module := ""
 		if explicitSelection != nil {
 			selected := goRepos[0]
@@ -219,7 +251,24 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 			if options.GoOffline {
 				warnings = append(warnings, "go_offline=true; Go observation uses local toolchain/cache, readonly module metadata and no workspace mode; inherited GOFLAGS ignored")
 			}
-			batch, observeErr := ObserveGoGraph(ctx, GoGraphObservationRequest{Root: requestRoot, RepositoryIdentity: identity, ProjectOrModule: module, GoOffline: options.GoOffline})
+			req := GoGraphObservationRequest{Root: requestRoot, RepositoryIdentity: identity, ProjectOrModule: module, GoOffline: options.GoOffline}
+			var selectedPaths []string
+			var goReceipt GoGraphDeltaReceipt
+			var batch model.GraphObservationBatch
+			var observeErr error
+			if options.AffectedPaths == nil {
+				batch, observeErr = ObserveGoGraph(ctx, req)
+			} else {
+				paths, err := graphDeltaPathsForRoot(root, requestRoot, options.AffectedPaths, ".go")
+				if err != nil {
+					return nil, omissions, warnings, err
+				}
+				selectedPaths = paths
+				if len(selectedPaths) == 0 {
+					goto skipGoObservation
+				}
+				batch, goReceipt, observeErr = ObserveGoGraphDeltaWithReceipt(ctx, req, selectedPaths)
+			}
 			if observeErr != nil {
 				return nil, omissions, warnings, fmt.Errorf("go graph observation failed: %w", observeErr)
 			}
@@ -227,9 +276,14 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 				return nil, omissions, warnings, wrapGoObservationStageError(batch, err)
 			}
 			batches = append(batches, batch)
+			if options.DeltaCoverage != nil && options.AffectedPaths != nil {
+				options.DeltaCoverage.GoReceipts = append(options.DeltaCoverage.GoReceipts, goReceipt)
+				options.DeltaCoverage.record(root, requestRoot, "go", module, goReceipt.Applied)
+			}
 		}
 	}
 
+skipGoObservation:
 	if len(csharpTargets) > 0 {
 		if options.RoslynObserver == nil {
 			return nil, omissions, warnings, errors.New("roslyn graph observer is not configured")
@@ -248,9 +302,37 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 				EntrypointKind:     target.Entrypoint.Kind,
 				Backend:            "roslyn",
 			}
+			if options.AffectedPaths != nil {
+				paths, err := graphDeltaPathsForRoot(root, target.RepoRoot, options.AffectedPaths, ".cs")
+				if err != nil {
+					return nil, omissions, warnings, err
+				}
+				if len(paths) == 0 {
+					continue
+				}
+				if options.RoslynDeltaMembers == nil {
+					warnings = append(warnings, "explicit_incomplete: Roslyn project membership unavailable for "+target.WorkspaceEntrypointPath)
+					continue
+				}
+				paths, err = options.RoslynDeltaMembers(ctx, request, paths)
+				if err != nil {
+					return nil, omissions, warnings, err
+				}
+				if err := graphDeltaValidateSubset(paths, options.AffectedPaths, root, target.RepoRoot); err != nil {
+					return nil, omissions, warnings, err
+				}
+				if len(paths) == 0 {
+					continue
+				}
+				request.AffectedPaths = paths
+				request.AppliedPaths = new([]string)
+			}
 			batch, observeErr := options.RoslynObserver(ctx, request)
 			if observeErr != nil {
 				return nil, omissions, warnings, observeErr
+			}
+			if options.AffectedPaths != nil && (request.AppliedPaths == nil || *request.AppliedPaths == nil || !graphDeltaSamePaths(request.AffectedPaths, *request.AppliedPaths)) {
+				return nil, omissions, warnings, errors.New("explicit_incomplete: Roslyn worker did not acknowledge the exact project paths")
 			}
 			if batch.Backend != "roslyn" {
 				return nil, omissions, warnings, errors.New("roslyn graph observer returned an unexpected backend")
@@ -276,6 +358,9 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 				return nil, omissions, warnings, fmt.Errorf("roslyn graph observation is not stageable: %w", err)
 			}
 			batches = append(batches, batch)
+			if options.DeltaCoverage != nil && options.AffectedPaths != nil {
+				options.DeltaCoverage.record(root, target.RepoRoot, "roslyn", target.ProjectOrModule, request.AffectedPaths)
+			}
 		}
 	}
 
@@ -285,6 +370,13 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 				backend := map[string]string{"typescript": "tsserver", "python": "pyright", "kotlin": "kotlin-language-server"}[language]
 				omissions = append(omissions, graphOmissionForRepo(backend, "declarations", "backend_gated", "enable_semantic_backend", repo))
 				warnings = append(warnings, "graph backend gated for "+language+"; no semantic claims were emitted")
+			}
+		}
+	}
+	if options.AffectedPaths != nil && options.DeltaCoverage != nil {
+		for _, path := range options.DeltaCoverage.Paths {
+			if len(path.Owners) == 0 {
+				warnings = append(warnings, "explicit_incomplete: uncovered affected path "+path.WorkspacePath)
 			}
 		}
 	}

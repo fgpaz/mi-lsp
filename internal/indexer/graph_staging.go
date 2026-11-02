@@ -579,6 +579,10 @@ func graphDocUnresolved(ref, owner, kind, value, reason string, candidates []str
 }
 
 func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
+	return assembleGraphBundleWithContext(input, nil)
+}
+
+func assembleGraphBundleWithContext(input graphAssemblyInput, context *graphDocumentAssemblyContext) (model.GraphBundle, error) {
 	batches, createdAt := input.batches, input.createdAt
 	nodeRefs := make(map[graphScopedRef]model.GraphDigest)
 	nodesByKey := make(map[model.GraphDigest]graphNodeCandidate)
@@ -628,6 +632,14 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 			nodeRefs[graphScopedRef{batch: batchIndex, ref: observed.Ref}] = key
 		}
 	}
+	if context != nil {
+		for _, candidate := range context.nodes {
+			if old, ok := nodesByKey[candidate.key]; ok && !graphNodeEquivalent(old, candidate) {
+				return model.GraphBundle{}, fmt.Errorf("%w: context node %s", errGraphAssemblyConflict, candidate.key.String())
+			}
+			nodesByKey[candidate.key] = candidate
+		}
+	}
 	// Some backends publish symbols with a verified owner path but no file node.
 	// Materialize only code-link targets backed by those observations, never a
 	// path asserted solely by a wiki document. Keep module/backend identity so
@@ -654,6 +666,9 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 			Key: identity, DisplayName: identity.OwnerPath, SourceDigest: candidate.node.SourceDigest,
 			ClaimStatus: model.GraphRecordExtracted, Resolution: "observed-owner-path",
 		}}
+		if context != nil {
+			context.derived[key] = append(context.derived[key], candidate.key)
+		}
 		if previous, ok := fileNodes[key]; !ok || graphDigestLess(file.node.SourceDigest, previous.node.SourceDigest) {
 			fileNodes[key] = file
 		}
@@ -717,12 +732,16 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 	}
 
 	docEvidence := make([]graphEvidenceCandidate, 0)
+	var docEdgeConflict error
 	addDocEdge := func(ref string, from, to model.GraphDigest, owner, relation, status string, source model.GraphDigest, observed model.GraphDigest) {
 		observation := model.GraphObservationEdge{Ref: ref, Relation: relation, Scope: "document", Status: status, OwnerPath: owner, Backend: "docgraph", Resolution: "docgraph", SourceDigest: source}
 		key := model.EdgeKey(from, to, observation.Relation, observation.Scope)
 		candidate := graphEdgeCandidate{key: key, from: from, to: to, edge: observation}
 		if old, ok := edgesByKey[key]; ok {
 			if !graphEdgeEquivalent(old, candidate) {
+				if context != nil {
+					docEdgeConflict = fmt.Errorf("%w: document edge %s", errGraphAssemblyConflict, key.String())
+				}
 				return
 			}
 		} else {
@@ -926,6 +945,9 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 		addDocEdge(fmt.Sprintf("doc-mention:%d", index), from, candidates[0], mention.DocPath, "doc_mentions", model.GraphRecordExtracted, docSources[mention.DocPath], graphDocClaimDigest(kind, mention.DocPath, value, "", docSources[mention.DocPath], mention.SourceBlock))
 	}
 
+	if docEdgeConflict != nil {
+		return model.GraphBundle{}, docEdgeConflict
+	}
 	edgeKeys := make([]model.GraphDigest, 0, len(edgesByKey))
 	for key := range edgesByKey {
 		edgeKeys = append(edgeKeys, key)
@@ -960,6 +982,9 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 		}
 	}
 	for _, doc := range input.docs {
+		if context != nil && context.docPaths[doc.Path] {
+			continue
+		}
 		key := docKeys[doc.Path]
 		evidence = append(evidence, graphEvidenceCandidate{subject: key, evidence: model.GraphObservationEvidence{Ref: "doc-node:" + doc.Path, NodeRef: doc.Path, SourceURI: doc.Path, Backend: "docgraph", ExtractorVersion: "docgraph/v1", SourceDigest: docSources[doc.Path], ObservedDigest: docSources[doc.Path], ClaimKind: "document", Status: model.GraphRecordExact}})
 	}
@@ -1073,6 +1098,10 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 
 	repository := input.repositoryIdentity
 	bundle := model.GraphBundle{Generation: model.GraphGeneration{SchemaVersion: 1, WorkspaceIdentity: input.workspaceIdentity, RepositoryIdentity: repository, SourceFingerprint: aggregateGraphDigest("MILSP-G3-SOURCE/v1", batches, 1, input.docs, input.docEdges, input.docMentions, unresolvedRecords), ConfigFingerprint: aggregateGraphDigest("MILSP-G3-CONFIG/v1", batches, 2, input.docs, input.docEdges, input.docMentions, unresolvedRecords), BackendManifestDigest: aggregateGraphDigest("MILSP-G3-BACKEND-MANIFEST/v1", batches, 3, input.docs, input.docEdges, input.docMentions, unresolvedRecords), Status: model.GraphGenerationStaged, NodeCount: len(nodes), EdgeCount: len(edges), EvidenceCount: len(evidenceRecords), UnresolvedCount: len(unresolvedRecords), CreatedAt: createdAt}, Nodes: nodes, Edges: edges, Evidence: evidenceRecords, Unresolved: unresolvedRecords}
+	if context != nil {
+		bundle.Generation = model.GraphGeneration{}
+		return bundle, nil
+	}
 	if err := bundle.SealIDs(); err != nil {
 		return model.GraphBundle{}, err
 	}

@@ -209,14 +209,15 @@ type goListModule struct {
 }
 
 type goListPackage struct {
-	Dir        string
-	ImportPath string
-	Export     string
-	Module     *goListModule
-	GoFiles    []string
-	CgoFiles   []string
-	Imports    []string
-	Error      *struct{ Err string } `json:"Error"`
+	Dir            string
+	ImportPath     string
+	Export         string
+	Module         *goListModule
+	GoFiles        []string
+	CgoFiles       []string
+	IgnoredGoFiles []string
+	Imports        []string
+	Error          *struct{ Err string } `json:"Error"`
 }
 
 type goGraphFile struct {
@@ -271,6 +272,8 @@ type goGraphBuilder struct {
 	exports            map[string]string
 	partial            bool
 	goOffline          bool
+	affectedRootPaths  map[string]struct{}
+	deltaMode          bool
 	importCache        map[string]*types.Package
 	initOrdinals       map[string]int
 	typeErrorPositions map[string][]token.Pos
@@ -284,6 +287,10 @@ func goGraphError(code, field, message string) error {
 }
 
 func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.GraphObservationBatch, error) {
+	return observeGoGraph(ctx, req, nil, nil)
+}
+
+func observeGoGraph(ctx context.Context, req GoGraphObservationRequest, affected map[string]struct{}, receipt *GoGraphDeltaReceipt) (model.GraphObservationBatch, error) {
 	var empty model.GraphObservationBatch
 	root, project, goos, goarch, tags, err := validateGoGraphRequest(req)
 	if err != nil {
@@ -323,7 +330,7 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 	}
 	configDigest := goGraphConfigDigest(modBytes, sumDigestBytes, modulePath, project, nil, tags, goos, goarch, os.Getenv("CGO_ENABLED"), effectiveFlags)
 	builder := &goGraphBuilder{
-		root: root, moduleRoot: moduleRoot, modulePath: modulePath, goOffline: req.GoOffline,
+		root: root, moduleRoot: moduleRoot, modulePath: modulePath, goOffline: req.GoOffline, affectedRootPaths: affected, deltaMode: affected != nil,
 		packages: map[string]*goGraphPackage{}, local: map[string]*goGraphPackage{}, objectRefs: map[types.Object]string{}, embeddedFields: map[*ast.Field]struct{}{}, embeddedFieldBases: map[ast.Node]struct{}{},
 		nodes: map[string]model.GraphObservationNode{}, edges: map[string]model.GraphObservationEdge{}, edgeDigests: map[string]model.GraphDigest{}, omissions: map[string]model.GraphObservationOmission{},
 		unresolved: map[string]model.GraphObservationUnresolved{}, evidenceOrd: map[string]int{}, evidenceKeys: map[string]bool{}, exports: map[string]string{}, importCache: map[string]*types.Package{}, initOrdinals: map[string]int{}, typeErrorPositions: map[string][]token.Pos{},
@@ -358,6 +365,11 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 			reason = "go_offline_metadata_unavailable"
 		}
 		builder.addPartialOmissions(project, reason)
+	}
+	if receipt != nil {
+		receipt.Root = root
+		receipt.ProjectOrModule = project
+		receipt.classify(root, moduleRoot, moduleRootReal, modulePath, affected, listed)
 	}
 	for _, p := range listed {
 		if p.ImportPath != "" && p.Export != "" {
@@ -426,6 +438,9 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 			}
 			if file != nil {
 				gp.files = append(gp.files, goGraphFile{rel: rel, data: data, file: file})
+				if e == nil && receipt != nil && p.Error == nil {
+					receipt.markParsed(root, full)
+				}
 			}
 		}
 		builder.packages[p.ImportPath], builder.local[p.ImportPath] = gp, gp
@@ -445,6 +460,12 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 		}
 	}
 	if len(builder.local) == 0 {
+		if receipt != nil && listErr == nil && !goGraphHasGoSource(moduleRoot) {
+			builder.batch.ConfigFingerprint = goGraphConfigDigest(modBytes, sumDigestBytes, modulePath, project, nil, tags, goos, goarch, os.Getenv("CGO_ENABLED"), effectiveFlags)
+			receipt.ConfigFingerprint = builder.batch.ConfigFingerprint
+			builder.batch.SourceFingerprint = builder.sourceFingerprint()
+			return builder.finish()
+		}
 		if !goGraphHasGoSource(moduleRoot) {
 			return empty, goGraphError("GPH_GO_NO_OWNED_SOURCES", "sources", "selected module has no owned Go sources")
 		}
@@ -464,6 +485,9 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 	sort.Strings(importPaths)
 	importPaths = uniqueStrings(importPaths)
 	builder.batch.ConfigFingerprint = goGraphConfigDigest(modBytes, sumDigestBytes, modulePath, project, importPaths, tags, goos, goarch, os.Getenv("CGO_ENABLED"), effectiveFlags)
+	if receipt != nil {
+		receipt.ConfigFingerprint = builder.batch.ConfigFingerprint
+	}
 	builder.batch.SourceFingerprint = builder.sourceFingerprint()
 	builder.extractDeclarations()
 	builder.extractImportsAndContains()
@@ -476,6 +500,10 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 	}
 	if builder.partial {
 		builder.markPartialReasons(project)
+	}
+	if builder.deltaMode && len(builder.nodes) == 0 && receipt == nil {
+		builder.partial = true
+		builder.addPartialOmissions(project, "affected_go_sources_not_observed")
 	}
 	return builder.finish()
 }
@@ -1007,6 +1035,27 @@ func (b *goGraphBuilder) addPackageNode(p *goGraphPackage) string {
 	return ref
 }
 
+func (b *goGraphBuilder) affectedFile(moduleRelative string) bool {
+	if b.affectedRootPaths == nil {
+		return true
+	}
+	rootRel, err := filepath.Rel(b.root, filepath.Join(b.moduleRoot, filepath.FromSlash(moduleRelative)))
+	if err != nil || rootRel == ".." || strings.HasPrefix(rootRel, ".."+string(filepath.Separator)) {
+		return false
+	}
+	_, ok := b.affectedRootPaths[filepath.ToSlash(rootRel)]
+	return ok
+}
+
+func (b *goGraphBuilder) packageAffected(p *goGraphPackage) bool {
+	for i := range p.files {
+		if b.affectedFile(p.files[i].rel) {
+			return true
+		}
+	}
+	return false
+}
+
 func (b *goGraphBuilder) extractDeclarations() {
 	paths := make([]string, 0, len(b.local))
 	for path := range b.local {
@@ -1019,8 +1068,13 @@ func (b *goGraphBuilder) extractDeclarations() {
 		if len(p.files) == 0 {
 			continue
 		}
-		b.addPackageNode(p)
+		if !b.deltaMode || b.packageAffected(p) {
+			b.addPackageNode(p)
+		}
 		for i := range p.files {
+			if b.deltaMode && !b.affectedFile(p.files[i].rel) {
+				continue
+			}
 			b.extractFileDeclarations(p, &p.files[i])
 		}
 	}
@@ -1310,6 +1364,9 @@ func (b *goGraphBuilder) addEmbeddedFieldTypeReference(p *goGraphPackage, f *goG
 		if targetPackage := b.local[targetObject.Pkg().Path()]; targetPackage != nil {
 			targetRef = targetPackage.posRefs[targetObject.Pos()]
 			if targetRef == "" {
+				targetRef = b.materializeGoAnchor(targetPackage, targetObject)
+			}
+			if targetRef == "" {
 				b.partial = true
 				b.addUnresolved(f.rel, "field", "references", "local_target_missing_ref", b.targetSourceDigest(targetPackage, targetObject.Pos()))
 				return
@@ -1349,6 +1406,9 @@ func (b *goGraphBuilder) extractImportsAndContains() {
 		}
 		pkgRef := b.findDecl(p, "package", "pkg:"+p.list.ImportPath)
 		for _, f := range p.files {
+			if b.deltaMode && !b.affectedFile(f.rel) {
+				continue
+			}
 			for _, spec := range f.file.Imports {
 				importPath, err := strconv.Unquote(spec.Path.Value)
 				if err != nil || importPath == "" {
@@ -1611,6 +1671,115 @@ func goGraphLocalTargetEligible(p *goGraphPackage, obj types.Object) bool {
 	}
 }
 
+// materializeGoAnchor constructs only the referenced declaration node using the same
+// identity, owner, source digest and NodeKey as the full Go extractor. It does not
+// emit declaration children or source-owned relations for the anchor.
+func (b *goGraphBuilder) materializeGoAnchor(p *goGraphPackage, obj types.Object) string {
+	if p == nil || obj == nil || !b.deltaMode {
+		return ""
+	}
+	if ref := p.posRefs[obj.Pos()]; ref != "" {
+		return ref
+	}
+	for i := range p.files {
+		f := &p.files[i]
+		if obj.Pos() < f.file.Pos() || obj.Pos() > f.file.End() {
+			continue
+		}
+		for _, raw := range f.file.Decls {
+			switch decl := raw.(type) {
+			case *ast.FuncDecl:
+				if decl.Name.Pos() != obj.Pos() {
+					continue
+				}
+				recv := goReceiver(decl.Recv)
+				kind, identity := "function", "func:"+p.list.ImportPath+":"+decl.Name.Name
+				if recv.name != "" {
+					kind = "method"
+					marker := "value"
+					if recv.pointer {
+						marker = "pointer"
+					}
+					identity = "method:" + p.list.ImportPath + ":" + recv.name + ":" + marker + ":" + decl.Name.Name
+				}
+				ref := b.addNode(p, f, decl, kind, identity, decl.Name.Name, recv.name, model.GraphRecordExtracted, "go/ast")
+				if ref != "" {
+					p.posRefs[obj.Pos()] = ref
+					b.objectRefs[obj] = ref
+				}
+				return ref
+			case *ast.GenDecl:
+				for _, spec := range decl.Specs {
+					switch node := spec.(type) {
+					case *ast.TypeSpec:
+						if node.Name.Pos() == obj.Pos() {
+							id := "type:" + p.list.ImportPath + ":" + node.Name.Name
+							ref := b.addNode(p, f, node, "type", id, node.Name.Name, "", model.GraphRecordExtracted, "go/ast")
+							if ref != "" {
+								p.posRefs[obj.Pos()] = ref
+								b.objectRefs[obj] = ref
+							}
+							return ref
+						}
+						var fields *ast.FieldList
+						fieldKind, prefix := "field", "field"
+						switch typ := node.Type.(type) {
+						case *ast.StructType:
+							fields = typ.Fields
+						case *ast.InterfaceType:
+							fields, fieldKind, prefix = typ.Methods, "method", "method"
+						}
+						if fields == nil {
+							continue
+						}
+						for _, field := range fields.List {
+							for _, name := range field.Names {
+								if name.Pos() != obj.Pos() {
+									continue
+								}
+								id := prefix + ":" + p.list.ImportPath + ":" + node.Name.Name + ":" + name.Name
+								ref := b.addNode(p, f, field, fieldKind, id, name.Name, node.Name.Name, model.GraphRecordExtracted, "go/ast")
+								if ref != "" {
+									p.posRefs[obj.Pos()] = ref
+									b.objectRefs[obj] = ref
+								}
+								return ref
+							}
+							if len(field.Names) == 0 && fieldKind == "field" && p.info != nil {
+								if structType := goGraphCheckedStructType(p, node); structType != nil {
+									if embedded := goGraphEmbeddedFieldObject(p.info, structType, field); embedded != nil && embedded.Pos() == obj.Pos() {
+										id := "field:" + p.list.ImportPath + ":" + node.Name.Name + ":" + embedded.Name()
+										ref := b.addNode(p, f, field, "field", id, embedded.Name(), node.Name.Name, model.GraphRecordExact, "go/types")
+										if ref != "" {
+											p.posRefs[obj.Pos()] = ref
+											b.objectRefs[obj] = ref
+										}
+										return ref
+									}
+								}
+							}
+						}
+					case *ast.ValueSpec:
+						for _, name := range node.Names {
+							if name.Pos() != obj.Pos() {
+								continue
+							}
+							id := "field:" + p.list.ImportPath + ":" + name.Name
+							ref := b.addNode(p, f, node, "field", id, name.Name, "", model.GraphRecordExtracted, "go/ast")
+							if ref != "" {
+								p.posRefs[obj.Pos()] = ref
+								b.objectRefs[obj] = ref
+							}
+							return ref
+						}
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
 func (b *goGraphBuilder) extractTypedRelations(ctx context.Context) {
 	paths := make([]string, 0, len(b.local))
 	for path := range b.local {
@@ -1624,6 +1793,9 @@ func (b *goGraphBuilder) extractTypedRelations(ctx context.Context) {
 		}
 		for i := range p.files {
 			f := &p.files[i]
+			if b.deltaMode && !b.affectedFile(f.rel) {
+				continue
+			}
 			if ctx.Err() != nil {
 				b.partial = true
 				b.addFileIssue(f.rel, "cancelled")
@@ -1664,6 +1836,9 @@ func (b *goGraphBuilder) extractTypedRelations(ctx context.Context) {
 				if obj.Pkg() != nil {
 					if targetPkg := b.local[obj.Pkg().Path()]; targetPkg != nil {
 						if ref := targetPkg.posRefs[obj.Pos()]; ref != "" {
+							return ref
+						}
+						if ref := b.materializeGoAnchor(targetPkg, obj); ref != "" {
 							return ref
 						}
 						if goGraphLocalTargetEligible(targetPkg, obj) {
