@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/selfupdate"
 )
 
@@ -20,7 +22,7 @@ import (
 func CompatibleUpdateOwner(ctx context.Context, executable string) bool {
 	ctx, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
 	defer cancel()
-	state, err := probeDaemon(ctx)
+	state, err := cachedUpdateOwner(ctx)
 	if err != nil || state.ExecutablePath == "" || !updateReleaseCompatible(state.Version) {
 		return false
 	}
@@ -44,6 +46,82 @@ func CompatibleUpdateOwner(ctx context.Context, executable string) bool {
 		return strings.EqualFold(left, right)
 	}
 	return left == right
+}
+
+// cachedUpdateOwner avoids a status RPC for every short-lived CLI invocation.
+// A cache hit still requires the same daemon state file and a live transport.
+func cachedUpdateOwner(ctx context.Context) (model.DaemonState, error) {
+	return cachedUpdateOwnerWith(ctx, probeDaemon, func(ctx context.Context) error {
+		conn, err := dialDaemon(ctx)
+		if err == nil {
+			_ = conn.Close()
+		}
+		return err
+	})
+}
+
+func cachedUpdateOwnerWith(ctx context.Context, probe func(context.Context) (model.DaemonState, error), dial func(context.Context) error) (model.DaemonState, error) {
+	dir, err := daemonRootDir()
+	if err != nil {
+		return probe(ctx)
+	}
+	lock, err := os.OpenFile(filepath.Join(dir, "update-owner.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return probe(ctx)
+	}
+	defer lock.Close()
+	for {
+		if err := ctx.Err(); err != nil {
+			return model.DaemonState{}, err
+		}
+		locked, lockErr := tryLockStartGuard(lock)
+		if lockErr != nil {
+			return model.DaemonState{}, lockErr
+		}
+		if locked {
+			break
+		}
+		timer := time.NewTimer(5 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return model.DaemonState{}, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	defer unlockStartGuard(lock)
+	statePath, err := daemonStatePath()
+	if err != nil {
+		return probe(ctx)
+	}
+	info, statErr := os.Stat(statePath)
+	path := filepath.Join(dir, "update-owner-cache.json")
+	var cached struct {
+		Checked        time.Time `json:"checked"`
+		StateMod       time.Time `json:"state_mod"`
+		StateSize      int64     `json:"state_size"`
+		ExecutablePath string    `json:"executable_path"`
+		Version        string    `json:"version"`
+	}
+	body, readErr := os.ReadFile(path)
+	if statErr == nil && readErr == nil && json.Unmarshal(body, &cached) == nil &&
+		time.Since(cached.Checked) >= 0 && time.Since(cached.Checked) < 70*time.Second &&
+		info.ModTime().Equal(cached.StateMod) && info.Size() == cached.StateSize {
+		if dialErr := dial(ctx); dialErr == nil {
+			return model.DaemonState{ExecutablePath: cached.ExecutablePath, Version: cached.Version}, nil
+		}
+	}
+	state, err := probe(ctx)
+	if err == nil && state.ExecutablePath != "" && updateReleaseCompatible(state.Version) {
+		if after, err := os.Stat(statePath); statErr == nil && err == nil && info.ModTime().Equal(after.ModTime()) && info.Size() == after.Size() {
+			cached.Checked, cached.StateMod, cached.StateSize = time.Now(), after.ModTime(), after.Size()
+			cached.ExecutablePath, cached.Version = state.ExecutablePath, state.Version
+			if body, err := json.Marshal(cached); err == nil {
+				_ = os.WriteFile(path, body, 0600)
+			}
+		}
+	}
+	return state, err
 }
 
 func updateReleaseCompatible(version string) bool {
