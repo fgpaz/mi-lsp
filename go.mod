@@ -7,6 +7,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/fgpaz/bots-herramientas/mold/daemon v0.0.0-20261024031724-180917c1073f
 	github.com/fsnotify/fsnotify v1.9.0
+	github.com/go-ole/go-ole v1.3.0
 	github.com/spf13/cobra v1.9.1
 	github.com/toon-format/toon-go v0.0.0-20251202084852-7ca0e27c4e8c
 	golang.org/x/sys v0.33.0
