@@ -15,6 +15,7 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/language"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 const (
@@ -194,28 +195,26 @@ var identifierPattern = regexp.MustCompile(`^\w+$`)
 // search, and every item carries its origin and (when the catalog knows it) caller.
 func (a *App) findRefs(ctx context.Context, registration model.WorkspaceRegistration, project model.ProjectFile, request model.CommandRequest) (model.Envelope, error) {
 	started := time.Now()
-	if resolveBackendType(registration, request, "find_refs") == "kotlin-language-server" {
-		return a.kotlinSemantic(ctx, registration, project, request, "find_refs")
-	}
 	symbol, _ := request.Payload["symbol"].(string)
 	symbol = strings.TrimSpace(symbol)
 	contextLines := clampRefsContext(intFromAny(request.Payload["context"], 0))
 
-	if request.Context.BackendHint == "" && symbol != "" {
+	if symbol != "" {
 		if file, _ := request.Payload["file"].(string); strings.TrimSpace(file) == "" {
-			anchored, early := a.anchorRefsRequest(ctx, registration, request, symbol)
+			anchored, early := a.anchorRefsRequest(ctx, registration, project, request, symbol)
 			if early != nil {
-				return a.finalizeRefs(ctx, registration, *early, symbol, contextLines, started), nil
+				return a.finalizePhysicalRefs(ctx, registration, project, request, *early, symbol, contextLines, started), nil
 			}
 			request = anchored
 		}
 	}
 
-	// A newly inferred Kotlin anchor is not an explicit caller location.
 	if resolveBackendType(registration, request, "find_refs") == "kotlin-language-server" {
-		request.Payload = clonePayload(request.Payload)
-		delete(request.Payload, "file")
-		return a.kotlinSemantic(ctx, registration, project, request, "find_refs")
+		env, err := a.kotlinSemantic(ctx, registration, project, request, "find_refs")
+		if err != nil {
+			return model.Envelope{}, err
+		}
+		return a.finalizePhysicalRefs(ctx, registration, project, request, env, symbol, contextLines, started), nil
 	}
 	env, err := a.semanticCore(ctx, registration, project, request, "find_refs")
 	switch {
@@ -236,7 +235,7 @@ func (a *App) findRefs(ctx context.Context, registration model.WorkspaceRegistra
 			if !env.Ok {
 				return env, nil
 			}
-			return a.finalizeRefs(ctx, registration, env, symbol, contextLines, started), nil
+			return a.finalizePhysicalRefs(ctx, registration, project, request, env, symbol, contextLines, started), nil
 		case len(refsItems(fallback)) > 0:
 			fallback.Warnings = append(env.Warnings, fallback.Warnings...)
 			if env.Ok {
@@ -250,21 +249,89 @@ func (a *App) findRefs(ctx context.Context, registration model.WorkspaceRegistra
 			env = fallback
 		}
 	}
-	return a.finalizeRefs(ctx, registration, env, symbol, contextLines, started), nil
+	return a.finalizePhysicalRefs(ctx, registration, project, request, env, symbol, contextLines, started), nil
 }
 
 // anchorRefsRequest picks the symbol's language when the caller gave no file:
 // first from the catalog definition, then from the first code-file text hit.
 // It returns an early envelope when only non-code files mention the symbol, or
 // when nothing mentions it at all.
-func (a *App) anchorRefsRequest(ctx context.Context, registration model.WorkspaceRegistration, request model.CommandRequest, symbol string) (model.CommandRequest, *model.Envelope) {
+func (a *App) anchorRefsRequest(ctx context.Context, registration model.WorkspaceRegistration, project model.ProjectFile, request model.CommandRequest, symbol string) (model.CommandRequest, *model.Envelope) {
 	def, found, ambiguous := a.catalogDefinition(ctx, registration, request, symbol)
+	physicalOverlay := false
+	if overlay, linked, err := workspace.TryResolveWorktreeOverlay(registration.Root); err != nil {
+		return request, &model.Envelope{Ok: false, Workspace: registration.Name, Backend: "router", Items: []map[string]any{}, Warnings: []string{"worktree_anchor_explicit_incomplete: " + err.Error()}}
+	} else if linked {
+		physicalOverlay = true
+		if found && (worktreeOverlayContains(overlay.Changed, def.FilePath) || worktreeOverlayContains(overlay.Deleted, def.FilePath)) {
+			found = false
+			ambiguous = false
+		}
+		var physical []physicalSymbol
+		incomplete := false
+		for _, file := range overlay.Changed {
+			backend, supported := backendForSourcePath(file)
+			if !supported || (request.Context.BackendHint != "" && !strings.EqualFold(request.Context.BackendHint, backend)) {
+				continue
+			}
+			if worktreeOverlayContains(overlay.Deleted, file) {
+				continue
+			}
+			symbols, err := a.physicalDocumentSymbols(ctx, registration, project, request, file)
+			if err != nil {
+				incomplete = true
+				continue
+			}
+			for _, candidate := range symbols {
+				if candidate.Name == worktreeSymbolName(symbol) {
+					physical = append(physical, candidate)
+				}
+			}
+		}
+		if incomplete {
+			return request, &model.Envelope{Ok: false, Workspace: registration.Name, Backend: "router", Items: []map[string]any{}, Warnings: []string{"worktree_anchor_explicit_incomplete: physical document symbols unavailable for changed source"}}
+		}
+		if len(physical) == 1 && !found {
+			if physical[0].selectionLine < 1 || physical[0].selectionColumn < 1 {
+				return request, &model.Envelope{Ok: false, Workspace: registration.Name, Backend: "router", Items: []map[string]any{}, Warnings: []string{"worktree_anchor_explicit_incomplete: backend returned no declaration selection position"}}
+			}
+			request = withRefsAnchor(request, physical[0].FilePath, physical[0].selectionLine)
+			request.Payload["column"] = physical[0].selectionColumn
+			return request, nil
+		} else if len(physical) > 1 || (len(physical) > 0 && found) {
+			ambiguous = true
+		}
+	}
 	if ambiguous {
+		if physicalOverlay {
+			return request, &model.Envelope{Ok: false, Workspace: registration.Name, Backend: "router", Items: []map[string]any{}, Warnings: []string{"worktree_anchor_explicit_incomplete: multiple physical or base candidates; specify file"}}
+		}
 		// Defined in several repos: keep the router's ambiguity handling.
 		return request, nil
 	}
 	if found {
+		if physicalOverlay {
+			candidates, err := a.physicalDocumentSymbols(ctx, registration, project, request, def.FilePath)
+			if err != nil {
+				return request, &model.Envelope{Ok: false, Workspace: registration.Name, Backend: "router", Items: []map[string]any{}, Warnings: []string{"worktree_anchor_explicit_incomplete: physical base-candidate document symbols unavailable"}}
+			}
+			matches := []physicalSymbol{}
+			for _, candidate := range candidates {
+				if candidate.Name == worktreeSymbolName(symbol) && candidate.StartLine == def.StartLine {
+					matches = append(matches, candidate)
+				}
+			}
+			if len(matches) != 1 || matches[0].selectionLine < 1 || matches[0].selectionColumn < 1 {
+				return request, &model.Envelope{Ok: false, Workspace: registration.Name, Backend: "router", Items: []map[string]any{}, Warnings: []string{"worktree_anchor_explicit_incomplete: base candidate has no unique physical selection position"}}
+			}
+			request = withRefsAnchor(request, def.FilePath, matches[0].selectionLine)
+			request.Payload["column"] = matches[0].selectionColumn
+			return request, nil
+		}
 		return withRefsAnchor(request, def.FilePath, def.StartLine), nil
+	}
+	if physicalOverlay {
+		return request, &model.Envelope{Ok: false, Workspace: registration.Name, Backend: "router", Items: []map[string]any{}, Warnings: []string{"worktree_anchor_explicit_incomplete: no physical document-symbol anchor available"}}
 	}
 	// The anchor search only picks a language, so keep it short.
 	anchorCtx, cancel := context.WithTimeout(ctx, refsTimedOutTextBudget)
@@ -352,6 +419,80 @@ func (a *App) finalizeRefs(ctx context.Context, registration model.WorkspaceRegi
 		}
 	}
 	a.attachRefCallers(ctx, registration, items, symbol)
+	attachRefContext(registration.Root, items, contextLines)
+	env.Items = items
+	if len(items) == 0 && env.Ok {
+		env.Degraded = false
+		env.FallbackUsed = ""
+		env.Reason = model.ReasonNoMatches
+	}
+	env.Stats.Ms = time.Since(started).Milliseconds()
+	return env
+}
+
+// finalizePhysicalRefs enriches changed files from the worktree's native backend,
+// never from the persisted base catalog. Unchanged files retain normal behavior.
+func (a *App) finalizePhysicalRefs(ctx context.Context, registration model.WorkspaceRegistration, project model.ProjectFile, request model.CommandRequest, env model.Envelope, symbol string, contextLines int, started time.Time) model.Envelope {
+	overlay, linked, err := workspace.TryResolveWorktreeOverlay(registration.Root)
+	if err != nil {
+		env.Warnings = append(env.Warnings, "worktree_caller_explicit_incomplete: "+err.Error())
+		// Avoid catalog enrichment when worktree identity could not be determined.
+		items := refsItems(env)
+		attachRefContext(registration.Root, items, contextLines)
+		env.Items = items
+		env.Stats.Ms = time.Since(started).Milliseconds()
+		return env
+	}
+	if !linked {
+		return a.finalizeRefs(ctx, registration, env, symbol, contextLines, started)
+	}
+	items := refsItems(env)
+	unchanged := make([]map[string]any, 0, len(items))
+	byFile := map[string][]physicalSymbol{}
+	incomplete := false
+	for _, item := range items {
+		file, _ := item["file"].(string)
+		if relative, relErr := makeRelative(registration.Root, file); relErr == nil && !strings.HasPrefix(relative, "..") {
+			file = relative
+			item["file"] = relative
+		}
+		if _, ok := item["origin"]; !ok {
+			origin := model.ItemOriginSemantic
+			if env.Backend == "text" {
+				origin = model.ItemOriginText
+			} else if env.Backend == "catalog" {
+				origin = model.ItemOriginCatalog
+			}
+			item["origin"] = origin
+		}
+		if !worktreeOverlayContains(overlay.Changed, file) && !worktreeOverlayContains(overlay.Deleted, file) {
+			unchanged = append(unchanged, item)
+			continue
+		}
+		delete(item, "caller")
+		symbols, loaded := byFile[file]
+		if !loaded {
+			var symbolErr error
+			symbols, symbolErr = a.physicalDocumentSymbols(ctx, registration, project, request, file)
+			byFile[file] = symbols
+			if symbolErr != nil || len(symbols) == 0 {
+				incomplete = true
+			}
+		}
+		records := make([]model.SymbolRecord, 0, len(symbols))
+		for _, candidate := range symbols {
+			records = append(records, candidate.SymbolRecord)
+		}
+		if caller, ok := innermostSymbol(records, intFromAny(item["line"], 0), symbol); ok {
+			item["caller"] = map[string]any{"name": caller.Name, "kind": caller.Kind, "line": caller.StartLine, "origin": "structural"}
+		} else {
+			incomplete = true
+		}
+	}
+	a.attachRefCallers(ctx, registration, unchanged, symbol)
+	if incomplete {
+		env.Warnings = append(env.Warnings, "worktree_caller_explicit_incomplete: physical document symbols unavailable or no enclosing caller")
+	}
 	attachRefContext(registration.Root, items, contextLines)
 	env.Items = items
 	if len(items) == 0 && env.Ok {

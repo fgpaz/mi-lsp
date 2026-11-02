@@ -414,6 +414,13 @@ func (c *LSPClient) resolveLocation(request model.WorkerRequest) (string, int, i
 		}
 		return filepath.Clean(absoluteFile), lineValue, column, symbol, nil
 	}
+	if _, supplied := request.Payload["column"]; supplied {
+		column := intFromPayload(request.Payload, "column", 0)
+		if err := validateUTF16Position(absoluteFile, lineValue, column); err != nil {
+			return "", 0, 0, "", err
+		}
+		return filepath.Clean(absoluteFile), lineValue, column, symbol, nil
+	}
 	lineValue, offset := inferLineAndOffset(absoluteFile, lineValue, symbol)
 	offset, err := utf16ColumnForByteOffset(absoluteFile, lineValue, offset)
 	return absoluteFile, lineValue, offset, symbol, err
