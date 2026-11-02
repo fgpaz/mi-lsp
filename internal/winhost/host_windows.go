@@ -126,7 +126,17 @@ func drainJob(job uintptr) error {
 	}
 }
 
-func run(args []string, timeout time.Duration) (result outcome) {
+type ownedRunHooks struct {
+	BeforeCreate func() error
+	BeforeResume func(root syscall.Handle, job uintptr) error
+}
+
+func run(args []string, timeout time.Duration) outcome {
+	return runWithStdio(args, timeout, [3]*os.File{os.Stdin, os.Stdout, os.Stderr}, ownedRunHooks{})
+}
+
+func runWithStdio(args []string, timeout time.Duration, streams [3]*os.File, hooks ownedRunHooks) (result outcome) {
+	defer func() { runtime.KeepAlive(streams) }()
 	deadline := time.Now().Add(timeout)
 	result = failed("invalid_invocation", nil)
 	if len(args) < 4 || args[0] != "--control-file" || args[2] != "--" || !filepath.IsAbs(args[1]) || !filepath.IsAbs(args[3]) || !strings.EqualFold(filepath.Ext(args[3]), ".exe") {
@@ -155,11 +165,20 @@ func run(args []string, timeout time.Duration) (result outcome) {
 	// The job, control and result handles are NOT in the explicit inheritance list.
 	current := syscall.Handle(^uintptr(0))
 	handles := make([]syscall.Handle, 3)
-	for i, f := range []*os.File{os.Stdin, os.Stdout, os.Stderr} {
+	for i, f := range streams {
 		if f == nil { return failed("missing_stdio", nil) }
-		if err := syscall.DuplicateHandle(current, syscall.Handle(f.Fd()), current, &handles[i], 0, true, duplicateSameAccess); err != nil {
-			return failed("duplicate_stdio", err)
-		}
+		raw, err := f.SyscallConn()
+		if err != nil { return failed("duplicate_stdio", err) }
+		var duplicateErr error
+		err = raw.Control(func(fd uintptr) {
+			// InvalidHandle aliases the current-process pseudo-handle on Windows.
+			if fd == 0 || fd == ^uintptr(0) { duplicateErr = syscall.EINVAL; return }
+			// Preserve Windows File.Fd's best-effort IOCP export before duplication.
+			_ = f.Fd()
+			duplicateErr = syscall.DuplicateHandle(current, syscall.Handle(fd), current, &handles[i], 0, true, duplicateSameAccess)
+		})
+		if err != nil { return failed("duplicate_stdio", err) }
+		if duplicateErr != nil { return failed("duplicate_stdio", duplicateErr) }
 		h := handles[i]
 		defer func() {
 			if err := syscall.CloseHandle(h); err != nil { result.Cleanup = append(result.Cleanup, diag("close_stdio", err)) }
@@ -190,6 +209,9 @@ func run(args []string, timeout time.Duration) (result outcome) {
 	startup.startup.Flags = startfUseStdHandles
 	startup.startup.StdInput, startup.startup.StdOutput, startup.startup.StdErr = handles[0], handles[1], handles[2]
 	var process syscall.ProcessInformation
+	if hooks.BeforeCreate != nil {
+		if err := hooks.BeforeCreate(); err != nil { return failed("before_create", err) }
+	}
 	err = syscall.CreateProcess(app, line, nil, nil, true, createSuspended | createNoWindow | extendedStartupInfo, nil, nil, &startup.startup, &process)
 	if err != nil { return failed("create_process", err) }
 	defer func() {
@@ -215,6 +237,9 @@ func run(args []string, timeout time.Duration) (result outcome) {
 	}()
 	if err := assignOwnedProcess(job, uintptr(process.Process)); err != nil { return failed("assign_job", err) }
 	assigned = true
+	if hooks.BeforeResume != nil {
+		if err := hooks.BeforeResume(process.Process, job); err != nil { return failed("before_resume", err) }
+	}
 	r, _, e = resumeThread.Call(uintptr(process.Thread))
 	if uint32(r) == 0xffffffff { return failed("resume_thread", e) }
 	for {
