@@ -34,6 +34,9 @@ context, and dependency analysis. Includes install and status.`,
 		Use:   "status",
 		Short: "Show worker installation and runtime status",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if state.noDaemon {
+				return state.executeOperation(cmd, "worker.status", nil, false)
+			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
 			defer cancel()
 			opts := state.queryOptions(cmd, "worker.status", nil)

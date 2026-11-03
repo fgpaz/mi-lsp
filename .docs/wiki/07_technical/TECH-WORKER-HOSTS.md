@@ -7,6 +7,8 @@ title: Hosts de workers semánticos
 links:
   supports: [RF-CS-001]
   code:
+    - path: internal/cli/worker.go
+      role: behavior
     - path: internal/worker/bootstrap.go
       role: behavior
     - path: internal/worker/tsserver.go
@@ -41,6 +43,8 @@ evidence: [.docs/wiki/07_technical/TECH-WORKER-HOSTS.md, .docs/wiki/07_technical
 `mi-lsp worker install --mode auto` prefiere una DLL Roslyn framework-dependent compatible, ejecutada por `dotnet`; conserva el fallback self-contained. `--mode framework-dependent` exige bundle FDD y runtime compatibles, o fuentes con SDK y runtime; falla en lugar de degradar. `--mode self-contained` selecciona la distribución existente o la publica desde fuentes. `--rid` modifica el RID destino. La publicación FDD usa `--self-contained false -p:UseAppHost=false`.
 
 Un bundle FDD con DLL y runtimeconfig que declara `framework`/`frameworks` puede usarse sin SDK; un probe del protocolo valida el runtime real antes de seleccionarlo. Un runtimeconfig self-contained con `includedFrameworks` no se considera FDD. La instalación FDD explícita desde un bundle SC necesita otro bundle FDD o fuentes/SDK. No se garantiza ejecutar localmente un RID de arquitectura incompatible.
+
+`worker status --no-daemon` ejecuta el estado local directamente, sin conectar ni iniciar el daemon; sin ese flag conserva la consulta al daemon primero y el fallback local. Esta descripción no acredita conformidad global ni verificación de instalación.
 
 `worker status --format json` añade `selected.mode`, `selected.host`, `selected.capabilities`; los mismos campos aparecen en candidatos disponibles. Una DLL FDD usa `host: dotnet`; un apphost FDD se identifica por separado y SC usa `apphost`. Status y lanzamiento priorizan candidatos FDD compatibles sobre SC; si coexisten bundle FDD e instalación SC, consultar `installed` para distinguirlos. La selección no acredita que un daemon ya vivo se haya reiniciado: usar su ciclo normal al cambiar workers.
 

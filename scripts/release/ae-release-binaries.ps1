@@ -409,7 +409,7 @@ elseif ($Rids -contains $hostRid) {
     $installedCli = Join-Path $InstallDir (Get-CliName -Rid $hostRid)
     if (-not $SkipWorkerStatus) {
         Invoke-NativeChecked -FilePath $installedCli -Arguments @('version', '--format', 'compact') -FailureMessage "Installed CLI version check failed for '$installedCli'."
-        Invoke-NativeChecked -FilePath $installedCli -Arguments @('worker', 'status', '--format', 'compact') -FailureMessage "Installed CLI worker status failed for '$installedCli'."
+        Invoke-NativeChecked -FilePath $installedCli -Arguments @('worker', 'status', '--no-daemon', '--format', 'compact') -FailureMessage "Installed CLI worker status failed for '$installedCli'."
     }
     $result.local_install = [pscustomobject]@{
         skipped = $false
@@ -458,7 +458,7 @@ else {
             $commands.Add("$(Quote-Sh $target) version --format compact >/dev/null")
             if (-not $SkipWorkerStatus) {
                 $commands.Add("$(Quote-Sh $target) worker install --rid $(Quote-Sh $wslRid) --format compact >/dev/null")
-                $commands.Add("$(Quote-Sh $target) worker status --format compact >/dev/null")
+                $commands.Add("$(Quote-Sh $target) worker status --no-daemon --format compact >/dev/null")
             }
         }
         $script = ($commands -join "`n")
