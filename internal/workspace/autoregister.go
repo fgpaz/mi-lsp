@@ -223,7 +223,7 @@ func registeredMainWorktree(commonDir string, registry model.RegistryFile) (mode
 	selectedAlias := ""
 	for alias, registration := range registry.Workspaces {
 		linked, registeredCommon, ok := linkedWorktree(registration.Root)
-		if !ok || linked || registeredCommon != commonDir {
+		if !ok || linked || !sameFilePath(registeredCommon, commonDir) {
 			continue
 		}
 		registration.Name = alias

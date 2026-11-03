@@ -78,7 +78,7 @@ func resolveSelectorWithIdentity(target string) (model.WorkspaceRegistration, bo
 		return model.WorkspaceRegistration{}, false, nil, err
 	}
 	if item, found := reg.Workspaces[target]; found {
-		info, err := os.Stat(item.Root)
+		info, err := workspace.CaptureWorkspaceRootIdentity(item.Root)
 		if err != nil || !info.IsDir() {
 			return model.WorkspaceRegistration{}, false, nil, errors.New("workspace registrado no disponible")
 		}
@@ -93,7 +93,7 @@ func resolveSelectorWithIdentity(target string) (model.WorkspaceRegistration, bo
 	if err != nil {
 		return model.WorkspaceRegistration{}, false, nil, err
 	}
-	info, err := os.Stat(abs)
+	info, err := workspace.CaptureWorkspaceRootIdentity(abs)
 	if err != nil || !info.IsDir() {
 		return model.WorkspaceRegistration{}, false, nil, errors.New("ruta de workspace no disponible")
 	}

@@ -170,9 +170,11 @@ required_targets:
     integrity_today: sha256_checksums_verified_pre_extract
     revisit_trigger: broad_non_technical_distribution
 default_command: scripts/release/ae-release-binaries.ps1
-publish_command:
-  shape: "pwsh ./scripts/release/ae-release-binaries.ps1 -Clean -Publish -Tag <vX.Y.Z>"
-  effect: "build all RIDs, refresh local installs, verify provenance, and push the release tag that triggers GitHub release upload"
+publication:
+  manufacture: "scripts/release.sh <version> without --upload produces the release archives, hosts and checksums"
+  certify: "AE coordinator certifies the actual bytes of six archives and two hosts via a private layout bridge, not an assumed equivalent build-dist rebuild"
+  publish: "after verification, guard, source pin, main and tag gates, the authorized coordinator publishes the nine original assets to GitHub Releases through the official GitHub CLI"
+  legacy_publish: "ae-release-binaries.ps1 -Publish pushes only the tag; it does not publish assets"
 stop_if:
   - current worktree is dirty and Publish is requested
   - tag does not point at HEAD when Publish is requested
@@ -497,4 +499,4 @@ evidence:
 The local install path must stop an existing `mi-lsp daemon` before replacing the executable and worker bundle, then retry copy/removal briefly to absorb Windows file-lock lag.
 WSL install defaults are detected from the active distro user and `$HOME`; pass `-WslInstallPaths` only when the target distro uses non-standard paths.
 
-Publishing is explicit. The script only pushes a tag when `-Publish -Tag <tag>` is passed, the worktree is clean, and the tag points at `HEAD`. The GitHub release workflow remains the public upload mechanism for release assets.
+Publishing is explicit and owned by the authorized coordinator. Manufacture with `scripts/release.sh <version>` without `--upload`; that upload switch is blocked. Certify the actual CLI and worker bytes extracted from all six original archives and both original host assets using a private layout bridge for the AE gate; a separate `build-dist` rebuild is not assumed byte-equivalent. Preserve and verify the original archives, hosts, checksums, provenance, RID mapping, installed-path evidence and applicable waivers. After verification and the guard, source pin, main and tag gates, the coordinator publishes the nine original assets to GitHub Releases using the official GitHub CLI and verifies the release and install. No release workflow exists in the current Git tree. The legacy `-Publish -Tag <tag>` only pushes a tag when the tree is clean and the tag points at `HEAD`; tag push alone does not publish or certify assets.

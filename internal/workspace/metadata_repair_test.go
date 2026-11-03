@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"syscall"
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -63,7 +65,7 @@ func TestOpenPinnedWorkspaceRootRejectsSymlink(t *testing.T) {
 
 func TestApplyWorkspaceMetadataRepairRejectsSelectionToPinSwap(t *testing.T) {
 	root, registration := metadataRepairWorkspaceFixture(t)
-	selectedRoot, err := os.Stat(root)
+	selectedRoot, err := CaptureWorkspaceRootIdentity(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,6 +171,23 @@ func TestApplyWorkspaceMetadataRepairRejectsRootSwapBeforeCommit(t *testing.T) {
 			return os.WriteFile(originalProjectPath, decoyProject, 0600)
 		},
 	})
+	if runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(32)) {
+		if changed {
+			t.Fatal("sharing violation reported a mutation")
+		}
+		if _, statErr := os.Stat(movedRoot); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("rename unexpectedly created destination: %v", statErr)
+		}
+		projectAfter, readErr := os.ReadFile(originalProjectPath)
+		if readErr != nil || !bytes.Equal(projectAfter, originalProject) {
+			t.Fatalf("original project changed after blocked rename: %v", readErr)
+		}
+		registryAfter, readErr := os.ReadFile(registryPath)
+		if readErr != nil || !bytes.Equal(registryAfter, originalRegistry) {
+			t.Fatalf("registry changed after blocked rename: %v", readErr)
+		}
+		return
+	}
 	if !errors.Is(err, ErrWorkspaceMetadataRootChanged) || changed {
 		t.Fatalf("apply changed=%v err=%v; want root-changed with no mutation", changed, err)
 	}

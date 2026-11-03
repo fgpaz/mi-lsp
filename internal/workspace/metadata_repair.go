@@ -105,11 +105,29 @@ func PlanWorkspaceMetadataRepair(expected model.WorkspaceRegistration) (Workspac
 	return plan, err
 }
 
+// CaptureWorkspaceRootIdentity captures a directory's identity through an open
+// handle, so it remains stable if its path is replaced after selection.
+func CaptureWorkspaceRootIdentity(path string) (os.FileInfo, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	info, statErr := file.Stat()
+	closeErr := file.Close()
+	if err := errors.Join(statErr, closeErr); err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, ErrWorkspaceMetadataRootChanged
+	}
+	return info, nil
+}
+
 // ApplyWorkspaceMetadataRepair updates only languages in an existing project
 // file and its existing registry entry. Project reads, atomic replacement,
 // readback, and rollback stay relative to a pinned workspace directory handle.
 func ApplyWorkspaceMetadataRepair(expected model.WorkspaceRegistration) (WorkspaceMetadataRepairPlan, bool, error) {
-	rootInfo, err := os.Stat(expected.Root)
+	rootInfo, err := CaptureWorkspaceRootIdentity(expected.Root)
 	if err != nil || !rootInfo.IsDir() {
 		return WorkspaceMetadataRepairPlan{}, false, ErrWorkspaceMetadataRootChanged
 	}
@@ -126,7 +144,7 @@ func ApplyWorkspaceMetadataRepairSelected(selection WorkspaceMetadataSelection) 
 }
 
 func applyWorkspaceMetadataRepair(expected model.WorkspaceRegistration, hooks metadataRepairHooks) (WorkspaceMetadataRepairPlan, bool, error) {
-	rootInfo, err := os.Stat(expected.Root)
+	rootInfo, err := CaptureWorkspaceRootIdentity(expected.Root)
 	if err != nil || !rootInfo.IsDir() {
 		return WorkspaceMetadataRepairPlan{}, false, ErrWorkspaceMetadataRootChanged
 	}
