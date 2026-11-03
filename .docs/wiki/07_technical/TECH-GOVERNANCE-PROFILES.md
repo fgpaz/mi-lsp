@@ -89,9 +89,11 @@ La proyección deriva del modelo inmutable; no exige perfiles, overlays, hierarc
 - El canon universal se resuelve desde `<kernel_home>/canon`; no se duplica en el repositorio.
 - `.docs/ae/repo-policy.yaml` declara un alias exacto en `tracker.provider` (`Linear`, `Plane`, `Azure Boards`, `Jira` o `None`) y exactamente un bloque correspondiente (`linear`, `plane`, `azure_boards`, `jira` o `none`).
 - `None` solo requiere `tracker.none.mode: local-only`; no requiere ni admite campos de proveedores externos o aliases legacy.
-- Un proveedor externo requiere dentro de su bloque `base_url`, `workspace`, `key_env` (solo nombre de variable de entorno) y al menos un proyecto con `key`.
+- Un proveedor externo requiere `base_url`, `workspace` y al menos un proyecto con `key`. El camino legacy exige `key_env` (solo nombre de variable). Azure Boards también admite `authentication: entra_device_code`, sin exigir `key_env`; si este aparece debe ser un nombre de variable válido. Otros valores o tipos de `authentication` son inválidos. Esto valida configuración, no autenticación efectiva.
+- El lector nativo conserva el camino Azure legacy con `key_env` y acepta una referencia válida junto a Entra; el renderer Sandinas exige Entra sin `key_env`. La compatibilidad nativa no modifica el contrato del renderer.
 - Los aliases neutrales `tracker.base_url`, `tracker.conf_file`, `tracker.key_env`, `tracker.workspace` y `tracker.projects` son inválidos porque impiden un render determinístico entre providers.
-- `repo.structure_rules` debe contener al menos una regla concreta del repositorio.
+- Se prefiere `wiki.wiki_governance` no vacío; si falta o es inválido se admite `wiki.layers_map.02` no vacío, cuya clave YAML `02` también se acepta sin comillas. Si ninguno es válido se rechaza.
+- Por compatibilidad con productores v1 anteriores, `repo.description`, `repo.structure_rules`, `secrets.vault`, `secrets.tool` y `wiki.paths_file` son opcionales; cuando aparecen deben ser válidos y `structure_rules` debe contener al menos una regla concreta. Si `secrets` está presente debe ser un mapa; su ausencia no exige campos nuevos. Esto no acredita broker, permisos ni valores por defecto.
 
 ### Artefactos afectados
 

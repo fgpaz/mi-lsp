@@ -47,14 +47,9 @@ var requiredKernelV2CanonModules = []string{
 
 var requiredKernelV2RepoPolicyStringSlots = [][]string{
 	{"repo", "name"},
-	{"repo", "description"},
 	{"language", "policy_lang"},
 	{"language", "docs_lang"},
-	{"secrets", "vault"},
-	{"secrets", "tool"},
-	{"wiki", "layers_map", "02"},
 	{"wiki", "workspace_alias"},
-	{"wiki", "paths_file"},
 	{"subagents", "roster_file"},
 }
 
@@ -70,10 +65,10 @@ var kernelV2TrackerProviders = map[string]kernelV2TrackerProviderSpec{
 	"plane":        {blockName: "plane", fields: []string{"base_url", "workspace", "key_env", "projects"}},
 	"Plane":        {blockName: "plane", fields: []string{"base_url", "workspace", "key_env", "projects"}},
 	"PLANE":        {blockName: "plane", fields: []string{"base_url", "workspace", "key_env", "projects"}},
-	"azure_boards": {blockName: "azure_boards", fields: []string{"base_url", "workspace", "key_env", "projects"}},
-	"azure-boards": {blockName: "azure_boards", fields: []string{"base_url", "workspace", "key_env", "projects"}},
-	"AzureBoards":  {blockName: "azure_boards", fields: []string{"base_url", "workspace", "key_env", "projects"}},
-	"Azure Boards": {blockName: "azure_boards", fields: []string{"base_url", "workspace", "key_env", "projects"}},
+	"azure_boards": {blockName: "azure_boards", fields: []string{"base_url", "workspace", "key_env", "projects", "authentication"}},
+	"azure-boards": {blockName: "azure_boards", fields: []string{"base_url", "workspace", "key_env", "projects", "authentication"}},
+	"AzureBoards":  {blockName: "azure_boards", fields: []string{"base_url", "workspace", "key_env", "projects", "authentication"}},
+	"Azure Boards": {blockName: "azure_boards", fields: []string{"base_url", "workspace", "key_env", "projects", "authentication"}},
 	"jira":         {blockName: "jira", fields: []string{"base_url", "workspace", "key_env", "projects"}},
 	"Jira":         {blockName: "jira", fields: []string{"base_url", "workspace", "key_env", "projects"}},
 	"JIRA":         {blockName: "jira", fields: []string{"base_url", "workspace", "key_env", "projects"}},
@@ -816,8 +811,43 @@ func invalidKernelV2RepoPolicySlots(policy map[string]any) []string {
 			invalid = append(invalid, strings.Join(slot, "."))
 		}
 	}
-	if !validKernelV2StringList(lookupKernelV2RepoPolicyValue(policy, "repo", "structure_rules")) {
-		invalid = append(invalid, "repo.structure_rules[]")
+	if secrets, present := policy["secrets"]; present {
+		if _, ok := secrets.(map[string]any); !ok {
+			invalid = append(invalid, "secrets")
+		}
+	}
+	for _, slot := range [][]string{{"repo", "description"}, {"secrets", "vault"}, {"secrets", "tool"}, {"wiki", "paths_file"}} {
+		if parent, ok := lookupKernelV2RepoPolicyValue(policy, slot[0]).(map[string]any); ok {
+			if value, present := parent[slot[1]]; present && !validKernelV2RepoPolicyString(value) {
+				invalid = append(invalid, strings.Join(slot, "."))
+			}
+		}
+	}
+	if repo, ok := policy["repo"].(map[string]any); ok {
+		if value, present := repo["structure_rules"]; present && !validKernelV2StringList(value) {
+			invalid = append(invalid, "repo.structure_rules[]")
+		}
+	}
+	wiki, _ := policy["wiki"].(map[string]any)
+	governance, governancePresent := wiki["wiki_governance"]
+	if !validKernelV2RepoPolicyString(governance) {
+		var layer any
+		switch layers := wiki["layers_map"].(type) {
+		case map[string]any:
+			layer = layers["02"]
+		case map[any]any:
+			layer = layers["02"]
+			if layer == nil {
+				layer = layers[2]
+			}
+		}
+		if !validKernelV2RepoPolicyString(layer) {
+			if governancePresent {
+				invalid = append(invalid, "wiki.wiki_governance")
+			} else {
+				invalid = append(invalid, "wiki.layers_map.02")
+			}
+		}
 	}
 	invalid = append(invalid, invalidKernelV2TrackerSlots(lookupKernelV2RepoPolicyValue(policy, "tracker"))...)
 	if !validKernelV2Wrappers(lookupKernelV2RepoPolicyValue(policy, "wrappers")) {
@@ -995,7 +1025,14 @@ func invalidKernelV2TrackerSlots(value any) []string {
 			invalid = append(invalid, "tracker."+providerSpec.blockName+"."+field)
 		}
 	}
-	if !validKernelV2EnvName(block["key_env"]) {
+	auth, authPresent := block["authentication"]
+	authMode, authIsString := auth.(string)
+	entra := providerSpec.blockName == "azure_boards" && authPresent && authIsString && authMode == "entra_device_code"
+	if providerSpec.blockName == "azure_boards" && authPresent && !entra {
+		invalid = append(invalid, "tracker.azure_boards.authentication")
+	}
+	keyEnv, keyPresent := block["key_env"]
+	if (keyPresent || !entra) && !validKernelV2EnvName(keyEnv) {
 		invalid = append(invalid, "tracker."+providerSpec.blockName+".key_env")
 	}
 	if !validKernelV2Projects(block["projects"]) {

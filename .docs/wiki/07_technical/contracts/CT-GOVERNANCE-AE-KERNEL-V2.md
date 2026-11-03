@@ -82,25 +82,21 @@ Las reglas imports/exports y los slots SDD conservados debajo describen el consu
 - **Marcador estable**: CT-GOVERNANCE-AE-KERNEL-V2.repo-policy-slots
 - **required_slots**:
   - repo.name
-  - repo.description
-  - repo.structure_rules[]
   - language.policy_lang
   - language.docs_lang
   - tracker.provider
   - tracker.<provider>.base_url (external providers only)
   - tracker.<provider>.workspace (external providers only)
-  - tracker.<provider>.key_env (external providers only; env name, never a secret value)
+  - tracker.<provider>.key_env (external providers except Azure Boards with entra_device_code; env name, never a secret value)
   - tracker.<provider>.projects[].key (external providers only)
   - tracker.none.mode (None provider only; must be local-only)
-  - secrets.vault
-  - secrets.tool
-  - wiki.layers_map.02
+  - wiki.wiki_governance or wiki.layers_map.02
   - wiki.workspace_alias
-  - wiki.paths_file
   - subagents.roster_file
   - wrappers[]
   - qa.canon_paths[]
   - last_updated
+- **optional_when_absent**: repo.description, repo.structure_rules[], secrets.vault, secrets.tool, wiki.paths_file. When present, strings must be non-empty and structure_rules must be a non-empty string list. A present secrets section must be a mapping; an absent section does not require new fields.
 - **policy**:
   - **supported_tracker_providers**:
     - Linear
@@ -112,11 +108,14 @@ Las reglas imports/exports y los slots SDD conservados debajo describen el consu
   - **exactly_one_provider_block**: true
   - **none_mode**: local-only_only
   - **top_level_tracker_aliases**: forbidden
-  - **external_key_env**: environment_variable_name_only
+  - **external_key_env**: environment_variable_name_only; when present it must be valid even for Entra
+  - **azure_boards.authentication**: optional exact string entra_device_code; when present and valid key_env is optional; absent preserves legacy key_env requirement. Native compatibility is broader than the Sandinas renderer, which requires Entra without key_env.
+  - **wiki_governance**: prefer non-empty string; when absent or invalid, accept a non-empty legacy layers_map.02, with quoted or unquoted YAML key 02; reject when neither is valid
+  - **authentication_scope**: configuration validation only; no login or credential resolution
   - **no_secrets**: true
   - **no_fixture_config**: true
 - **Comprobación prevista**:
-  - parse YAML and validate every required slot is non-empty
+  - parse YAML and validate required slots and present optional slots; preserve the legacy and Entra alternatives
 - **Condiciones de rechazo**:
   - missing_required_slot
   - secret_material_present
