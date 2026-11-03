@@ -11,7 +11,7 @@ Thanks for your interest in contributing to `mi-lsp`.
 
 ## Prerequisites
 
-- Go 1.24+
+- Go 1.25.0+
 - .NET 10 SDK
 - PowerShell 7+ if you want to run the release helper scripts locally
 

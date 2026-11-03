@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -42,13 +43,17 @@ func TestDiagnosticsGitUnionAndMergeBase(t *testing.T) {
 	writeWorkspaceFile(t, root, "staged.go", "staged\n")
 	diagnosticsTestGit(t, root, "add", "staged.go")
 	writeWorkspaceFile(t, root, "unstaged.ts", "unstaged\n")
-	writeWorkspaceFile(t, root, "untracked name\nfile.py", "untracked\n")
+	untracked := "untracked name\nfile.py"
+	if runtime.GOOS == "windows" {
+		untracked = "untracked name file.py"
+	}
+	writeWorkspaceFile(t, root, untracked, "untracked\n")
 	writeWorkspaceFile(t, root, "ignored.py", "ignored\n")
 	if e := os.Remove(filepath.Join(root, "deleted.py")); e != nil {
 		t.Fatal(e)
 	}
 	paths, truncated, e := diagnosticsChangedPaths(context.Background(), root, "")
-	want := []string{"deleted.py", "staged.go", "unstaged.ts", "untracked name\nfile.py"}
+	want := []string{"deleted.py", "staged.go", "unstaged.ts", untracked}
 	if e != nil || truncated || !reflect.DeepEqual(paths, want) {
 		t.Fatalf("paths=%q truncated=%v err=%v", paths, truncated, e)
 	}

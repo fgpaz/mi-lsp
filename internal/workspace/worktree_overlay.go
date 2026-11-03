@@ -112,11 +112,11 @@ func ResolveWorktreeOverlay(root string) (WorktreeOverlay, error) {
 	}
 	baseRoot := filepath.Dir(commonDir)
 	baseTop, ok := gitTopLevel(baseRoot)
-	if !ok || filepath.Clean(baseTop) != filepath.Clean(baseRoot) {
+	if !ok || !sameFilePath(baseTop, baseRoot) {
 		return WorktreeOverlay{}, fmt.Errorf("git common-dir has no verified main worktree: %s", commonDir)
 	}
 	baseLinked, baseCommon, baseValid := linkedWorktree(baseRoot)
-	if !baseValid || baseLinked || filepath.Clean(baseCommon) != filepath.Clean(commonDir) {
+	if !baseValid || baseLinked || !sameFilePath(baseCommon, commonDir) {
 		return WorktreeOverlay{}, fmt.Errorf("git common-dir mismatch for base root %s", baseRoot)
 	}
 	baseRevision, err := processutil.Command("git", "-C", baseRoot, "rev-parse", "--verify", "HEAD").Output()

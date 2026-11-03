@@ -39,6 +39,8 @@ El detalle por frontera vive en `07_technical/contracts/`; contratos `accepted-d
 
 ### Boundaries y ownership
 
+- El módulo requiere Go 1.25.0 como mínimo; la reparación de metadata utiliza `os.Root.Rename`, disponible desde Go 1.25.
+
 - La CLI publica es la frontera estable para humanos, skills y wrappers. La puerta `mi-lsp mcp` fue retirada el 2026-10-15: `mi-mcp` invoca esa misma CLI por llamada de herramienta. Las puertas de host en `integrations/` son opcionales. El histórico vive en [[00_retirements]] (entrada TECH-MCP-ADAPTER) y el inventario de comandos en [[CT-CLI-DAEMON-ADMIN]]. El protocolo sigue siendo `mi-lsp-v1.1`.
 - AXI es parte de la CLI publica como overlay selectivo por superficie: no todo comando entra en AXI por default.
 - El repo publica una skill curada en `skills/mi-lsp/` para herramientas compatibles con skills; esa skill documenta buenas practicas de uso, pero no redefine la semántica del CLI.

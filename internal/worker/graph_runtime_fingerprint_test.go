@@ -36,8 +36,16 @@ func TestGoEnvConfigDigestHashesContentsWithoutExposure(t *testing.T) {
 
 func TestGoEnvConfigDigestResolvesDefaultPath(t *testing.T) {
 	home := t.TempDir()
-	xdg := filepath.Join(home, "xdg")
-	config := filepath.Join(xdg, "go", "env")
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
+	t.Setenv("APPDATA", filepath.Join(home, "appdata"))
+	t.Setenv("GOENV", "")
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(configDir, "go", "env")
 	if err := os.MkdirAll(filepath.Dir(config), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -45,10 +53,6 @@ func TestGoEnvConfigDigestResolvesDefaultPath(t *testing.T) {
 	if err := os.WriteFile(config, contents, 0600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", xdg)
-	t.Setenv("GOENV", "")
-
 	got, err := goEnvConfigDigest()
 	if err != nil {
 		t.Fatal(err)
