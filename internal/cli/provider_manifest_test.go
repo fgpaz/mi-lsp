@@ -80,10 +80,10 @@ func TestProviderManifestCommandPrintsContractAndRealQFlags(t *testing.T) {
 		t.Fatalf("v2 manifest is missing required catalog fields: %v", actual)
 	}
 	operations, ok := actual["operations"].([]any)
-	if !ok || len(operations) != 18 {
-		t.Fatalf("operations = %v, want the existing 15 operations plus find_symbol, rename_symbol, and get_errors", actual["operations"])
+	if !ok || len(operations) != 21 {
+		t.Fatalf("operations = %v, want the existing 18 operations plus get_context, nav_callers, and nav_refs", actual["operations"])
 	}
-	for _, required := range []string{"q", "intent", "multi-read", "wiki_graph", "wiki_validate_contract", "doctor", "repair", "find_symbol", "rename_symbol", "get_errors"} {
+	for _, required := range []string{"q", "intent", "multi-read", "wiki_graph", "wiki_validate_contract", "doctor", "repair", "find_symbol", "rename_symbol", "get_errors", "get_context", "nav_callers", "nav_refs"} {
 		found := false
 		for _, item := range operations {
 			op, _ := item.(map[string]any)
