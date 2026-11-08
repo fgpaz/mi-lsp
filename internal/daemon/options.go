@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -19,6 +20,10 @@ const (
 	// second project of the same language, so concurrent multi-language work
 	// does not thrash expensive runtimes through LRU eviction.
 	defaultMaxWorkers = 8
+	// DefaultIdleTimeout frees an idle language-server runtime after 10 minutes.
+	// Post-edit diagnostics from many workspaces kept runtimes alive for 30
+	// minutes each and saturated CPU/RAM on the operator machine (08/11/2026).
+	DefaultIdleTimeout = 10 * time.Minute
 )
 
 // DefaultMaxWorkers returns MI_LSP_DAEMON_MAX_WORKERS when it is a positive
