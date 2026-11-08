@@ -60,6 +60,8 @@ type providerOperation struct {
 	Invocation   *providerInvocation `json:"invocation,omitempty"`
 	// TimeoutMS tells mi-mcp how long to wait; without it mi-mcp cuts at 10 s.
 	TimeoutMS int `json:"timeout_ms,omitempty"`
+	// MCPTool names the tool mi-mcp publishes for this operation (CT-CLI-V1).
+	MCPTool string `json:"mcp_tool,omitempty"`
 }
 
 func newProviderManifestCommand(state *rootState) *cobra.Command {
@@ -145,7 +147,7 @@ func newProviderManifest(version string) providerManifest {
 		modelNavigationOperation("search", "lsp", "search", "Search text; bounded matches, optional content", []string{"nav", "search"}, "pattern", map[string]any{"include_content": map[string]any{"type": "boolean"}}, map[string]any{"include_content": optionMapping("--include-content")}),
 		modelNavigationOperation("refs", "lsp", "refs", "Find symbol references; optional file/line anchor", []string{"nav", "refs"}, "symbol", map[string]any{"file": stringSchema(0), "line": integerSchema(1, 0), "column": integerSchema(1, 0), "context": integerSchema(0, 5)}, map[string]any{"file": optionMapping("--file"), "line": optionMapping("--line"), "column": optionMapping("--column"), "context": optionMapping("--context")}),
 		modelNavigationOperation("get_context", "lsp", "get_context", "Get semantic context for a source line", []string{"nav", "context"}, "file", map[string]any{"line": integerSchema(1, 0), "column": integerSchema(1, 0), "repo": stringSchema(0), "entrypoint": stringSchema(0), "solution": stringSchema(0), "project": stringSchema(0)}, map[string]any{"line": argumentMapping(1), "column": optionMapping("--column"), "repo": optionMapping("--repo"), "entrypoint": optionMapping("--entrypoint"), "solution": optionMapping("--solution"), "project": optionMapping("--project")}),
-		modelNavigationOperation("nav_refs", "lsp", "nav_refs", "Find semantic references to a symbol", []string{"nav", "refs"}, "symbol", map[string]any{"file": stringSchema(0), "line": integerSchema(1, 0), "column": integerSchema(1, 0), "context": integerSchema(0, 5), "repo": stringSchema(0), "entrypoint": stringSchema(0), "solution": stringSchema(0), "project": stringSchema(0)}, map[string]any{"file": optionMapping("--file"), "line": optionMapping("--line"), "column": optionMapping("--column"), "context": optionMapping("--context"), "repo": optionMapping("--repo"), "entrypoint": optionMapping("--entrypoint"), "solution": optionMapping("--solution"), "project": optionMapping("--project")}),
+		modelNavigationOperation("nav_refs", "lsp", "nav_refs", "Find semantic references to a symbol", []string{"nav", "refs"}, "symbol", map[string]any{"file": stringSchema(0), "line": integerSchema(1, 0), "column": integerSchema(1, 0), "context": integerSchema(0, 5), "repo": stringSchema(0), "entrypoint": stringSchema(0), "solution": stringSchema(0), "project": stringSchema(0), "callers": map[string]any{"type": "boolean", "description": "Return incoming callers from the graph instead of references"}, "depth": integerSchema(0, 1)}, map[string]any{"file": optionMapping("--file"), "line": optionMapping("--line"), "column": optionMapping("--column"), "context": optionMapping("--context"), "repo": optionMapping("--repo"), "entrypoint": optionMapping("--entrypoint"), "solution": optionMapping("--solution"), "project": optionMapping("--project"), "callers": optionMapping("--callers"), "depth": optionMapping("--depth")}),
 		modelNavigationOperation("nav_callers", "lsp", "nav_callers", "Find bounded incoming callers of a symbol", []string{"nav", "callers"}, "selector", map[string]any{"generation": stringSchema(0), "depth": integerSchema(0, 1), "limit": integerSchema(0, 500), "token_budget": integerSchema(0, 20000), "direction": map[string]any{"type": "string", "enum": []string{"in", "out", "both"}}, "cursor": stringSchema(0), "edge": map[string]any{"type": "array", "items": stringSchema(1)}}, map[string]any{"generation": optionMapping("--generation"), "depth": optionMapping("--depth"), "limit": optionMapping("--limit"), "token_budget": optionMapping("--token-budget"), "direction": optionMapping("--direction"), "cursor": optionMapping("--cursor"), "edge": map[string]any{"source": "option", "flag": "--edge", "repeat": true}}),
 	)
 	findSymbol := modelNavigationOperation("find_symbol", "lsp", "find_symbol", "Find a symbol with bounded intent, definition, semantic references, and source ranges; cold/catalog results are approximate. Qualified or Unicode Go names may use approximate intent rather than exact-name lookup", []string{"nav", "find_symbol"}, "query", map[string]any{"repo": stringSchema(0)}, map[string]any{"repo": optionMapping("--repo")})
@@ -226,6 +228,7 @@ func newProviderManifest(version string) providerManifest {
 		if providerInteractiveOperations[op.Name] {
 			op.TimeoutMS = providerInteractiveTimeoutMS
 		}
+		op.MCPTool = providerMCPTools[op.Name]
 	}
 	return manifest
 }
@@ -237,7 +240,13 @@ const providerInteractiveTimeoutMS = 25000
 
 var providerInteractiveOperations = map[string]bool{
 	"intent": true, "multi-read": true, "search": true, "refs": true, "get_context": true,
-	"nav_refs": true, "nav_callers": true, "find_symbol": true, "get_errors": true, "diagnostics": true,
+	"nav_refs": true, "nav_callers": true, "find_symbol": true, "get_errors": true, "diagnostics": true, "q": true,
+}
+
+// providerMCPTools is the whole named code surface in mi-mcp; everything else
+// stays reachable through Code Mode only. get_context is the intent operation.
+var providerMCPTools = map[string]string{
+	"intent": "get_context", "find_symbol": "find_symbol", "nav_refs": "nav_refs", "get_errors": "get_errors",
 }
 
 func maintenanceInvocation(command string, fields map[string]any) *providerInvocation {

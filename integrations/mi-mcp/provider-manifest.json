@@ -242,7 +242,8 @@
           }
         },
         "output": "json"
-      }
+      },
+      "timeout_ms": 25000
     },
     {
       "model_alias": {
@@ -344,7 +345,8 @@
         },
         "output": "json"
       },
-      "timeout_ms": 25000
+      "timeout_ms": 25000,
+      "mcp_tool": "get_context"
     },
     {
       "model_alias": {
@@ -1279,12 +1281,21 @@
       "input_schema": {
         "additionalProperties": false,
         "properties": {
+          "callers": {
+            "description": "Return incoming callers from the graph instead of references",
+            "type": "boolean"
+          },
           "column": {
             "minimum": 1,
             "type": "integer"
           },
           "context": {
             "maximum": 5,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "depth": {
+            "maximum": 1,
             "minimum": 0,
             "type": "integer"
           },
@@ -1356,12 +1367,20 @@
         ],
         "input_mapping": {
           "fields": {
+            "callers": {
+              "flag": "--callers",
+              "source": "option"
+            },
             "column": {
               "flag": "--column",
               "source": "option"
             },
             "context": {
               "flag": "--context",
+              "source": "option"
+            },
+            "depth": {
+              "flag": "--depth",
               "source": "option"
             },
             "entrypoint": {
@@ -1408,7 +1427,8 @@
         },
         "output": "json"
       },
-      "timeout_ms": 25000
+      "timeout_ms": 25000,
+      "mcp_tool": "nav_refs"
     },
     {
       "model_alias": {
@@ -1781,7 +1801,8 @@
         },
         "output": "json"
       },
-      "timeout_ms": 25000
+      "timeout_ms": 25000,
+      "mcp_tool": "find_symbol"
     },
     {
       "model_alias": {
@@ -2521,7 +2542,8 @@
         },
         "output": "json"
       },
-      "timeout_ms": 25000
+      "timeout_ms": 25000,
+      "mcp_tool": "get_errors"
     },
     {
       "model_alias": {

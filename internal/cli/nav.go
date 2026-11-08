@@ -99,6 +99,8 @@ context retrieval, dependency analysis, and service exploration.`,
 	var refsSolution string
 	var refsProject string
 	var refsContext int
+	var refsCallers bool
+	var refsDepth int
 	refsCommand := &cobra.Command{
 		Use:   "refs <symbol>",
 		Short: "Find references via the semantic backend",
@@ -108,6 +110,14 @@ context retrieval, dependency analysis, and service exploration.`,
 			}
 			if refsContext < 0 || refsContext > 5 {
 				return fmt.Errorf("--context must be between 0 and 5, got %d", refsContext)
+			}
+			if refsCallers {
+				// --callers answers incoming callers through the same graph query as nav callers.
+				if refsDepth < 0 || refsDepth > 1 {
+					return fmt.Errorf("--depth must be 0 or 1, got %d", refsDepth)
+				}
+				payload := map[string]any{"selector": args[0], "generation": "", "depth": refsDepth, "limit": 50, "token_budget": model.GraphQueryDefaultToken, "direction": "both", "cursor": "", "edge": []string(nil)}
+				return state.executeGraphOperation(cmd, "nav.callers", payload, true)
 			}
 			payload := semanticPayload(refsRepo, refsEntrypoint, refsSolution, refsProject)
 			payload["symbol"] = args[0]
@@ -130,6 +140,8 @@ context retrieval, dependency analysis, and service exploration.`,
 	refsCommand.Flags().IntVar(&refsLine, "line", 0, "Anchor line for backends that resolve references by position")
 	refsCommand.Flags().IntVar(&refsColumn, "column", 0, "Explicit 1-based UTF-16 column (required for Kotlin)")
 	refsCommand.Flags().IntVar(&refsContext, "context", 0, "Lines of context (0-5) before and after each reference")
+	refsCommand.Flags().BoolVar(&refsCallers, "callers", false, "Return incoming callers from the graph instead of references (same as nav callers)")
+	refsCommand.Flags().IntVar(&refsDepth, "depth", 1, "Caller traversal depth (0-1); only with --callers")
 	attachSemanticSelectorFlags(refsCommand, &refsRepo, &refsEntrypoint, &refsSolution, &refsProject)
 
 	overviewCommand := &cobra.Command{
