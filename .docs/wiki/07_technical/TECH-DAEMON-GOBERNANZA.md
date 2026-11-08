@@ -70,7 +70,7 @@ Volver a [07_technical.md](../07_technical.md).
 - El warm de un workspace es por lenguaje detectado (`roslyn` para C#, `tsserver`, `pyright`, `gopls` para Go y `rust-analyzer` para Rust) y ya no calienta Roslyn por defecto en repos sin C#.
 - Politica por defecto:
   - `max_workers = 8` (era 3; constante única `defaultMaxWorkers`, override con env `MI_LSP_DAEMON_MAX_WORKERS` entero positivo; el flag `--max-workers` en 0 significa env u 8). Motivo: proyectos C#, Go, Python, TS, Rust y Kotlin concurrentes comparten un daemon y con 3 el LRU descartaba runtimes caros (Roslyn) en cada alternancia. El auto-start, `daemon restart` y el fallback del manager usan el mismo valor
-  - `idle_timeout = 30m`
+  - `idle_timeout = 10m` (era 30m; constante `DefaultIdleTimeout`, flag `--idle-timeout`). Motivo: el 08/11/2026 los diagnósticos automáticos post-edición de varios workspaces mantuvieron runtimes vivos 30 min cada uno y saturaron CPU y RAM de yoga
   - `watch_mode = lazy`
   - `max_watched_roots = 8`
   - `max_inflight = 48` (era 16; env `MI_LSP_DAEMON_MAX_INFLIGHT`)

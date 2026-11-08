@@ -151,7 +151,7 @@ func NewManager(repoRoot string, maxWorkers int, idleTimeout time.Duration) *Man
 func NewManagerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Duration, options StartOptions) *Manager {
 	maxWorkers = normalizeMaxWorkers(maxWorkers)
 	if idleTimeout <= 0 {
-		idleTimeout = 30 * time.Minute
+		idleTimeout = DefaultIdleTimeout
 	}
 	callTimeout := parseDurationEnv("MI_LSP_WORKER_CALL_TIMEOUT_SECONDS", 30*time.Second)
 	softMemoryThresh := runtimeMemoryLimitBytes("MI_LSP_DAEMON_SOFT_MEMORY_MB")

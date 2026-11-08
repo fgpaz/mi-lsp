@@ -170,6 +170,6 @@ func EnsureDaemonFor(repoRoot, callerClient, callerOperation string) error {
 		return nil
 	}
 
-	_, _, err := SpawnBackground(repoRoot, DefaultMaxWorkers(), 30*time.Minute)
+	_, _, err := SpawnBackground(repoRoot, DefaultMaxWorkers(), DefaultIdleTimeout)
 	return err
 }
