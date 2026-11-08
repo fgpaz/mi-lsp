@@ -442,6 +442,10 @@ Reglas:
 - `backend=text` para archivos no semánticos
 - `backend=roslyn`, `backend=tsserver` o `backend=catalog` cuando hay enriquecimiento correspondiente
 - si el backend semántico falla pero el archivo existe, la operación sigue con `slice_text`, degrada a catalog/text cuando sea posible y agrega warning accionable
+- la resolución semántica reutiliza el registro de backends por archivo; un workspace con varios lenguajes no impone Roslyn a un archivo de otro lenguaje
+- los archivos JavaScript `.mjs` resuelven a `tsserver`, incluso dentro de un repositorio mixto; no se elige Roslyn solo por la composición del repositorio
+- `--backend <hint>` explícito conserva precedencia; las excepciones deliberadas de Kotlin y `get_deps` permanecen intactas
+- el routing no altera `slice_text` ni las señales existentes de fallback/degradación; una respuesta parcial no se presenta como resultado semántico exacto
 - si el warning proviene de bootstrap Roslyn, debe sugerir `mi-lsp worker install`; si proviene de SDK/global.json, la telemetria debe clasificarlo como `sdk/*`; si proviene de permisos/arranque de proceso, debe clasificarlo como `backend_runtime/process_spawn_access_denied` o `backend_runtime/process_spawn_failed`
 
 #### `nav affected`

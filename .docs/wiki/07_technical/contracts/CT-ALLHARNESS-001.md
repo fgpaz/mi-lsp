@@ -40,6 +40,10 @@ C165/H3 implementa `model_alias` genéricamente por operación; ausencia conserv
 
 Las invocaciones v2 por operación usan `invocation.input_mapping.fields` existente (argument/option/repeat), no otro mini-lenguaje.
 
+### Plazo por operación (`timeout_ms`)
+
+Las operaciones interactivas del provider (`intent`, `multi-read`, `search`, `refs`, `get_context`, `nav_refs`, `nav_callers`, `find_symbol`, `get_errors`, `diagnostics`) declaran `timeout_ms: 25000`. Cubre el techo interactivo de 20 s de la CLI más el arranque del proceso, para que mi-mcp reciba la respuesta tipada en lugar de cortar a los 10 s por defecto. Pedido de mi-mcp (08/11/2026). La copia `integrations/mi-mcp/provider-manifest.json` se regenera con `scripts/provider-snapshot.sh` por el dueño del objetivo.
+
 ## Errores
 El seam H3 inspeccionado rechaza argumentos con guion inicial y no demuestra soporte de delimitador final en fixed_args. Por eso el provider no añade `--`: patrones ordinarios conservan el mapping vigente; nombres con guion usan CLI directa `find-files -- '-draft'`. Necesidad genérica de delimitación pendiente de C165, sin implementación paralela por surface. Nombres peligrosos se omiten.
 

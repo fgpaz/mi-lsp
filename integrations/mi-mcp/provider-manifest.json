@@ -343,7 +343,8 @@
           }
         },
         "output": "json"
-      }
+      },
+      "timeout_ms": 25000
     },
     {
       "model_alias": {
@@ -425,7 +426,8 @@
           }
         },
         "output": "json"
-      }
+      },
+      "timeout_ms": 25000
     },
     {
       "name": "wiki_graph",
@@ -1025,7 +1027,8 @@
           }
         },
         "output": "json"
-      }
+      },
+      "timeout_ms": 25000
     },
     {
       "model_alias": {
@@ -1135,7 +1138,8 @@
           }
         },
         "output": "json"
-      }
+      },
+      "timeout_ms": 25000
     },
     {
       "model_alias": {
@@ -1260,7 +1264,8 @@
           }
         },
         "output": "json"
-      }
+      },
+      "timeout_ms": 25000
     },
     {
       "model_alias": {
@@ -1402,7 +1407,8 @@
           }
         },
         "output": "json"
-      }
+      },
+      "timeout_ms": 25000
     },
     {
       "model_alias": {
@@ -1537,7 +1543,8 @@
           }
         },
         "output": "json"
-      }
+      },
+      "timeout_ms": 25000
     },
     {
       "model_alias": {
@@ -1773,7 +1780,8 @@
           }
         },
         "output": "json"
-      }
+      },
+      "timeout_ms": 25000
     },
     {
       "model_alias": {
@@ -2512,7 +2520,8 @@
           }
         },
         "output": "json"
-      }
+      },
+      "timeout_ms": 25000
     },
     {
       "model_alias": {
@@ -2619,7 +2628,8 @@
           }
         },
         "output": "json"
-      }
+      },
+      "timeout_ms": 25000
     },
     {
       "model_alias": {

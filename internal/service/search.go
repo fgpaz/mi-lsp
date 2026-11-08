@@ -29,10 +29,23 @@ var (
 	rgPath     string
 	rgResolved bool
 	rgOnce     sync.Once
+	rgMu       sync.Mutex
 	rgCommand  = processutil.CommandContext
 )
 
+// resolveRgBinary caches the ripgrep path, but re-resolves it when the cached
+// file disappears: a long-lived daemon may inherit PATH from a launcher whose
+// temporary directory was later deleted.
 func resolveRgBinary() string {
+	rgMu.Lock()
+	defer rgMu.Unlock()
+	if rgPath != "" {
+		if _, err := os.Stat(rgPath); err != nil {
+			rgPath = ""
+			rgResolved = false
+			rgOnce = sync.Once{}
+		}
+	}
 	rgOnce.Do(func() {
 		if envPath := os.Getenv("MI_LSP_RG"); envPath != "" {
 			if _, err := os.Stat(envPath); err == nil {

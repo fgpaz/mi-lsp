@@ -20,6 +20,7 @@ func ApplyProfile(env model.Envelope) model.Envelope {
 	switch env.Profile {
 	case model.OutputProfileHarnessMicro:
 		env.Items = compactItems(env.Items, true)
+		env.Omissions = compactGlobalDocOmissions(env.Omissions)
 		env.Coach = nil
 		env.Metrics = nil
 		env.MemoryPointer = nil
@@ -34,10 +35,47 @@ func ApplyProfile(env model.Envelope) model.Envelope {
 		return env
 	case model.OutputProfileAgent:
 		env.Items = compactItems(env.Items, true)
+		env.Omissions = compactGlobalDocOmissions(env.Omissions)
 		return env
 	default:
 		return env
 	}
+}
+
+func compactGlobalDocOmissions(omissions []model.EnvelopeOmission) []model.EnvelopeOmission {
+	const discriminator = "inspect_doc_graph_reference"
+	count := 0
+	for _, omission := range omissions {
+		if omission.ErrorCode == discriminator {
+			count++
+		}
+	}
+	if count <= 2 {
+		return omissions
+	}
+
+	result := make([]model.EnvelopeOmission, 0, len(omissions)-count+3)
+	kept, summarized := 0, false
+	for _, omission := range omissions {
+		if omission.ErrorCode != discriminator {
+			result = append(result, omission)
+			continue
+		}
+		if kept < 2 {
+			result = append(result, omission)
+			kept++
+			continue
+		}
+		if !summarized {
+			result = append(result, model.EnvelopeOmission{
+				Input:     fmt.Sprintf("reported=%d omitted=%d", count, count-2),
+				Reason:    "global document-reference metadata, not query-local impact; repeat the same command with --profile human --format json for the original bounded details",
+				ErrorCode: "global_doc_omissions_condensed",
+			})
+			summarized = true
+		}
+	}
+	return result
 }
 
 func Render(env model.Envelope, format string, compress bool) ([]byte, error) {
@@ -818,6 +856,31 @@ func compactItems(items any, compress bool) any {
 		return compact
 	case []model.WikiRootResolution:
 		return typed
+	case map[string]any:
+		definitions, ok := typed["definitions"]
+		if !compress || !ok {
+			return items
+		}
+		encoded, err := json.Marshal(definitions)
+		if err != nil {
+			return items
+		}
+		var rows []map[string]any
+		if err := json.Unmarshal(encoded, &rows); err != nil {
+			return items
+		}
+		projected := make(map[string]any, len(typed))
+		for key, value := range typed {
+			projected[key] = value
+		}
+		for _, row := range rows {
+			delete(row, "id")
+			delete(row, "file_hash")
+			delete(row, "signature_hash")
+			delete(row, "search_text")
+		}
+		projected["definitions"] = rows
+		return projected
 	case []map[string]any:
 		compact := make([]map[string]any, 0, len(typed))
 		for _, item := range typed {

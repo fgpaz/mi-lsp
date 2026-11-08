@@ -278,11 +278,18 @@ func (c *Client) PID() int {
 	return c.cmd.Process.Pid
 }
 
+const ephemeralCallTimeout = 8 * time.Second
+
 type EphemeralCaller struct {
 	RepoRoot string
 }
 
 func (e EphemeralCaller) Call(ctx context.Context, workspace model.WorkspaceRegistration, request model.WorkerRequest) (model.WorkerResponse, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, ephemeralCallTimeout)
+		defer cancel()
+	}
 	backendType := request.BackendType
 	if backendType == "" {
 		backendType = "roslyn"
