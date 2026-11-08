@@ -127,20 +127,8 @@ func resolveContextBackendType(request model.CommandRequest) string {
 	if explicit := strings.ToLower(strings.TrimSpace(request.Context.BackendHint)); explicit != "" {
 		return explicit
 	}
-	if isTypeScriptFile(file) {
-		return "tsserver"
-	}
-	if isPythonFile(file) {
-		return "pyright"
-	}
-	if isGoFile(file) {
-		return "gopls"
-	}
-	if isKotlinFile(file) {
-		return "kotlin-language-server"
-	}
-	if isRustFile(file) {
-		return "rust-analyzer"
+	if backend, ok := backendForSourcePath(file); ok {
+		return backend
 	}
 	return "roslyn"
 }

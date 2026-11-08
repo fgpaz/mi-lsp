@@ -58,6 +58,8 @@ type providerOperation struct {
 	InputSchema  map[string]any      `json:"input_schema"`
 	OutputSchema map[string]any      `json:"output_schema"`
 	Invocation   *providerInvocation `json:"invocation,omitempty"`
+	// TimeoutMS tells mi-mcp how long to wait; without it mi-mcp cuts at 10 s.
+	TimeoutMS int `json:"timeout_ms,omitempty"`
 }
 
 func newProviderManifestCommand(state *rootState) *cobra.Command {
@@ -218,10 +220,24 @@ func newProviderManifest(version string) providerManifest {
 	find.Contract = "find-files/v1"
 	find.OutputSchema = responseSchema(find.Contract)
 	manifest.Operations = append(manifest.Operations, find)
-	for _, op := range manifest.Operations {
+	for i := range manifest.Operations {
+		op := &manifest.Operations[i]
 		manifest.Contracts[op.Name] = op.Contract
+		if providerInteractiveOperations[op.Name] {
+			op.TimeoutMS = providerInteractiveTimeoutMS
+		}
 	}
 	return manifest
+}
+
+// providerInteractiveTimeoutMS covers the CLI interactive ceiling
+// (defaultInteractiveOperationTimeout) plus process start, so mi-mcp gets the
+// typed answer instead of cutting the call first.
+const providerInteractiveTimeoutMS = 25000
+
+var providerInteractiveOperations = map[string]bool{
+	"intent": true, "multi-read": true, "search": true, "refs": true, "get_context": true,
+	"nav_refs": true, "nav_callers": true, "find_symbol": true, "get_errors": true, "diagnostics": true,
 }
 
 func maintenanceInvocation(command string, fields map[string]any) *providerInvocation {

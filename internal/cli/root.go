@@ -277,7 +277,14 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 			// client applies daemonAttemptTimeout only while dialing.
 			envelope, err = s.daemonExecute(ctx, request)
 		} else {
-			envelope, err = daemon.NewClient().ExecuteWithDialTimeout(ctx, request, s.daemonAttemptTimeout())
+			// A connected but unresponsive daemon must not consume the whole
+			// interactive budget: give up early and answer locally.
+			daemonCtx, daemonCancel := ctx, context.CancelFunc(func() {})
+			if interactiveOperations[request.Operation] {
+				daemonCtx, daemonCancel = context.WithTimeout(ctx, interactiveDaemonResponseTimeout)
+			}
+			envelope, err = daemon.NewClient().ExecuteWithDialTimeout(daemonCtx, request, s.daemonAttemptTimeout())
+			daemonCancel()
 		}
 		if err != nil {
 			daemonFailed = true
@@ -320,17 +327,21 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 	if err != nil {
 		envelope = buildCLIErrorEnvelope(request, route, err)
 	}
-	limitStarted := time.Now()
-	finalEnvelope := output.ApplyEnvelopeLimits(envelope, request.Context)
-	traceCLITiming("output.limits", time.Since(limitStarted), s.verbose)
-
-	// Best-effort telemetry: direct/direct_fallback record at the caller.
+	// Preserve canonical telemetry independently of presentation profiles.
 	// Daemon-served requests are recorded canonically inside the daemon.
 	if shouldRecordCLITelemetry(route, err) {
 		if cliTelemetry := s.ensureTelemetry(); cliTelemetry != nil {
-			cliTelemetry.RecordOperation(request, finalEnvelope, err, latency, route)
+			telemetryEnvelope := output.ApplyEnvelopeLimits(envelope, request.Context)
+			cliTelemetry.RecordOperation(request, telemetryEnvelope, err, latency, route)
 		}
 	}
+
+	profile, _ := s.outputProfile(request.Context.Format)
+	envelope.Profile = profile
+	envelope = output.ApplyProfile(envelope)
+	limitStarted := time.Now()
+	finalEnvelope := output.ApplyEnvelopeLimits(envelope, request.Context)
+	traceCLITiming("output.limits", time.Since(limitStarted), s.verbose)
 
 	if err != nil {
 		if printErr := s.printPreparedEnvelope(finalEnvelope, request.Context); printErr != nil {
@@ -796,7 +807,35 @@ func (s *rootState) daemonAttemptTimeout() time.Duration {
 	return defaultDaemonAttemptTimeout
 }
 
+// interactiveOperations answer a single agent turn. They get a short ceiling
+// and never wait minutes on an unresponsive daemon.
+var interactiveOperations = map[string]bool{
+	"nav.find": true, "nav.refs": true, "nav.callers": true, "nav.callees": true,
+	"nav.context": true, "nav.definition": true, "nav.diagnostics": true, "nav.symbols": true,
+	"nav.outline": true, "nav.intent": true, "nav.multi-read": true, "nav.search": true,
+	"find_symbol": true, "get_errors": true,
+}
+
+const (
+	defaultInteractiveOperationTimeout = 20 * time.Second
+	interactiveDaemonResponseTimeout   = 8 * time.Second
+)
+
+// interactiveOperationTimeout can be raised with MI_LSP_INTERACTIVE_TIMEOUT
+// (Go duration, e.g. 45s) for a cold backend on a very large workspace.
+func interactiveOperationTimeout() time.Duration {
+	if raw := strings.TrimSpace(os.Getenv("MI_LSP_INTERACTIVE_TIMEOUT")); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+			return d
+		}
+	}
+	return defaultInteractiveOperationTimeout
+}
+
 func timeoutForOperation(operation string) time.Duration {
+	if interactiveOperations[operation] {
+		return interactiveOperationTimeout()
+	}
 	switch operation {
 	case "index.run", "index.start", "index.run-job":
 		return indexer.IndexTimeout()
@@ -994,6 +1033,8 @@ func isHarnessClient(clientName string) bool {
 	harnessNames := map[string]bool{
 		"claude-code": true,
 		"codex":       true,
+		"mi-mcp":      true,
+		"pi":          true,
 		"claude-ai":   true,
 		"opencode":    true,
 		"copilot":     true,

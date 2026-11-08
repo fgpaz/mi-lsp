@@ -133,6 +133,19 @@ Volver a [07_technical/contracts/CT-TECHNICAL-BASELINE.md](CT-TECHNICAL-BASELINE
     - human
     - agent
     - harness-micro
+    - **default_for_clients**:
+      - **mi-mcp**: agent
+      - **pi**: agent
+    - **agent_and_harness_micro_projection**:
+      - **symbol_definitions**: omitir únicamente `id`, `file_hash`, `signature_hash` y `search_text`; conservar la firma completa y los campos de identidad
+      - **global_doc_omissions**:
+        - **discriminator**: `omissions[].error_code=inspect_doc_graph_reference`
+        - **preview**: conservar dos ejemplos y agregar un resumen `reported=N`, `omitted=N-2` antes del presupuesto de caracteres
+        - **meaning**: metadatos globales de referencias documentales, no impacto local de la consulta
+        - **original_bounded_details**: repetir el mismo comando con `--profile human --format json`
+        - **database_export**: false; la opción conserva la respuesta acotada original y no exporta todas las filas de la base de datos
+      - **unchanged**: errores, estado y conteos del grafo, y omisiones locales, semánticas o de seguridad que no coincidan con el discriminador
+      - **telemetry_basis**: la telemetría conserva el sobre canónico acotado anterior al perfil, incluidos hints y warnings; sus bytes no sustituyen la medición del flujo realmente devuelto para comparar ahorro
 
 ### Routing de intención y explain-change
 

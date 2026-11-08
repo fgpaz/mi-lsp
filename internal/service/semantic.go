@@ -338,17 +338,8 @@ func resolveBackendType(registration model.WorkspaceRegistration, request model.
 		}
 		return "text"
 	}
-	if isTypeScriptFile(file) {
-		return "tsserver"
-	}
-	if isPythonFile(file) {
-		return "pyright"
-	}
-	if isGoFile(file) {
-		return "gopls"
-	}
-	if isRustFile(file) {
-		return "rust-analyzer"
+	if backendType, ok := backendForSourcePath(file); ok {
+		return backendType
 	}
 	return "roslyn"
 }
@@ -430,34 +421,10 @@ func friendlyMethodName(method string) string {
 	}
 }
 
-func hasLanguage(registration model.WorkspaceRegistration, target string) bool {
-	for _, language := range registration.Languages {
-		if strings.EqualFold(language, target) {
-			return true
-		}
-	}
-	return false
-}
 
-func isTypeScriptFile(path string) bool {
-	lang, ok := language.ForPath(path)
-	return ok && lang == "typescript"
-}
 
-func isPythonFile(path string) bool {
-	lang, ok := language.ForPath(path)
-	return ok && lang == "python"
-}
 
-func isGoFile(path string) bool {
-	lang, ok := language.ForPath(path)
-	return ok && lang == "go"
-}
 
-func isRustFile(path string) bool {
-	lang, ok := language.ForPath(path)
-	return ok && lang == "rust"
-}
 
 func isKotlinFile(path string) bool {
 	lang, ok := language.ForPath(path)
