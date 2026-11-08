@@ -42,7 +42,11 @@ Las invocaciones v2 por operación usan `invocation.input_mapping.fields` existe
 
 ### Plazo por operación (`timeout_ms`)
 
-Las operaciones interactivas del provider (`intent`, `multi-read`, `search`, `refs`, `get_context`, `nav_refs`, `nav_callers`, `find_symbol`, `get_errors`, `diagnostics`) declaran `timeout_ms: 25000`. Cubre el techo interactivo de 20 s de la CLI más el arranque del proceso, para que mi-mcp reciba la respuesta tipada en lugar de cortar a los 10 s por defecto. Pedido de mi-mcp (08/11/2026). La copia `integrations/mi-mcp/provider-manifest.json` se regenera con `scripts/provider-snapshot.sh` por el dueño del objetivo.
+Las operaciones interactivas del provider (`q`, `intent`, `multi-read`, `search`, `refs`, `get_context`, `nav_refs`, `nav_callers`, `find_symbol`, `get_errors`, `diagnostics`) declaran `timeout_ms: 25000`. Cubre el techo interactivo de 20 s de la CLI más el arranque del proceso, para que mi-mcp reciba la respuesta tipada en lugar de cortar a los 10 s por defecto. Pedido de mi-mcp (08/11/2026). La copia `integrations/mi-mcp/provider-manifest.json` se regenera con `scripts/provider-snapshot.sh` por el dueño del objetivo.
+
+### Tools con nombre en mi-mcp (`mcp_tool`)
+
+Cuatro operaciones declaran `mcp_tool` (CT-CLI-V1): `intent` → `get_context`, `find_symbol`, `nav_refs` y `get_errors`. Es toda la superficie de código con nombre en mi-mcp; el resto sigue disponible solo por Code Mode. `nav_refs` acepta `callers` (booleano) y `depth` (0-1): con `callers: true` corre `nav refs --callers`, que responde la misma consulta de grafo que `nav callers`. Decisión de Gabriel del 08/11/2026 (frente C de `milsp-utilidad-real-20261107`), pedido de mi-mcp 0.3.253.
 
 ## Errores
 El seam H3 inspeccionado rechaza argumentos con guion inicial y no demuestra soporte de delimitador final en fixed_args. Por eso el provider no añade `--`: patrones ordinarios conservan el mapping vigente; nombres con guion usan CLI directa `find-files -- '-draft'`. Necesidad genérica de delimitación pendiente de C165, sin implementación paralela por surface. Nombres peligrosos se omiten.
