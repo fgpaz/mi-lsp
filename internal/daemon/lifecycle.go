@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -211,13 +212,10 @@ func (m *Manager) Call(ctx context.Context, workspace model.WorkspaceRegistratio
 
 	response, err := managed.client.Call(callCtx, request)
 	m.updateStatusContext(callCtx, managed)
-	if err != nil && request.BackendType == worker.KotlinBackend {
-		m.mu.Lock()
-		if m.runtimes[rk] == managed {
-			delete(m.runtimes, rk)
-		}
-		m.mu.Unlock()
-		_ = managed.client.Close()
+	// A failed call that left no live worker process must not be reused: the
+	// next request gets a fresh runtime instead of the dead client.
+	if err != nil && (request.BackendType == worker.KotlinBackend || managed.client.PID() == 0) {
+		m.evictRuntime(rk, managed)
 	}
 
 	// Cache deterministic solution-load failures to avoid repeated long timeouts
@@ -226,6 +224,15 @@ func (m *Manager) Call(ctx context.Context, workspace model.WorkspaceRegistratio
 	}
 
 	return response, err
+}
+
+func (m *Manager) evictRuntime(key string, managed *managedRuntime) {
+	m.mu.Lock()
+	if m.runtimes[key] == managed {
+		delete(m.runtimes, key)
+	}
+	m.mu.Unlock()
+	_ = managed.client.Close()
 }
 
 func (m *Manager) Warm(workspace model.WorkspaceRegistration) []string {
@@ -481,6 +488,15 @@ func (m *Manager) reapIdle() {
 	defer m.mu.Unlock()
 	now := time.Now()
 
+	// A worker whose root was deleted can never answer again; reap it now
+	// instead of holding it until the idle timeout.
+	for key, managed := range m.runtimes {
+		if managed.activeCalls.Load() == 0 && runtimeRootMissing(managed) {
+			_ = managed.client.Close()
+			delete(m.runtimes, key)
+		}
+	}
+
 	// Check memory pressure and apply soft limit
 	processStats := getProcessStats()
 	if processStats.PrivateBytes > m.softMemoryThresh {
@@ -730,6 +746,20 @@ func runtimeMemoryLimitBytes(envName string) uint64 {
 		return 0
 	}
 	return value * 1024 * 1024
+}
+
+// runtimeRootMissing reports whether the runtime's effective root no longer
+// exists. The effective root matches runtimeWorkspaceForRequest.
+func runtimeRootMissing(managed *managedRuntime) bool {
+	root := strings.TrimSpace(managed.request.RepoRoot)
+	if root == "" {
+		root = strings.TrimSpace(managed.workspace.Root)
+	}
+	if root == "" {
+		return false
+	}
+	_, err := os.Stat(root)
+	return errors.Is(err, os.ErrNotExist)
 }
 
 func runtimeKey(workspace model.WorkspaceRegistration, request model.WorkerRequest) string {

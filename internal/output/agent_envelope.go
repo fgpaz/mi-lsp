@@ -37,7 +37,9 @@ func PrepareAgentEnvelope(env model.Envelope, opts model.QueryOptions, command s
 			markAgentTruncated(&env, command)
 		}
 	}
-	if hasOmissionCode(env.Omissions, "output_budget") {
+	// Only a real cut marks truncation. A producer's own output_budget omission
+	// describes a cut it already made and sets Truncated where it trims.
+	if hasTruncatedItem(env.Items) {
 		markAgentTruncated(&env, command)
 	}
 	if env.Truncated || env.Degraded {
@@ -110,6 +112,18 @@ func PrepareAgentEnvelope(env model.Envelope, opts model.QueryOptions, command s
 		break
 	}
 	return env
+}
+
+// hasTruncatedItem reports whether commonItems cut a row snippet, which is the
+// only presentation-side cut that does not already flag the envelope.
+func hasTruncatedItem(items any) bool {
+	rows, _ := items.([]map[string]any)
+	for _, row := range rows {
+		if cut, _ := row["truncated_item"].(bool); cut {
+			return true
+		}
+	}
+	return false
 }
 
 func markAgentTruncated(env *model.Envelope, command string) {

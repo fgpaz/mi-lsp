@@ -364,7 +364,9 @@ func (a *App) finalizeRefs(ctx context.Context, registration model.WorkspaceRegi
 	a.attachRefCallers(ctx, registration, items, symbol)
 	attachRefContext(registration.Root, items, contextLines)
 	env.Items = items
-	if len(items) == 0 && env.Ok {
+	// A partial empty answer (for example backend_warming) is not a verified
+	// "no matches"; keep the producer's reason instead of overwriting it.
+	if len(items) == 0 && env.Ok && !env.Partial {
 		env.Degraded = false
 		env.FallbackUsed = ""
 		env.Reason = model.ReasonNoMatches
