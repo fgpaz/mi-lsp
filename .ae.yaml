@@ -1,0 +1,19 @@
+schema: ae-delivery-contract/v1
+product: mi-lsp
+repository: mi-lsp
+delivery:
+  mode: pull_request
+  remote: origin
+  base: main
+  branch: current
+  source_root: ./
+  source_product: mi-lsp
+  same_product_only: true
+  publication:
+    stage: publication
+    mirror_policy: none_declared
+    distribution_mirrors: []
+  installation:
+    stage: installation
+    target_policy: manual_only
+    installation_targets: []
