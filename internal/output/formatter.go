@@ -895,6 +895,14 @@ func compactItems(items any, compress bool) any {
 	case []map[string]any:
 		compact := make([]map[string]any, 0, len(typed))
 		for _, item := range typed {
+			_, file := item["file"]
+			_, line := item["line"]
+			_, symbol := item["symbol"]
+			_, snippet := item["snippet"]
+			if file && line && symbol && snippet {
+				compact = append(compact, item)
+				continue
+			}
 			entry := map[string]any{}
 			if value, ok := item["name"]; ok {
 				entry["n"] = value
