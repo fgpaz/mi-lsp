@@ -28,17 +28,23 @@ func PrepareAgentEnvelope(env model.Envelope, opts model.QueryOptions, command s
 		count := len(env.Warnings)
 		env.Warnings = append([]string(nil), env.Warnings[:3]...)
 		env.Omissions = append(env.Omissions, model.EnvelopeOmission{ErrorCode: "output_warnings_budget", Reason: fmt.Sprintf("showing 3 of %d warnings; repeat the full command", count)})
-		markAgentTruncated(&env, command)
+		markAgentCut(&env, command, "output_warnings_budget")
 	}
+	// A condensed warning text is disclosed, but it is not a row or item cut, so
+	// it neither sets output_budget nor marks the envelope truncated.
+	condensedWarning := false
 	for i, warning := range env.Warnings {
 		if len(warning) > 512 {
 			env.Warnings = append([]string(nil), env.Warnings...)
 			env.Warnings[i] = string(prefixWithin([]byte(warning), 512))
-			markAgentTruncated(&env, command)
+			condensedWarning = true
 		}
 	}
-	// Only a real cut marks truncation. A producer's own output_budget omission
-	// describes a cut it already made and sets Truncated where it trims.
+	if condensedWarning && !hasOmissionCode(env.Omissions, "output_warning_condensed") {
+		env.Omissions = append(env.Omissions, model.EnvelopeOmission{ErrorCode: "output_warning_condensed", Reason: "warning text condensed to 512 bytes; repeat the full command for the complete text"})
+	}
+	// output_budget means a snippet, row or item was really removed. A producer's
+	// own output_budget omission is kept as the producer reported it.
 	if hasTruncatedItem(env.Items) {
 		markAgentTruncated(&env, command)
 	}
@@ -81,17 +87,18 @@ func PrepareAgentEnvelope(env model.Envelope, opts model.QueryOptions, command s
 		if err != nil || len(encoded)+1 <= maxBytes {
 			break
 		}
-		markAgentTruncated(&env, command)
 		// wiki.matrix carries a second, very large validation projection in
 		// checks. Prefer bounded primary items over this auxiliary detail.
 		if env.Checks != nil {
 			env.Checks = nil
 			env.Omissions = append(env.Omissions, model.EnvelopeOmission{ErrorCode: "output_checks_budget", Reason: "validation detail omitted; repeat the full command"})
+			markAgentCut(&env, command, "output_checks_budget")
 			continue
 		}
 		if len(rows) > 0 && !(len(rows) == 1 && rows[0]["result_kind"] == "summary") {
 			rows = rows[:len(rows)-1]
 			env.Items = rows
+			markAgentTruncated(&env, command)
 			continue
 		}
 		// Graph metadata can dominate even an empty result (e.g. wiki.matrix).
@@ -106,6 +113,7 @@ func PrepareAgentEnvelope(env model.Envelope, opts model.QueryOptions, command s
 			env.Mermaid = nil
 			env.Unresolved = nil
 			env.Omissions = append(env.Omissions, model.EnvelopeOmission{ErrorCode: "output_metadata_budget", Reason: "graph detail omitted; repeat the full command"})
+			markAgentCut(&env, command, "output_metadata_budget")
 			continue
 		}
 		// Never cut required error/omission metadata to satisfy an impossible budget.
@@ -124,6 +132,19 @@ func hasTruncatedItem(items any) bool {
 		}
 	}
 	return false
+}
+
+// markAgentCut records a truncation that removed a field rather than a row or
+// item. Its reason names that field, so output_budget keeps meaning a real
+// row, item or snippet cut.
+func markAgentCut(env *model.Envelope, command string, reason string) {
+	env.Truncated = true
+	env.Partial = true
+	if env.Reason == "" {
+		env.Reason = reason
+	}
+	env.Continuation = &model.Continuation{Reason: reason, Next: model.ContinuationTarget{Command: command}}
+	env.NextHint = nil
 }
 
 func markAgentTruncated(env *model.Envelope, command string) {

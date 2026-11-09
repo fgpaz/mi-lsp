@@ -29,7 +29,7 @@ RF-WKS-001 - Registrar workspace por path y alias
 ### 2. Precondiciones detalladas
 - **Condición**: Path objetivo existe; **Tipo**: técnica; **Estado requerido**: obligatorio
 - **Condición**: Path objetivo es accesible; **Tipo**: técnica; **Estado requerido**: obligatorio
-- **Condición**: El root o alguno de sus hijos contiene `.sln`, `.csproj`, `go.mod`, `go.work`, `Cargo.toml`, `package.json`, `tsconfig.json`, `pyproject.toml`, `setup.py`, `setup.cfg` o `requirements.txt`; **Tipo**: funcional; **Estado requerido**: obligatorio
+- **Condición**: El root o alguno de sus hijos contiene `.sln`, `.slnx`, `.csproj`, `go.mod`, `go.work`, `Cargo.toml`, `package.json`, `tsconfig.json`, `pyproject.toml`, `setup.py`, `setup.cfg` o `requirements.txt`; **Tipo**: funcional; **Estado requerido**: obligatorio
 - **Condición**: `~/.mi-lsp/registry.toml` es escribible; **Tipo**: operativa; **Estado requerido**: obligatorio
 
 ### 4. Secuencia principal

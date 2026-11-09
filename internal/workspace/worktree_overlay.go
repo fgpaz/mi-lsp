@@ -13,17 +13,49 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/processutil"
 )
 
-// WorktreeOverlay describes the physical delta from the main checkout at the
-// same git-common-dir. Paths are repository-relative and always belong to the
+// WorktreeOverlay describes the physical delta of a linked worktree against its
+// base commit. Changed and Deleted hold only that delta, so graph decisions see
+// the worktree and nothing else. Paths are repository-relative and belong to the
 // physical worktree; callers must not read the corresponding base path instead.
 type WorktreeOverlay struct {
-	Root        string
-	BaseRoot    string
-	CommonDir   string
-	Changed     []string
-	Deleted     []string
-	Renamed     map[string]string // old path -> new path
-	Fingerprint string            // base HEAD plus physical delta content, for cache/snapshot identity
+	Root      string
+	BaseRoot  string
+	CommonDir string
+	Changed   []string          // physical content differs from the base commit (tracked, staged, untracked, ignored Go inputs)
+	Deleted   []string          // physically removed relative to the base commit
+	Renamed   map[string]string // old path -> new path
+	// BaseEdited lists paths whose base checkout differs from its commit. The
+	// base index may hold that content, so find and search mask these paths and
+	// read the physical file. It is not physical delta and does not mark a graph.
+	BaseEdited  []string
+	Fingerprint string // base HEAD plus physical delta content
+}
+
+// MaskedPaths lists every path the base index must not answer for: the physical
+// delta plus base checkout edits. The result is sorted and unique.
+func (o WorktreeOverlay) MaskedPaths() []string {
+	return sortedUnionPaths(o.Changed, o.Deleted, o.BaseEdited)
+}
+
+// ReadPaths lists paths whose physical content replaces the base index answer.
+// Callers still skip entries present in Deleted. The result is sorted and unique.
+func (o WorktreeOverlay) ReadPaths() []string {
+	return sortedUnionPaths(o.Changed, o.BaseEdited)
+}
+
+func sortedUnionPaths(lists ...[]string) []string {
+	set := map[string]struct{}{}
+	for _, list := range lists {
+		for _, path := range list {
+			set[filepath.ToSlash(path)] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(set))
+	for path := range set {
+		out = append(out, path)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // TryResolveWorktreeOverlay distinguishes an ordinary repository from a linked worktree.
@@ -141,30 +173,47 @@ func ResolveWorktreeOverlay(root string) (WorktreeOverlay, error) {
 		return WorktreeOverlay{}, fmt.Errorf("read base untracked paths: %w", err)
 	}
 	// Go's package loader reads ignored generated source too. Include those
-	// source inputs in overlay detection so a clean Git status cannot select a
-	// stale base graph or reuse a snapshot whose fingerprint omitted the file.
-	ignoredGoSources := make([][]byte, 0, 2)
-	for _, treeRoot := range []string{physicalRoot, baseRoot} {
-		paths, err := processutil.Command("git", "-C", treeRoot, "ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", "*.go", "go.mod", "go.sum").Output()
-		if err != nil {
-			return WorktreeOverlay{}, fmt.Errorf("read ignored Go source paths: %w", err)
-		}
-		ignoredGoSources = append(ignoredGoSources, paths)
+	// source inputs so a clean Git status cannot hide a file the loader reads.
+	ignoredGoSources := func(treeRoot string) ([]byte, error) {
+		return processutil.Command("git", "-C", treeRoot, "ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", "*.go", "go.mod", "go.sum").Output()
+	}
+	physicalIgnored, err := ignoredGoSources(physicalRoot)
+	if err != nil {
+		return WorktreeOverlay{}, fmt.Errorf("read ignored Go source paths: %w", err)
+	}
+	baseIgnored, err := ignoredGoSources(baseRoot)
+	if err != nil {
+		return WorktreeOverlay{}, fmt.Errorf("read ignored Go source paths: %w", err)
 	}
 	overlay := WorktreeOverlay{Root: physicalRoot, BaseRoot: baseRoot, CommonDir: commonDir, Renamed: map[string]string{}}
-	seen := map[string]bool{}
-	add := func(path string) {
+	physicalSeen := map[string]bool{}
+	baseSeen := map[string]bool{}
+	clean := func(path string) (string, bool) {
 		path = filepath.Clean(filepath.FromSlash(path))
-		if path == "." || path == ".." || filepath.IsAbs(path) || strings.HasPrefix(path, ".."+string(filepath.Separator)) || seen[path] {
-			return
+		if path == "." || path == ".." || filepath.IsAbs(path) || strings.HasPrefix(path, ".."+string(filepath.Separator)) {
+			return "", false
 		}
 		for _, segment := range strings.Split(filepath.ToSlash(path), "/") {
 			if segment == ".git" || segment == ".mi-lsp" {
-				return
+				return "", false
 			}
 		}
-		seen[path] = true
-		overlay.Changed = append(overlay.Changed, filepath.ToSlash(path))
+		return filepath.ToSlash(path), true
+	}
+	// addPhysical records a path whose physical worktree content differs from the base commit.
+	addPhysical := func(path string) {
+		if p, ok := clean(path); ok && !physicalSeen[p] {
+			physicalSeen[p] = true
+			overlay.Changed = append(overlay.Changed, p)
+		}
+	}
+	// addBase records a path whose base checkout differs from its commit. It is not
+	// physical delta: the linked worktree may still hold the committed content.
+	addBase := func(path string) {
+		if p, ok := clean(path); ok && !baseSeen[p] {
+			baseSeen[p] = true
+			overlay.BaseEdited = append(overlay.BaseEdited, p)
+		}
 	}
 	collectDiff := func(data []byte, physical bool) error {
 		fields := strings.Split(string(data), "\x00")
@@ -182,51 +231,53 @@ func ResolveWorktreeOverlay(root string) (WorktreeOverlay, error) {
 				}
 				newPath := fields[i]
 				i++
-				if strings.HasPrefix(status, "R") {
-					if physical {
-						overlay.Deleted = append(overlay.Deleted, filepath.ToSlash(filepath.Clean(oldPath)))
-					} else {
-						// The base index may no longer contain the old path, while
-						// the linked tree still has it. Re-extract it there.
-						add(oldPath)
-					}
+				if !physical {
+					addBase(oldPath)
+					addBase(newPath)
+					continue
 				}
 				if strings.HasPrefix(status, "R") {
+					overlay.Deleted = append(overlay.Deleted, filepath.ToSlash(filepath.Clean(oldPath)))
 					overlay.Renamed[filepath.ToSlash(filepath.Clean(oldPath))] = filepath.ToSlash(filepath.Clean(newPath))
 				}
-				add(newPath)
+				addPhysical(newPath)
 				continue
 			}
 			if strings.HasPrefix(status, "D") {
-				if physical {
-					overlay.Deleted = append(overlay.Deleted, filepath.ToSlash(filepath.Clean(oldPath)))
-				} else {
-					add(oldPath) // mask the base deletion state; inspect the physical overlay
+				if !physical {
+					addBase(oldPath)
+					continue
 				}
+				overlay.Deleted = append(overlay.Deleted, filepath.ToSlash(filepath.Clean(oldPath)))
 				continue
 			}
-			add(oldPath)
+			if physical {
+				addPhysical(oldPath)
+			} else {
+				addBase(oldPath)
+			}
 		}
 		return nil
 	}
 	if err := collectDiff(diff, true); err != nil {
 		return WorktreeOverlay{}, err
 	}
+	for _, paths := range [][]byte{untracked, physicalIgnored} {
+		for _, path := range strings.Split(string(paths), "\x00") {
+			addPhysical(path)
+		}
+	}
 	if err := collectDiff(baseDiff, false); err != nil {
 		return WorktreeOverlay{}, err
 	}
-	for _, paths := range [][]byte{untracked, baseUntracked} {
+	for _, paths := range [][]byte{baseUntracked, baseIgnored} {
 		for _, path := range strings.Split(string(paths), "\x00") {
-			add(path)
-		}
-	}
-	for _, paths := range ignoredGoSources {
-		for _, path := range strings.Split(string(paths), "\x00") {
-			add(path)
+			addBase(path)
 		}
 	}
 	sort.Strings(overlay.Changed)
 	sort.Strings(overlay.Deleted)
+	sort.Strings(overlay.BaseEdited)
 	fingerprint, err := worktreeOverlayFingerprint(overlay)
 	if err != nil {
 		return WorktreeOverlay{}, err

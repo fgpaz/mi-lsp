@@ -1706,7 +1706,7 @@ func (a *App) symbols(ctx context.Context, request model.CommandRequest) (model.
 		if found {
 			indexRegistration, baseIndexAvailable = baseRegistration, true
 		}
-		if baseIndexAvailable && worktreeOverlayContains(overlay.Changed, relativeFile) {
+		if baseIndexAvailable && worktreeOverlayContains(overlay.ReadPaths(), relativeFile) {
 			absPath := filepath.Join(registration.Root, filepath.FromSlash(relativeFile))
 			rootReal, rootErr := filepath.EvalSymlinks(registration.Root)
 			fileReal, fileErr := filepath.EvalSymlinks(absPath)

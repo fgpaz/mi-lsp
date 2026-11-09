@@ -27,17 +27,11 @@ func searchWorktreeOverlay(ctx context.Context, root, searchRoot string, project
 		}
 		baseSearchRoot = filepath.Join(overlay.BaseRoot, rel)
 	}
-	changed := make(map[string]struct{}, len(overlay.Changed)+len(overlay.Deleted))
+	masked := overlay.MaskedPaths()
+	changed := make(map[string]struct{}, len(masked))
 	ignorePolicyChanged := false
-	for _, path := range overlay.Changed {
-		changed[filepath.ToSlash(path)] = struct{}{}
-		base := filepath.Base(filepath.FromSlash(path))
-		if base == ".gitignore" || base == ".ignore" || base == ".rgignore" {
-			ignorePolicyChanged = true
-		}
-	}
-	for _, path := range overlay.Deleted {
-		changed[filepath.ToSlash(path)] = struct{}{}
+	for _, path := range masked {
+		changed[path] = struct{}{}
 		base := filepath.Base(filepath.FromSlash(path))
 		if base == ".gitignore" || base == ".ignore" || base == ".rgignore" {
 			ignorePolicyChanged = true
@@ -51,7 +45,8 @@ func searchWorktreeOverlay(ctx context.Context, root, searchRoot string, project
 	if err != nil {
 		return nil, true, err
 	}
-	items := make([]map[string]any, 0, min(limit, len(baseItems)+len(overlay.Changed)))
+	readPaths := overlay.ReadPaths()
+	items := make([]map[string]any, 0, min(limit, len(baseItems)+len(readPaths)))
 	for _, item := range baseItems {
 		path, _ := item["file"].(string)
 		if _, masked := changed[filepath.ToSlash(path)]; !masked {
@@ -62,8 +57,8 @@ func searchWorktreeOverlay(ctx context.Context, root, searchRoot string, project
 	if err != nil {
 		return nil, true, fmt.Errorf("resolve physical worktree root: %w", err)
 	}
-	deltaPaths := make([]string, 0, len(overlay.Changed))
-	for _, rel := range overlay.Changed {
+	deltaPaths := make([]string, 0, len(readPaths))
+	for _, rel := range readPaths {
 		if _, deleted := containsPath(overlay.Deleted, rel); deleted {
 			continue
 		}
