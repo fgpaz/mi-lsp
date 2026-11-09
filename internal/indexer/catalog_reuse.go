@@ -3,6 +3,7 @@ package indexer
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -100,7 +101,7 @@ func loadCatalogReuse(ctx context.Context, root string, project model.ProjectFil
 
 func (c catalogReuse) reuse(path string, info os.FileInfo, content []byte, repo model.WorkspaceRepo) (model.FileRecord, []model.SymbolRecord, bool) {
 	file, ok := c.files[path]
-	if !ok || file.Language != languageForPath(path) {
+	if c.stamps.Version != catalogStampVersion || !ok || file.Language != languageForPath(path) {
 		return model.FileRecord{}, nil, false
 	}
 	stamp, stamped := c.stamps.Files[path]
@@ -119,6 +120,80 @@ func (c catalogReuse) reuse(path string, info os.FileInfo, content []byte, repo 
 		symbols[i].RepoName = repo.Name
 	}
 	return file, symbols, true
+}
+
+// catalogDiskChanges also covers commits since the last index, missed watcher
+// events and copies without Git. Git status alone describes none of those.
+func catalogDiskChanges(ctx context.Context, root string) ([]string, []string, error) {
+	registration, err := workspace.DetectWorkspace(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	project, err := workspace.LoadProjectTopology(root, registration)
+	if err != nil {
+		return nil, nil, err
+	}
+	matcher, err := workspace.LoadIgnoreMatcher(root, project.Ignore.ExtraPatterns)
+	if err != nil {
+		return nil, nil, err
+	}
+	paths, err := WalkWorkspace(ctx, root, matcher)
+	if err != nil {
+		return nil, nil, err
+	}
+	db, err := store.OpenReadOnlyExistingWithWAL(root, store.WorkspaceDBPath(root))
+	if err != nil {
+		return nil, nil, err
+	}
+	files, _, err := store.ReadCatalog(ctx, db)
+	db.Close()
+	if err != nil {
+		return nil, nil, err
+	}
+	stamps := readCatalogStamps(root)
+	next := catalogStamps{Version: catalogStampVersion, Identity: stamps.Identity, Files: map[string]catalogStamp{}}
+	var changed, deleted []string
+	for _, path := range paths {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
+		rel := catalogProgressPath(root, path)
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, nil, err
+		}
+		file, exists := files[rel]
+		stamp, stamped := stamps.Files[rel]
+		hash := file.ContentHash
+		if !exists || !stamped || stamp.Hash != hash || stamp.Size != info.Size() || stamp.Mtime != info.ModTime().UnixNano() {
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return nil, nil, err
+			}
+			after, err := os.Stat(path)
+			if err != nil {
+				return nil, nil, err
+			}
+			if after.Size() != info.Size() || !after.ModTime().Equal(info.ModTime()) {
+				return nil, nil, fmt.Errorf("catalog source changed during delta detection: %s", rel)
+			}
+			hash = digest(content)
+		}
+		if !exists || hash != file.ContentHash {
+			changed = append(changed, rel)
+		}
+		next.Files[rel] = catalogStamp{Size: info.Size(), Mtime: info.ModTime().UnixNano(), Hash: hash}
+		delete(files, rel)
+	}
+	for path := range files {
+		deleted = append(deleted, path)
+	}
+	sort.Strings(changed)
+	sort.Strings(deleted)
+	// Matching a stamp additionally requires the currently published row hash.
+	// A failed publication therefore cannot make these speculative stamps valid.
+	_ = writeCatalogStamps(root, next)
+	return changed, deleted, nil
 }
 
 // A failed cache write cannot invalidate a successfully extracted catalog. Each

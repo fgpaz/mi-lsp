@@ -129,6 +129,9 @@ func (a *App) overlayGraphSnapshot(ctx context.Context, registration model.Works
 		})
 	})
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return model.Envelope{Ok: true, Partial: true, Workspace: registration.Name, Backend: "worktree-graph-overlay", Items: []any{}, Reason: "graph_observer_timeout", Warnings: append(unsupported, "graph_observer_timeout:go"), Hint: "Go graph observation exceeded the request budget; retry with a larger MI_LSP_INTERACTIVE_TIMEOUT"}, nil
+		}
 		return model.Envelope{}, err
 	}
 	defer release()
