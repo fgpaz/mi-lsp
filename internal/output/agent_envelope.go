@@ -24,6 +24,19 @@ func PrepareAgentEnvelope(env model.Envelope, opts model.QueryOptions, command s
 	env.DaemonPool = nil
 	env.Stats = model.Stats{}
 	env = commonItems(env)
+	if len(env.Warnings) > 3 {
+		count := len(env.Warnings)
+		env.Warnings = append([]string(nil), env.Warnings[:3]...)
+		env.Omissions = append(env.Omissions, model.EnvelopeOmission{ErrorCode: "output_warnings_budget", Reason: fmt.Sprintf("showing 3 of %d warnings; repeat the full command", count)})
+		markAgentTruncated(&env, command)
+	}
+	for i, warning := range env.Warnings {
+		if len(warning) > 512 {
+			env.Warnings = append([]string(nil), env.Warnings...)
+			env.Warnings[i] = string(prefixWithin([]byte(warning), 512))
+			markAgentTruncated(&env, command)
+		}
+	}
 	if hasOmissionCode(env.Omissions, "output_budget") {
 		markAgentTruncated(&env, command)
 	}
@@ -67,7 +80,14 @@ func PrepareAgentEnvelope(env model.Envelope, opts model.QueryOptions, command s
 			break
 		}
 		markAgentTruncated(&env, command)
-		if len(rows) > 0 {
+		// wiki.matrix carries a second, very large validation projection in
+		// checks. Prefer bounded primary items over this auxiliary detail.
+		if env.Checks != nil {
+			env.Checks = nil
+			env.Omissions = append(env.Omissions, model.EnvelopeOmission{ErrorCode: "output_checks_budget", Reason: "validation detail omitted; repeat the full command"})
+			continue
+		}
+		if len(rows) > 0 && !(len(rows) == 1 && rows[0]["result_kind"] == "summary") {
 			rows = rows[:len(rows)-1]
 			env.Items = rows
 			continue
@@ -138,6 +158,20 @@ func commonItems(env model.Envelope) model.Envelope {
 	switch value := value.(type) {
 	case []any:
 		for _, row := range value {
+			if matrix, ok := row.(map[string]any); ok {
+				if criteria, ok := matrix["criteria"].([]any); ok {
+					delete(matrix, "criteria")
+					// Matrix warnings already live in Envelope.Warnings.
+					if len(env.Warnings) > 0 {
+						delete(matrix, "warnings")
+					}
+					appendRow(matrix, "summary")
+					for _, criterion := range criteria {
+						appendRow(criterion, "criteria")
+					}
+					continue
+				}
+			}
 			appendRow(row, "")
 		}
 	case map[string]any:

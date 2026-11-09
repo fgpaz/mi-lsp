@@ -341,7 +341,8 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 	envelope.Profile = profile
 	limitStarted := time.Now()
 	finalEnvelope := envelope
-	if profile == model.OutputProfileHuman || request.Context.Full || request.Context.Verbose {
+	if profile == model.OutputProfileHuman || request.Context.Full || request.Context.Verbose ||
+		(operation != "find_symbol" && operation != "get_errors" && !strings.HasPrefix(operation, "nav.")) {
 		finalEnvelope = output.ApplyEnvelopeLimits(envelope, request.Context)
 	}
 	traceCLITiming("output.limits", time.Since(limitStarted), s.verbose)
