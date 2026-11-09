@@ -149,7 +149,9 @@ func commonItems(env model.Envelope) model.Envelope {
 			summary[key] = v
 		}
 		for _, key := range sections {
-			delete(summary, key)
+			if _, ok := value[key].([]any); ok {
+				delete(summary, key)
+			}
 		}
 		delete(summary, "truncated")
 		delete(summary, "next_hint")
@@ -170,6 +172,9 @@ func commonItems(env model.Envelope) model.Envelope {
 }
 
 func normalizeItem(row map[string]any) {
+	for _, key := range []string{"file_hash", "signature_hash", "search_text", "telemetry"} {
+		delete(row, key)
+	}
 	aliases := []struct {
 		key          string
 		alternatives []string
