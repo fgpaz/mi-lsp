@@ -229,6 +229,10 @@ func newProviderManifest(version string) providerManifest {
 			op.TimeoutMS = providerInteractiveTimeoutMS
 		}
 		op.MCPTool = providerMCPTools[op.Name]
+		switch op.Name {
+		case "intent", "multi-read", "find_symbol", "get_errors", "search", "refs", "nav_refs", "nav_callers", "get_context":
+			op.OutputSchema = commonResponseSchema(op.Contract)
+		}
 	}
 	return manifest
 }
@@ -405,6 +409,23 @@ func integerSchema(minimum, maximum int) map[string]any {
 		schema["maximum"] = maximum
 	}
 	return schema
+}
+
+func commonResponseSchema(contract string) map[string]any {
+	return map[string]any{
+		"type": "object", "description": "Common bounded agent response governed by " + contract + "; native safety summaries are result_kind=summary items. Full/human output retains native details.",
+		"required": []string{"ok", "items", "truncated"},
+		"properties": map[string]any{
+			"ok": map[string]any{"type": "boolean"},
+			"items": map[string]any{"type": "array", "items": map[string]any{
+				"type": "object", "required": []string{"file", "line", "symbol", "snippet"},
+				"properties": map[string]any{"file": stringSchema(0), "line": integerSchema(0, 0), "symbol": stringSchema(0), "snippet": stringSchema(0)},
+			}},
+			"partial": map[string]any{"type": "boolean"}, "reason": stringSchema(0), "truncated": map[string]any{"type": "boolean"},
+			"continuation": map[string]any{"type": "object", "properties": map[string]any{"reason": stringSchema(0), "next": map[string]any{"type": "object", "properties": map[string]any{"command": stringSchema(1)}}}},
+			"error":        map[string]any{"type": "object", "properties": map[string]any{"code": stringSchema(0), "message": stringSchema(0)}},
+		},
+	}
 }
 
 func responseSchema(contract string) map[string]any {

@@ -48,6 +48,16 @@ Las operaciones interactivas del provider (`q`, `intent`, `multi-read`, `search`
 
 Cuatro operaciones declaran `mcp_tool` (CT-CLI-V1): `intent` → `get_context`, `find_symbol`, `nav_refs` y `get_errors`. Es toda la superficie de código con nombre en mi-mcp; el resto sigue disponible solo por Code Mode. `nav_refs` acepta `callers` (booleano) y `depth` (0-1): con `callers: true` corre `nav refs --callers`, que responde la misma consulta de grafo que `nav callers`. Decisión de Gabriel del 08/11/2026 (frente C de `milsp-utilidad-real-20261107`), pedido de mi-mcp 0.3.253.
 
+### Sobre de navegación que consume mi-mcp
+
+El perfil automático `agent` de `--client-name mi-mcp` entrega JSON sin indentación y `items[]` con `file`, `line`, `symbol`, `snippet` para `intent`/`get_context`, `find_symbol`, `nav_refs` (también `--callers`), `get_errors`, `search` y `multi-read`. Una ubicación desconocida no es inferida: archivo/símbolo/snippet vacíos y línea `0`. Los campos propios necesarios se conservan; no se emiten aliases duplicados del dato normalizado.
+
+`find_symbol` y `get_errors` ya no entregan un objeto en `items`: el primer ítem `result_kind: summary` preserva los indicadores de seguridad, y los siguientes identifican la sección de origen. No se debe interpretar una lista sin diagnósticos como compilación verificada. Los schemas publicados describen esta lista común; `rename_symbol` no migra de formato.
+
+Tope de presentación por defecto: 20 ítems, 8192 bytes y snippets de 1024 bytes; se conservan ventanas menores de operaciones existentes. `partial` + `reason` explican incompletitud; `truncated` + `omissions` explican recortes. `continuation.next.command` es un comando ejecutable exacto. Si se recorta antes del cursor del productor, la recuperación repite la consulta ampliada en lugar de saltar datos. Errores: `error.code`, `message`, acción en `hint` y recuperación en `continuation`. Un presupuesto imposible no justifica cortar JSON ni ocultar errores. Detalle ampliado: `--profile human --full`; métricas y coach no forman parte del default chico. Fuente normativa de los límites y formatos: [[CT-CLI-DAEMON-ADMIN]].
+
+`q` sigue [[CT-Q-V1]]: identidad, campos y cursores congelados; no se aplica la proyección de nombres común por debajo de una versión antigua. La migración completa de q queda pendiente de contrato `q-v2` negociado con el consumidor.
+
 ## Errores
 El seam H3 inspeccionado rechaza argumentos con guion inicial y no demuestra soporte de delimitador final en fixed_args. Por eso el provider no añade `--`: patrones ordinarios conservan el mapping vigente; nombres con guion usan CLI directa `find-files -- '-draft'`. Necesidad genérica de delimitación pendiente de C165, sin implementación paralela por surface. Nombres peligrosos se omiten.
 

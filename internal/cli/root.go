@@ -209,6 +209,7 @@ func (s *rootState) queryOptions(cmd *cobra.Command, operation string, payload m
 		callerCWD = cwd
 	}
 	return model.QueryOptions{
+		Operation:           operation,
 		Workspace:           s.workspace,
 		CallerCWD:           callerCWD,
 		Format:              s.effectiveFormat(cmd, operation, payload, axiEnabled),
@@ -338,9 +339,12 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 
 	profile, _ := s.outputProfile(request.Context.Format)
 	envelope.Profile = profile
-	envelope = output.ApplyProfile(envelope)
 	limitStarted := time.Now()
-	finalEnvelope := output.ApplyEnvelopeLimits(envelope, request.Context)
+	finalEnvelope := envelope
+	if profile == model.OutputProfileHuman || request.Context.Full || request.Context.Verbose ||
+		(operation != "find_symbol" && operation != "get_errors" && !strings.HasPrefix(operation, "nav.")) {
+		finalEnvelope = output.ApplyEnvelopeLimits(envelope, request.Context)
+	}
 	traceCLITiming("output.limits", time.Since(limitStarted), s.verbose)
 
 	if err != nil {
@@ -772,6 +776,9 @@ func (s *rootState) effectiveMaxItems(cmd *cobra.Command, operation string, axiE
 			}
 		}
 	}
+	if profile, _ := s.outputProfile(""); profile != model.OutputProfileHuman && !fullEnabled && !s.verbose && s.maxItems > output.AgentMaxItems {
+		return output.AgentMaxItems
+	}
 	return s.maxItems
 }
 
@@ -979,6 +986,7 @@ func (s *rootState) printPreparedEnvelope(envelope model.Envelope, opts model.Qu
 	format := opts.Format
 	envelope.Profile, format = s.outputProfile(format)
 	ensureFallbackReason(&envelope)
+	envelope = output.PrepareAgentEnvelope(envelope, opts, expandedCommand(os.Args[1:]))
 	renderStarted := time.Now()
 	rendered, err := output.Render(envelope, format, opts.Compress)
 	traceCLITiming("output.render", time.Since(renderStarted), s.verbose)
@@ -988,8 +996,7 @@ func (s *rootState) printPreparedEnvelope(envelope model.Envelope, opts model.Qu
 	// Diagnostics budgets are applied to the envelope upstream. Even when the
 	// minimum envelope or pretty JSON exceeds the budget, preserve structured
 	// output and its incompleteness metadata rather than cutting serialized bytes.
-	structuredManagement := strings.EqualFold(format, "json") && (envelope.Backend == "version" || envelope.Backend == "doctor")
-	if !structuredManagement && (envelope.ContractVersion != "diagnostics/v1" || strings.EqualFold(format, "text") || strings.EqualFold(format, "agent")) {
+	if strings.EqualFold(format, "text") || strings.EqualFold(format, "agent") {
 		rendered = output.CapRendered(rendered, opts.MaxChars)
 	}
 	writeStarted := time.Now()

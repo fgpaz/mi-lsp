@@ -25,7 +25,9 @@ func ApplyProfile(env model.Envelope) model.Envelope {
 		env.Metrics = nil
 		env.MemoryPointer = nil
 		// Keep continuation (executable) but drop free-form hints.
-		env.Hint = ""
+		if env.Error == nil {
+			env.Hint = ""
+		}
 		if env.Diagnostics == nil {
 			env.NextHint = nil
 		}
@@ -86,6 +88,9 @@ func Render(env model.Envelope, format string, compress bool) ([]byte, error) {
 	env = ApplyProfile(env)
 	switch strings.ToLower(format) {
 	case "json":
+		if env.Profile != model.OutputProfileHuman {
+			return json.Marshal(env)
+		}
 		return json.MarshalIndent(env, "", "  ")
 	case "text":
 		if env.Diagnostics != nil {
@@ -392,6 +397,9 @@ func marshalTOONMap(m map[string]any, continuation any) ([]byte, error) {
 }
 
 func continuationTargetCommand(target model.ContinuationTarget, cursor string) string {
+	if target.Command != "" {
+		return target.Command
+	}
 	if strings.TrimSpace(target.Op) == "" {
 		return ""
 	}
@@ -729,6 +737,9 @@ func renderEnvelopeOmission(omission model.EnvelopeOmission) string {
 }
 
 func renderContinuationTarget(target model.ContinuationTarget) string {
+	if target.Command != "" {
+		return target.Command
+	}
 	parts := []string{target.Op}
 	if target.Query != "" {
 		parts = append(parts, "query="+target.Query)
@@ -884,6 +895,14 @@ func compactItems(items any, compress bool) any {
 	case []map[string]any:
 		compact := make([]map[string]any, 0, len(typed))
 		for _, item := range typed {
+			_, file := item["file"]
+			_, line := item["line"]
+			_, symbol := item["symbol"]
+			_, snippet := item["snippet"]
+			if file && line && symbol && snippet {
+				compact = append(compact, item)
+				continue
+			}
 			entry := map[string]any{}
 			if value, ok := item["name"]; ok {
 				entry["n"] = value

@@ -292,7 +292,88 @@
         "type": "object"
       },
       "output_schema": {
-        "description": "Response governed by mi-lsp-nav-intent/v0",
+        "description": "Common bounded agent response governed by mi-lsp-nav-intent/v0; native safety summaries are result_kind=summary items. Full/human output retains native details.",
+        "properties": {
+          "continuation": {
+            "properties": {
+              "next": {
+                "properties": {
+                  "command": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "reason": {
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "error": {
+            "properties": {
+              "code": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "message": {
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "properties": {
+                "file": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "line": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "snippet": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "symbol": {
+                  "minLength": 0,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "line",
+                "symbol",
+                "snippet"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "reason": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "items",
+          "truncated"
+        ],
         "type": "object"
       },
       "invocation": {
@@ -387,7 +468,88 @@
         "type": "object"
       },
       "output_schema": {
-        "description": "Response governed by mi-lsp-nav-multi-read/v0",
+        "description": "Common bounded agent response governed by mi-lsp-nav-multi-read/v0; native safety summaries are result_kind=summary items. Full/human output retains native details.",
+        "properties": {
+          "continuation": {
+            "properties": {
+              "next": {
+                "properties": {
+                  "command": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "reason": {
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "error": {
+            "properties": {
+              "code": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "message": {
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "properties": {
+                "file": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "line": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "snippet": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "symbol": {
+                  "minLength": 0,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "line",
+                "symbol",
+                "snippet"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "reason": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "items",
+          "truncated"
+        ],
         "type": "object"
       },
       "invocation": {
@@ -985,7 +1147,88 @@
         "type": "object"
       },
       "output_schema": {
-        "description": "Response governed by mi-lsp-search/v0",
+        "description": "Common bounded agent response governed by mi-lsp-search/v0; native safety summaries are result_kind=summary items. Full/human output retains native details.",
+        "properties": {
+          "continuation": {
+            "properties": {
+              "next": {
+                "properties": {
+                  "command": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "reason": {
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "error": {
+            "properties": {
+              "code": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "message": {
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "properties": {
+                "file": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "line": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "snippet": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "symbol": {
+                  "minLength": 0,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "line",
+                "symbol",
+                "snippet"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "reason": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "items",
+          "truncated"
+        ],
         "type": "object"
       },
       "invocation": {
@@ -1084,7 +1327,88 @@
         "type": "object"
       },
       "output_schema": {
-        "description": "Response governed by mi-lsp-refs/v0",
+        "description": "Common bounded agent response governed by mi-lsp-refs/v0; native safety summaries are result_kind=summary items. Full/human output retains native details.",
+        "properties": {
+          "continuation": {
+            "properties": {
+              "next": {
+                "properties": {
+                  "command": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "reason": {
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "error": {
+            "properties": {
+              "code": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "message": {
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "properties": {
+                "file": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "line": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "snippet": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "symbol": {
+                  "minLength": 0,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "line",
+                "symbol",
+                "snippet"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "reason": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "items",
+          "truncated"
+        ],
         "type": "object"
       },
       "invocation": {
@@ -1202,7 +1526,88 @@
         "type": "object"
       },
       "output_schema": {
-        "description": "Response governed by mi-lsp-get_context/v0",
+        "description": "Common bounded agent response governed by mi-lsp-get_context/v0; native safety summaries are result_kind=summary items. Full/human output retains native details.",
+        "properties": {
+          "continuation": {
+            "properties": {
+              "next": {
+                "properties": {
+                  "command": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "reason": {
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "error": {
+            "properties": {
+              "code": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "message": {
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "properties": {
+                "file": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "line": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "snippet": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "symbol": {
+                  "minLength": 0,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "line",
+                "symbol",
+                "snippet"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "reason": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "items",
+          "truncated"
+        ],
         "type": "object"
       },
       "invocation": {
@@ -1346,7 +1751,88 @@
         "type": "object"
       },
       "output_schema": {
-        "description": "Response governed by mi-lsp-nav_refs/v0",
+        "description": "Common bounded agent response governed by mi-lsp-nav_refs/v0; native safety summaries are result_kind=summary items. Full/human output retains native details.",
+        "properties": {
+          "continuation": {
+            "properties": {
+              "next": {
+                "properties": {
+                  "command": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "reason": {
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "error": {
+            "properties": {
+              "code": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "message": {
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "properties": {
+                "file": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "line": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "snippet": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "symbol": {
+                  "minLength": 0,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "line",
+                "symbol",
+                "snippet"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "reason": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "items",
+          "truncated"
+        ],
         "type": "object"
       },
       "invocation": {
@@ -1498,7 +1984,88 @@
         "type": "object"
       },
       "output_schema": {
-        "description": "Response governed by mi-lsp-nav_callers/v0",
+        "description": "Common bounded agent response governed by mi-lsp-nav_callers/v0; native safety summaries are result_kind=summary items. Full/human output retains native details.",
+        "properties": {
+          "continuation": {
+            "properties": {
+              "next": {
+                "properties": {
+                  "command": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "reason": {
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "error": {
+            "properties": {
+              "code": {
+                "minLength": 0,
+                "type": "string"
+              },
+              "message": {
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "properties": {
+                "file": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "line": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "snippet": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "symbol": {
+                  "minLength": 0,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "line",
+                "symbol",
+                "snippet"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "reason": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "items",
+          "truncated"
+        ],
         "type": "object"
       },
       "invocation": {
@@ -1605,51 +2172,22 @@
         "type": "object"
       },
       "output_schema": {
-        "description": "Response governed by find_symbol/v0; item status and partial/detail fields distinguish checked results from incomplete results",
+        "description": "Common bounded agent response governed by find_symbol/v0; native safety summaries are result_kind=summary items. Full/human output retains native details.",
         "properties": {
-          "backend": {
-            "minLength": 0,
-            "type": "string"
-          },
-          "contract_version": {
-            "const": "find_symbol/v0",
-            "type": "string"
-          },
-          "degraded": {
-            "type": "boolean"
-          },
-          "diagnostics": {
+          "continuation": {
             "properties": {
-              "backends": {
+              "next": {
+                "properties": {
+                  "command": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
                 "type": "object"
               },
-              "errors": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "files_checked": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "files_requested": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "hints": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "information": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "returned": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "warnings": {
-                "minimum": 0,
-                "type": "integer"
+              "reason": {
+                "minLength": 0,
+                "type": "string"
               }
             },
             "type": "object"
@@ -1660,15 +2198,7 @@
                 "minLength": 0,
                 "type": "string"
               },
-              "kind": {
-                "minLength": 0,
-                "type": "string"
-              },
               "message": {
-                "minLength": 0,
-                "type": "string"
-              },
-              "reason_code": {
                 "minLength": 0,
                 "type": "string"
               }
@@ -1676,64 +2206,37 @@
             "type": "object"
           },
           "items": {
-            "properties": {
-              "ambiguity": {
-                "type": "boolean"
-              },
-              "approximate": {
-                "type": "boolean"
-              },
-              "definitions": {
-                "items": {
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "query": {
-                "minLength": 0,
-                "type": "string"
-              },
-              "ranges": {
-                "items": {
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "semantic_status": {
-                "minLength": 0,
-                "type": "string"
-              },
-              "source": {
-                "minLength": 0,
-                "type": "string"
-              },
-              "usage_candidates": {
-                "items": {
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "usages": {
-                "items": {
-                  "type": "object"
-                },
-                "type": "array"
-              }
-            },
-            "type": "object"
-          },
-          "next_hint": {
-            "minLength": 0,
-            "type": "string"
-          },
-          "ok": {
-            "type": "boolean"
-          },
-          "omissions": {
             "items": {
+              "properties": {
+                "file": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "line": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "snippet": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "symbol": {
+                  "minLength": 0,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "line",
+                "symbol",
+                "snippet"
+              ],
               "type": "object"
             },
             "type": "array"
+          },
+          "ok": {
+            "type": "boolean"
           },
           "partial": {
             "type": "boolean"
@@ -1744,19 +2247,13 @@
           },
           "truncated": {
             "type": "boolean"
-          },
-          "warnings": {
-            "items": {
-              "minLength": 0,
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "workspace": {
-            "minLength": 0,
-            "type": "string"
           }
         },
+        "required": [
+          "ok",
+          "items",
+          "truncated"
+        ],
         "type": "object"
       },
       "invocation": {
@@ -2324,51 +2821,22 @@
         "type": "object"
       },
       "output_schema": {
-        "description": "Response governed by get_errors/v0; item status and partial/detail fields distinguish checked results from incomplete results",
+        "description": "Common bounded agent response governed by get_errors/v0; native safety summaries are result_kind=summary items. Full/human output retains native details.",
         "properties": {
-          "backend": {
-            "minLength": 0,
-            "type": "string"
-          },
-          "contract_version": {
-            "const": "get_errors/v0",
-            "type": "string"
-          },
-          "degraded": {
-            "type": "boolean"
-          },
-          "diagnostics": {
+          "continuation": {
             "properties": {
-              "backends": {
+              "next": {
+                "properties": {
+                  "command": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
                 "type": "object"
               },
-              "errors": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "files_checked": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "files_requested": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "hints": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "information": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "returned": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "warnings": {
-                "minimum": 0,
-                "type": "integer"
+              "reason": {
+                "minLength": 0,
+                "type": "string"
               }
             },
             "type": "object"
@@ -2379,15 +2847,7 @@
                 "minLength": 0,
                 "type": "string"
               },
-              "kind": {
-                "minLength": 0,
-                "type": "string"
-              },
               "message": {
-                "minLength": 0,
-                "type": "string"
-              },
-              "reason_code": {
                 "minLength": 0,
                 "type": "string"
               }
@@ -2395,81 +2855,37 @@
             "type": "object"
           },
           "items": {
-            "properties": {
-              "compilation_state": {
-                "enum": [
-                  "not_checked"
-                ],
-                "type": "string"
-              },
-              "details_complete": {
-                "type": "boolean"
-              },
-              "diagnostics": {
-                "items": {
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "error_count_complete": {
-                "type": "boolean"
-              },
-              "errors_observed": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "files_checked": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "files_requested": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "files_touched": {
-                "items": {
-                  "minLength": 0,
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "next_hint": {
-                "minLength": 0,
-                "type": "string"
-              },
-              "not_checked_files": {
-                "items": {
-                  "minLength": 0,
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "status": {
-                "enum": [
-                  "checked",
-                  "partial",
-                  "not_checked"
-                ],
-                "type": "string"
-              },
-              "truncated": {
-                "type": "boolean"
-              }
-            },
-            "type": "object"
-          },
-          "next_hint": {
-            "minLength": 0,
-            "type": "string"
-          },
-          "ok": {
-            "type": "boolean"
-          },
-          "omissions": {
             "items": {
+              "properties": {
+                "file": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "line": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "snippet": {
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "symbol": {
+                  "minLength": 0,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "line",
+                "symbol",
+                "snippet"
+              ],
               "type": "object"
             },
             "type": "array"
+          },
+          "ok": {
+            "type": "boolean"
           },
           "partial": {
             "type": "boolean"
@@ -2480,19 +2896,13 @@
           },
           "truncated": {
             "type": "boolean"
-          },
-          "warnings": {
-            "items": {
-              "minLength": 0,
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "workspace": {
-            "minLength": 0,
-            "type": "string"
           }
         },
+        "required": [
+          "ok",
+          "items",
+          "truncated"
+        ],
         "type": "object"
       },
       "invocation": {

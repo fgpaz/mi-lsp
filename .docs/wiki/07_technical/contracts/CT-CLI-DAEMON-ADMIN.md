@@ -315,6 +315,18 @@ Envelope comun:
 - `continuation`
 - `memory_pointer`
 
+### Sobre acotado para agentes
+
+Las consultas de navegación y los verbos `find_symbol` / `get_errors`, con perfil `agent` o `harness-micro`, presentan `items[]` con `file`, `line`, `symbol` y `snippet`. Valores desconocidos: `""` y línea `0`, sin inventar ubicaciones. Se reutilizan nombres públicos en lugar de duplicar `file_path`/`path`, `name` o `content`/`text`. Los campos específicos necesarios conservan su significado. Los verbos nativos descomponen sus secciones en ítems con `result_kind` (`definitions`, `usages`, `usage_candidates`, `ranges`, `diagnostics`); el primer ítem `summary` conserva estado semántico, ambigüedad y la advertencia `compilation_state: not_checked`.
+
+`wiki.matrix` conserva su resumen y proyecta cada criterio como ítem `result_kind: criteria`; el detalle auxiliar `checks` se omite con motivo si excede el presupuesto. Las advertencias conservan una vista de tres entradas de hasta 512 bytes e informan el número omitido y la recuperación completa.
+
+La presentación por defecto limita a 20 ítems (algunas operaciones ya usan ventanas menores), 8192 bytes JSON UTF-8 incluida la nueva línea y 1024 bytes por snippet. `--max-items`, `--max-chars` y `--token-budget` permiten seleccionar el presupuesto. Al omitir contenido informa `truncated`, `partial`, `reason` y `omissions`; `continuation.next.command` contiene el comando exacto para repetir la consulta con detalle ampliado. No se inventa un offset ni se avanza un cursor del productor si el recorte de presentación omitió resultados. Los presupuestos menores al sobre mínimo pueden excederse para preservar errores, omisiones y recuperación; nunca se corta JSON serializado.
+
+`--profile human`, `--full` o `--verbose` evitan esta proyección acotada. Coach, métricas, memoria auxiliar y estadísticas internas quedan fuera de la presentación chica. Los errores conservan `error.code` y `error.message`, con acción en `hint` y recuperación en `continuation`. JSON de agente se serializa sin indentación. Los formatos estructurados no pasan por el corte final de bytes que antes podía producir JSON inválido.
+
+**Compatibilidad:** `q-v1` conserva su contrato congelado [[CT-Q-V1]], incluidos proyección de campos, presupuestos y cursores firmados. No se renombra su `text` ni su `name`, no se recortan filas después de firmar la continuación y no se cambia su versión implícitamente. La uniformidad adicional de q requiere la negociación de `q-v2`. Gestión y `rename_symbol` conservan sus sobres específicos.
+
 Reglas de formato:
 
 - `--format toon` debe recibir el envelope como mapa JSON-compatible y sanitizado recursivamente justo antes de `toon.Marshal`.
