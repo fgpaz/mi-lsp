@@ -17,14 +17,13 @@ type loadedReentryMemory struct {
 }
 
 func loadReentryMemory(ctx context.Context, root string) (*loadedReentryMemory, error) {
-	// A linked worktree has no reentry memory of its own. Opening it would create
-	// an index inside the worktree, so the memory of its registered base is used,
-	// and a worktree without a base has none.
-	memoryRoot, ok, err := reentryMemoryRoot(root)
-	if err != nil || !ok {
+	// A linked worktree has no reentry memory. The memory belongs to the branch of
+	// its main checkout, and opening the worktree would create an index inside it.
+	linked, err := workspace.IsLinkedWorktree(root)
+	if err != nil || linked {
 		return nil, nil
 	}
-	db, err := store.Open(memoryRoot)
+	db, err := store.Open(root)
 	if err != nil {
 		return nil, nil
 	}
@@ -34,34 +33,12 @@ func loadReentryMemory(ctx context.Context, root string) (*loadedReentryMemory, 
 	if err != nil || !ok {
 		return nil, err
 	}
-	stale := reentry.SnapshotStale(memoryRoot, snapshot.SnapshotBuiltAt)
+	stale := reentry.SnapshotStale(root, snapshot.SnapshotBuiltAt)
 	return &loadedReentryMemory{
 		Snapshot: snapshot,
 		Pointer:  buildMemoryPointer(snapshot, stale),
 		Stale:    stale,
 	}, nil
-}
-
-// reentryMemoryRoot returns the root whose reentry memory describes root. A
-// regular workspace is its own root. A linked worktree maps to its registered
-// base, and reports false when no base is registered.
-func reentryMemoryRoot(root string) (string, bool, error) {
-	linked, err := workspace.IsLinkedWorktree(root)
-	if err != nil {
-		return "", false, err
-	}
-	if !linked {
-		return root, true, nil
-	}
-	overlay, err := workspace.ResolveWorktreeOverlay(root)
-	if err != nil {
-		return "", false, err
-	}
-	base, found, err := workspace.RegisteredWorktreeBase(overlay)
-	if err != nil || !found {
-		return "", false, err
-	}
-	return base.Root, true, nil
 }
 
 func buildMemoryPointer(snapshot model.ReentryMemorySnapshot, stale bool) *model.MemoryPointer {

@@ -114,10 +114,78 @@ func (q *docQueryContext) Close() error {
 	return q.db.Close()
 }
 
+// worktreeBaseUnregisteredReason names a linked worktree whose main checkout is
+// not registered. Such a worktree has no base index to answer from, and nothing
+// may create an index inside it.
+const worktreeBaseUnregisteredReason = "worktree_base_unregistered"
+
+// worktreeBaseUnregisteredError is returned for a linked worktree whose main
+// checkout is not registered. MainRoot is the checkout the operator should register.
+type worktreeBaseUnregisteredError struct {
+	Worktree string
+	MainRoot string
+}
+
+func (e *worktreeBaseUnregisteredError) Error() string {
+	return worktreeBaseUnregisteredReason
+}
+
+// worktreeNavSearchCommand is the next executable step for a linked worktree
+// answer: a nav search over the physical worktree for the question's identifier,
+// or for the whole query when it names none. It never repeats the question's own
+// command, so a continuation cannot point the caller back at what just ran.
+func worktreeNavSearchCommand(root string, query string) string {
+	term := strings.TrimSpace(query)
+	if identifiers := intentWorktreeIdentifiers(query); len(identifiers) > 0 {
+		term = identifiers[0]
+	}
+	if term == "" {
+		return ""
+	}
+	return fmt.Sprintf("mi-lsp nav search %s --workspace %s", shellQuoteArg(term), shellQuoteArg(root))
+}
+
+// worktreeNavSearchContinuation wraps worktreeNavSearchCommand as the
+// continuation of a partial linked worktree answer. The Op is set so the
+// continuation policy keeps it; an Op-less target is dropped and the envelope
+// then repeats the failed command.
+func worktreeNavSearchContinuation(root string, query string, reason string) *model.Continuation {
+	command := worktreeNavSearchCommand(root, query)
+	if command == "" {
+		return nil
+	}
+	return &model.Continuation{Reason: reason, Next: model.ContinuationTarget{Op: "nav.search", Command: command}}
+}
+
+// worktreeBaseUnregisteredEnvelope answers a docs question from a linked worktree
+// whose main checkout is not registered. Nothing is read from or created in the
+// worktree index. The next hint names the registration that would enable docs
+// answers, and the continuation is the nav search that works on the physical
+// worktree now.
+func worktreeBaseUnregisteredEnvelope(registration model.WorkspaceRegistration, backend string, query string, unregistered *worktreeBaseUnregisteredError) model.Envelope {
+	env := model.Envelope{
+		Ok:        true,
+		Partial:   true,
+		Reason:    worktreeBaseUnregisteredReason,
+		Workspace: registration.Name,
+		Backend:   backend,
+		Items:     []map[string]any{},
+		Warnings:  []string{worktreeBaseUnregisteredReason + ": the main checkout of this linked worktree is not registered, so no docs index answers for it; nothing was created inside the worktree"},
+		Hint:      "register the main checkout to answer docs from its index; nav search still reads this worktree as text",
+	}
+	if unregistered != nil && unregistered.MainRoot != "" {
+		next := fmt.Sprintf("mi-lsp workspace add %s", shellQuoteArg(unregistered.MainRoot))
+		env.NextHint = &next
+	}
+	env.Continuation = worktreeNavSearchContinuation(registration.Root, query, worktreeBaseUnregisteredReason)
+	return env
+}
+
 // docsIndexForRegistration picks the registration whose docs index answers. A
 // linked worktree with a registered base reads that base index and carries the
 // worktree overlay; every other registration reads its own index unchanged.
-// A worktree never gets an index of its own from this path.
+// A linked worktree whose main checkout is not registered has no index to read,
+// and it never gets one of its own from this path.
 func docsIndexForRegistration(registration model.WorkspaceRegistration) (model.WorkspaceRegistration, *workspace.WorktreeOverlay, error) {
 	linked, err := workspace.IsLinkedWorktree(registration.Root)
 	if err != nil || !linked {
@@ -128,8 +196,11 @@ func docsIndexForRegistration(registration model.WorkspaceRegistration) (model.W
 		return registration, nil, err
 	}
 	base, found, err := workspace.RegisteredWorktreeBase(overlay)
-	if err != nil || !found {
+	if err != nil {
 		return registration, nil, err
+	}
+	if !found {
+		return registration, nil, &worktreeBaseUnregisteredError{Worktree: registration.Root, MainRoot: overlay.BaseRoot}
 	}
 	return base, &overlay, nil
 }
@@ -157,6 +228,12 @@ func (q *docQueryContext) applyWorktreeOverlay(docs []model.DocRecord, overlay w
 		}
 		out = append(out, doc)
 	}
+	// "parsed" counts only the worktree's own delta. Base checkout edits are read
+	// physically too; the readable ones stay uncounted, the unreadable ones are skipped.
+	changed := make(map[string]bool, len(overlay.Changed))
+	for _, rel := range overlay.Changed {
+		changed[rel] = true
+	}
 	parsed, skipped := 0, 0
 	for _, rel := range overlay.ReadPaths() {
 		if deleted[rel] || !strings.EqualFold(path.Ext(rel), ".md") {
@@ -164,11 +241,15 @@ func (q *docQueryContext) applyWorktreeOverlay(docs []model.DocRecord, overlay w
 		}
 		doc, ok := readWorktreeDoc(overlay.Root, rel, q.profile)
 		if !ok {
+			// A base checkout edit that cannot be read is masked from the base
+			// index too, so it is reported as skipped even though it is not parsed.
 			skipped++
 			continue
 		}
 		out = append(out, doc)
-		parsed++
+		if changed[rel] {
+			parsed++
+		}
 	}
 	note := fmt.Sprintf("%s: docs answered from registered base %q; %d base records masked by the worktree delta, %d worktree markdown files parsed physically", worktreeBaseDocsReason, base.Name, masked, parsed)
 	if skipped > 0 {

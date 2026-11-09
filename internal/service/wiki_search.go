@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,6 +54,10 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 	query := loadDocQueryContext(ctx, registration, queryText)
 	defer query.Close()
 	if query.dbErr != nil {
+		var unregistered *worktreeBaseUnregisteredError
+		if errors.As(query.dbErr, &unregistered) {
+			return applyCoachPolicy(worktreeBaseUnregisteredEnvelope(registration, "wiki.search", queryText, unregistered), request.Context), nil
+		}
 		return model.Envelope{}, query.dbErr
 	}
 
@@ -76,6 +81,7 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 		if query.worktreeBase != "" {
 			env.Partial = true
 			env.Reason = worktreeBaseDocsReason
+			env.Continuation = worktreeNavSearchContinuation(registration.Root, queryText, worktreeBaseDocsReason)
 		}
 		return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
 	}

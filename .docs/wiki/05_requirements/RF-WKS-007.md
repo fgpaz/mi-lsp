@@ -202,7 +202,7 @@ Las pruebas cubren snapshots antes/después de parent, worktree, home y fixtures
   - **linked_worktree**:
     - **identify_by**: normalized_absolute_canonical_git_common_dir_and_git_dir
     - **when_main_registered**: resolve_main_alias_without_worktree_registration
-    - **when_main_unregistered**: explicit_incomplete_reason_code_invalid_workspace_without_index
+    - **when_main_unregistered**: partial_worktree_base_unregistered_without_index
     - **force_override**: MI_LSP_AUTOREGISTER=force
     - **force_bypass**: default_scope_and_linked_worktree_restrictions
     - **force_log**: required_unambiguous_warning
@@ -342,13 +342,13 @@ Las entradas, salidas, enums y límites forman parte del contrato de comportamie
       - **read_only_unregistered**: preserve_physical_root_read_only_without_registration_or_index
       - **git_frontier_read_only**: preserve_physical_git_and_existing_store_generations_without_main_fallback
       - **status_probe**: preserve_physical_root_read_only_without_registration_or_index
-      - **main_unregistered**: explicit_incomplete_invalid_workspace_without_index
+      - **main_unregistered**: partial_worktree_base_unregistered_without_index
   - **omitted_selector**:
     - **git_top_level**: determine_first_in_normal_and_read_only
     - **registered_git_root**: exact_canonical_match_preferred
     - **unregistered_git_root**: auto_register_then_resolve_within_home_only
     - **linked_worktree**: resolve_registered_main_root_without_registering_worktree
-    - **linked_worktree_main_unregistered**: explicit_incomplete_invalid_workspace_without_index
+    - **linked_worktree_main_unregistered**: partial_worktree_base_unregistered_without_index
     - **synthetic_read_only_root**: forbidden_for_linked_worktree
     - **lexical_parent_fallback_for_git**: forbidden
     - **non_git_directory**: preserve_registered_containment
@@ -369,7 +369,7 @@ Las entradas, salidas, enums y límites forman parte del contrato de comportamie
 Un selector explícito inválido o stale nunca puede convertirse silenciosamente en el workspace del `caller_cwd`. La resolución omitida conserva la precedencia contextual existente y expone `source` y warnings suficientes para auditoría.
 Los aliases heredados que apunten a la misma raíz física siguen siendo válidos y se conservan; la presentación compacta no los migra, elimina ni redirige. Un alias explícito desconocido o stale sigue fallando sin sustituirse por el workspace del cwd.
 
-Cuando el `caller_cwd` omitido está dentro de un linked worktree, la resolución compara `git dir` y `git common dir` como rutas absolutas, canónicas y normalizadas. Si el root principal está registrado, devuelve ese alias y no crea ni indexa un alias para el linked worktree. Un **path explícito** a un linked worktree no registrado en operaciones read-only conserva la raíz física del target (Git, frontier y generaciones del store existente de ese root) sin auto-registro ni fallback al main. Las operaciones mutantes con path explícito siguen resolviendo al main registrado cuando corresponda. Si el main no está registrado, devuelve `explicit_incomplete` con `reason_code=invalid_workspace` y no inicia indexación. `MI_LSP_AUTOREGISTER=force` opta explícitamente por registrar el linked worktree como raíz física independiente.
+Cuando el `caller_cwd` omitido está dentro de un linked worktree, la resolución compara `git dir` y `git common dir` como rutas absolutas, canónicas y normalizadas. Si el root principal está registrado, devuelve ese alias y no crea ni indexa un alias para el linked worktree. Un **path explícito** a un linked worktree no registrado en operaciones read-only conserva la raíz física del target (Git, frontier y generaciones del store existente de ese root) sin auto-registro ni fallback al main. Las operaciones mutantes con path explícito siguen resolviendo al main registrado cuando corresponda. Si el main no está registrado, no inicia indexación ni crea nada dentro del worktree; las respuestas de docs, wiki y grafo devuelven `partial=true` con `reason=worktree_base_unregistered` (ver RF-QRY-001). `MI_LSP_AUTOREGISTER=force` opta explícitamente por registrar el linked worktree como raíz física independiente.
 
 #### Auto-registro en la primera consulta
 
@@ -383,7 +383,7 @@ La especificación normativa del auto-registro, incluida la respuesta cuando el 
 La respuesta para agentes identifica en su primera línea el workspace seleccionado. Esto hace visible el alias o selector efectivo sin modificar la identidad física ni la resolución fail-closed.
 2. Un selector explícito inválido o stale nunca puede convertirse silenciosamente en el workspace del `caller_cwd`. La resolución omitida conserva la precedencia contextual existente y expone `source` y warnings suficientes para auditoría.
 Los aliases heredados que apunten a la misma raíz física siguen siendo válidos y se conservan; la presentación compacta no los migra, elimina ni redirige. Un alias explícito desconocido o stale sigue fallando sin sustituirse por el workspace del cwd.
-3. Cuando el `caller_cwd` omitido está dentro de un linked worktree, la resolución compara `git dir` y `git common dir` como rutas absolutas, canónicas y normalizadas. Si el root principal está registrado, devuelve ese alias y no crea ni indexa un alias para el linked worktree. Un **path explícito** a un linked worktree no registrado en operaciones read-only conserva la raíz física del target (Git, frontier y generaciones del store existente de ese root) sin auto-registro ni fallback al main. Las operaciones mutantes con path explícito siguen resolviendo al main registrado cuando corresponda. Si el main no está registrado, devuelve `explicit_incomplete` con `reason_code=invalid_workspace` y no inicia indexación. `MI_LSP_AUTOREGISTER=force` opta explícitamente por registrar el linked worktree como raíz física independiente.
+3. Cuando el `caller_cwd` omitido está dentro de un linked worktree, la resolución compara `git dir` y `git common dir` como rutas absolutas, canónicas y normalizadas. Si el root principal está registrado, devuelve ese alias y no crea ni indexa un alias para el linked worktree. Un **path explícito** a un linked worktree no registrado en operaciones read-only conserva la raíz física del target (Git, frontier y generaciones del store existente de ese root) sin auto-registro ni fallback al main. Las operaciones mutantes con path explícito siguen resolviendo al main registrado cuando corresponda. Si el main no está registrado, no inicia indexación ni crea nada dentro del worktree; las respuestas de docs, wiki y grafo devuelven `partial=true` con `reason=worktree_base_unregistered` (ver RF-QRY-001). `MI_LSP_AUTOREGISTER=force` opta explícitamente por registrar el linked worktree como raíz física independiente.
 4. Las operaciones que requieren workspace (`nav.*`, `index.*`, `info`, `workspace.status`) ejecutan un único camino compartido por CLI y daemon (`App.Execute`, `internal/service/auto_register.go` y `internal/workspace/autoregister.go`), de modo que sirve igual a la CLI y a `mi-mcp`, que la invoca por llamada. [RETIRADO 2026-10-15: `mi-lsp mcp`, el plugin milsp y el hijo persistente de mi-mcp.]
 5. La especificación normativa del auto-registro, incluida la respuesta cuando el repo aún no tiene commits, el alcance del opt-out, linked worktrees, force y GC del registry, está agrupada en el bloque TOON `RF-WKS-007-B08`. Los casos de verificación se definen normativamente en `TP-WKS` (`TC-WKS-048..060`, `TC-WKS-064..066`). El enlace al flag CLI se apoya en evidencia de código; `TC-WKS-049` no declara cobertura E2E de su propagación.
 6. La configuración que debe viajar con el repositorio permanece repo-local. El estado operativo se resuelve a una ruta local de la máquina y no se incorpora a la configuración portable. El estado legacy se conserva durante esta ola; cualquier compatibilidad o migración se informa explícitamente y no mueve ni borra archivos automáticamente. Un worktree y su parent, aun cuando compartan `git_common_dir`, conservan roots canónicos y operational paths distintos.

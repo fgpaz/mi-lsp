@@ -481,6 +481,14 @@ func buildCLIErrorEnvelope(request model.CommandRequest, route string, err error
 	if env.Error != nil && (env.Error.Kind == "workspace" || strings.Contains(strings.ToLower(env.Error.Code), "workspace") || isWorkspaceErrorMessage(env.Error.Message)) {
 		if command := workspaceRecoveryCommand(request.Context); command != "" {
 			env.NextHint = &command
+			// The recovery command is the next step, so it is also the continuation.
+			// It never repeats the selector that just failed.
+			if env.Continuation == nil {
+				env.Continuation = &model.Continuation{Reason: "workspace_selector_invalid", Next: model.ContinuationTarget{Command: command}}
+			}
+			if !isWorkspacePathSelector(strings.TrimSpace(request.Context.Workspace)) && env.Hint == "" {
+				env.Hint = "pass --workspace with the absolute path of the checkout; a bare alias is not resolved from the caller cwd"
+			}
 		}
 	}
 	return env
@@ -493,7 +501,7 @@ func workspaceRecoveryCommand(opts model.QueryOptions) string {
 	cwd := strings.TrimSpace(opts.CallerCWD)
 	selector := strings.TrimSpace(opts.Workspace)
 	if !isWorkspacePathSelector(selector) {
-		return "pass --workspace with the absolute path of the checkout, or list registered aliases with `mi-lsp workspace list --group-by-root`"
+		return "mi-lsp workspace list --group-by-root"
 	}
 	if cwd == "" {
 		return "mi-lsp workspace scan"

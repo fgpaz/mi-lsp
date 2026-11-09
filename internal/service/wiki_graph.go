@@ -41,9 +41,10 @@ func (a *App) wikiGraph(ctx context.Context, request model.CommandRequest) (mode
 		if baseErr != nil {
 			return model.Envelope{}, store.SanitizeGraphQueryError(baseErr)
 		}
-		if found {
-			graphRegistration = baseRegistration
+		if !found {
+			return worktreeBaseUnregisteredEnvelope(registration, "worktree-graph", "", &worktreeBaseUnregisteredError{Worktree: registration.Root, MainRoot: overlay.BaseRoot}), nil
 		}
+		graphRegistration = baseRegistration
 		if len(overlay.Changed) > 0 || len(overlay.Deleted) > 0 {
 			return worktreeGraphUnavailable(registration, request.Operation), nil
 		}

@@ -72,6 +72,31 @@ func IsLinkedWorktree(root string) (bool, error) {
 	return linked, nil
 }
 
+// LinkedWorktreeMain reports the main checkout of a linked worktree and whether
+// that checkout is registered under the same path. It runs no git diff, so it is
+// the cheap check callers use before reading or building anything for a worktree.
+// A root that is not a linked worktree returns linked=false.
+func LinkedWorktreeMain(root string) (mainRoot string, linked bool, registered bool, err error) {
+	physicalRoot, ok := gitTopLevel(root)
+	if !ok {
+		return "", false, false, nil
+	}
+	isLinked, commonDir, valid := linkedWorktree(physicalRoot)
+	if !valid {
+		return "", false, false, fmt.Errorf("cannot resolve git common-dir: %s", physicalRoot)
+	}
+	if !isLinked {
+		return "", false, false, nil
+	}
+	mainRoot = filepath.Dir(commonDir)
+	registry, err := LoadRegistryReadOnly()
+	if err != nil {
+		return mainRoot, true, false, err
+	}
+	registration, found := registeredMainWorktree(commonDir, registry)
+	return mainRoot, true, found && sameFilePath(registration.Root, mainRoot), nil
+}
+
 // TryResolveWorktreeOverlay distinguishes an ordinary repository from a linked worktree.
 func TryResolveWorktreeOverlay(root string) (WorktreeOverlay, bool, error) {
 	physicalRoot, ok := gitTopLevel(root)

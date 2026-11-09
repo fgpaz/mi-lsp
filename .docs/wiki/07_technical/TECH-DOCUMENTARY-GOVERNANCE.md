@@ -79,7 +79,7 @@ Estos hints preservan conocimiento humano; no se agregan campos fuera del modelo
 - `nav.search` debe auto-curarse ante regex inválido y devolver warning/hint util antes que error duro cuando existe fallback literal seguro.
 - `nav.ask` debe servir por camino directo por default; el daemon queda reservado para queries semánticas o compuestas que realmente se benefician del warm state.
 - `workspace list` y `nav.workspace-map` deben separar explicitamente modo rapido vs expansion profunda.
-- El auto-registro predeterminado se limita a roots dentro de `$HOME`; linked worktrees resuelven el alias del repositorio principal registrado sin crear una entrada propia. Si falta el registro principal, la resolución devuelve `explicit_incomplete` con `reason_code=invalid_workspace` y no indexa.
+- El auto-registro predeterminado se limita a roots dentro de `$HOME`; linked worktrees resuelven el alias del repositorio principal registrado sin crear una entrada propia. Si falta el registro principal, la resolución no indexa; las respuestas de docs, wiki y grafo devuelven `partial=true` con `reason=worktree_base_unregistered` (ver RF-QRY-001) sin crear nada dentro del worktree.
 - `MI_LSP_AUTOREGISTER=force` es el único override de alcance; su uso debe quedar explícito en warnings. La recolección automática al listar/resolver y `workspace prune --stale` retienen roots vacíos o con errores ambiguos y solo eliminan aliases con roots definitivamente inexistentes.
 - La generación de grafo es compiler-first y publica una `GraphGeneration` identificable; `NodeKey` no se deriva de posiciones inestables cuando existe identidad semantica.
 - Query, explain e impact son de solo lectura y deben reportar la generación consultada.

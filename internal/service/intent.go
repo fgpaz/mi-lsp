@@ -74,6 +74,16 @@ func (a *App) intent(ctx context.Context, request model.CommandRequest) (env mod
 	}
 	offset := intFromAny(request.Payload["offset"], 0)
 
+	// A linked worktree whose main checkout is not registered has no base index.
+	// The answer is partial and names the registration; nothing is indexed here.
+	mainRoot, isLinked, mainRegistered, linkedErr := workspace.LinkedWorktreeMain(registration.Root)
+	if linkedErr != nil {
+		return model.Envelope{}, linkedErr
+	}
+	if isLinked && !mainRegistered {
+		return worktreeBaseUnregisteredEnvelope(registration, "intent", question, &worktreeBaseUnregisteredError{Worktree: registration.Root, MainRoot: mainRoot}), nil
+	}
+
 	scopedRepo, scopeWarnings, scopeEnvelope := resolveCatalogRepoScope(registration, project, request.Payload)
 	if scopeEnvelope != nil {
 		return *scopeEnvelope, nil
@@ -83,10 +93,7 @@ func (a *App) intent(ctx context.Context, request model.CommandRequest) (env mod
 		return planned, planErr
 	}
 
-	linked, linkedErr := workspace.IsLinkedWorktree(registration.Root)
-	if linkedErr != nil {
-		return model.Envelope{}, linkedErr
-	}
+	linked := isLinked
 	profile, _, _ := docgraph.LoadProfile(registration.Root)
 	mode := classifyIntentMode(question, profile)
 	if mode == "docs" {
@@ -695,6 +702,8 @@ func (a *App) intentWorktreeMix(ctx context.Context, registration model.Workspac
 	if docs.Reason == "" {
 		docs.Reason = worktreeBaseDocsReason
 	}
+	// The continuation is the physical nav search, never the question that was just asked.
+	docs.Continuation = worktreeNavSearchContinuation(registration.Root, question, docs.Reason)
 	docs.Warnings = dedupeStrings(append(docs.Warnings, warnings...))
 	if len(items) == 0 {
 		return docs
@@ -730,11 +739,13 @@ func (a *App) intentWorktreeCode(ctx context.Context, registration model.Workspa
 		Stats:     model.Stats{Symbols: len(items)},
 	}
 	env.Warnings = append(env.Warnings, "worktree_text_code: linked worktree has no code catalog; hits are text matches in the physical worktree")
+	// Partial by missing catalog: the continuation is the nav search, never a repeat of this question.
+	env.Continuation = worktreeNavSearchContinuation(registration.Root, question, worktreeTextCodeReason)
 	if len(identifiers) == 0 {
 		env.Hint = "name a symbol, file or identifier in the question to search this worktree as text"
 		return env
 	}
-	next := fmt.Sprintf("mi-lsp nav search %s --workspace %s", identifiers[0], shellQuoteArg(registration.Root))
+	next := worktreeNavSearchCommand(registration.Root, question)
 	env.NextHint = &next
 	if len(items) == 0 {
 		env.Hint = fmt.Sprintf("0 text matches for %q in this worktree", identifiers[0])
