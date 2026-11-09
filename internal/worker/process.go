@@ -122,6 +122,11 @@ func (c *Client) Call(ctx context.Context, request model.WorkerRequest) (model.W
 		if err == nil {
 			return response, nil
 		}
+		if attempt == 0 && isUnsentRequestError(err) {
+			// The worker died while idle: the request never reached it, so a
+			// fresh process can serve it without repeating any work.
+			continue
+		}
 		if attempt == 0 && c.shouldRetryCurrentError(err) && c.advanceToNextSpec() {
 			continue
 		}
@@ -139,7 +144,9 @@ func (c *Client) callOnce(ctx context.Context, request model.WorkerRequest) (mod
 		return model.WorkerResponse{}, err
 	}
 	if err := WriteFrame(c.stdin, request); err != nil {
-		return model.WorkerResponse{}, c.transportFailure(err)
+		failure := c.transportFailure(err).(workerTransportError)
+		failure.unsent = true
+		return model.WorkerResponse{}, failure
 	}
 
 	responseChannel := make(chan model.WorkerResponse, 1)
@@ -172,12 +179,18 @@ func (c *Client) callOnce(ctx context.Context, request model.WorkerRequest) (mod
 // workerTransportError marks a failed frame exchange. The worker process is
 // unusable afterwards, so the client reaps it and the next call starts a fresh one.
 type workerTransportError struct {
-	err error
+	err    error
+	unsent bool
 }
 
 func (e workerTransportError) Error() string { return e.err.Error() }
 
 func (e workerTransportError) Unwrap() error { return e.err }
+
+func isUnsentRequestError(err error) bool {
+	var transport workerTransportError
+	return errors.As(err, &transport) && transport.unsent
+}
 
 func isWorkerTransportError(err error) bool {
 	var transport workerTransportError
