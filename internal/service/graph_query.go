@@ -110,6 +110,10 @@ func (a *App) overlayGraphSnapshot(ctx context.Context, registration model.Works
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	unsupported := worktreeGraphUnsupportedLanguages(project)
+	if len(selections) == 0 {
+		return model.Envelope{Ok: true, Partial: true, Workspace: registration.Name, Backend: "worktree-graph-overlay", Items: []any{}, Reason: "graph_language_unavailable", Warnings: unsupported, Hint: "no supported typed graph observer for the selected languages"}, nil
+	}
 	identity, err := workspace.ResolveRepositoryIdentity(ctx, registration.Root, selectedGraphRepos(selections))
 	if err != nil {
 		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: "worktree graph repository identity is unavailable or ambiguous"}
@@ -139,6 +143,14 @@ func (a *App) overlayGraphSnapshot(ctx context.Context, registration model.Works
 	current, linked, freshnessErr := workspace.TryResolveWorktreeOverlay(registration.Root)
 	if freshnessErr != nil || !linked || current.Fingerprint != overlay.Fingerprint {
 		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_GRAPH_INVALID", Message: "worktree changed during graph query; retry against a fresh overlay snapshot"}
+	}
+	if len(unsupported) > 0 {
+		env.Partial = true
+		env.Reason = "graph_language_unavailable"
+		env.Warnings = append(env.Warnings, unsupported...)
+		if env.Hint == "selector not found" {
+			env.Hint = "selector not found in the available Go graph; other declared languages are not covered"
+		}
 	}
 	env.Workspace = registration.Name
 	env.Backend = "worktree-graph-overlay"
@@ -221,7 +233,7 @@ func worktreeGraphSelections(root string, project model.ProjectFile) ([]worktree
 			case "go":
 				backend = "go"
 			default:
-				return nil, overlayGraphUnavailable("worktree graph overlay currently supports Go-only topologies; other languages require a later release")
+				continue // Report unsupported languages without discarding available Go observations.
 			}
 			if seen[backend] {
 				continue
@@ -263,9 +275,6 @@ func worktreeGraphSelections(root string, project model.ProjectFile) ([]worktree
 			}
 		}
 	}
-	if len(selections) == 0 {
-		return nil, overlayGraphUnavailable("worktree graph topology has no complete typed observer")
-	}
 	sort.Slice(selections, func(i, j int) bool {
 		a, b := selections[i], selections[j]
 		if a.repo.ID != b.repo.ID {
@@ -280,6 +289,33 @@ func worktreeGraphSelections(root string, project model.ProjectFile) ([]worktree
 		return a.entrypoint.ID < b.entrypoint.ID
 	})
 	return selections, nil
+}
+
+// Coverage is explicit at the response boundary, not represented as fabricated
+// nodes or compiler evidence inside the successfully observed Go generation.
+func worktreeGraphUnsupportedLanguages(project model.ProjectFile) []string {
+	set := map[string]bool{}
+	for _, repo := range project.Repos {
+		if project.Project.Kind != model.WorkspaceKindContainer && len(project.Repos) > 1 && repo.ID != project.Project.DefaultRepo {
+			continue
+		}
+		languages := repo.Languages
+		if len(languages) == 0 {
+			languages = project.Project.Languages
+		}
+		for _, raw := range languages {
+			lang := strings.ToLower(strings.TrimSpace(raw))
+			if lang != "go" && lang != "" {
+				set["graph_language_unavailable:"+lang] = true
+			}
+		}
+	}
+	warnings := make([]string, 0, len(set))
+	for warning := range set {
+		warnings = append(warnings, warning)
+	}
+	sort.Strings(warnings)
+	return warnings
 }
 
 func worktreeRepoRelativePath(root, configured string) (string, error) {

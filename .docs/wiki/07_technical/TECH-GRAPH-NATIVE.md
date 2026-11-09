@@ -454,7 +454,7 @@ En un container, el módulo Go se observa una sola vez desde el checkout y usa e
 
 - **Marcador estable**: TECH-GRAPH-NATIVE.worktree-graph-query-overlay
 - **Estado del comportamiento**: implemented_slice
-- **Alcance de la entrega Go-only**: solo topologías íntegramente Go; C#, Kotlin y cualquier mezcla se rechazan con `GPH_QUERY_BACKEND_UNAVAILABLE`. El código multilenguaje experimental y sus humos históricos quedan diferidos a otra versión; no forman parte de la entrega candidata 0.16.7, todavía no publicada.
+- **Cobertura por lenguaje**: el overlay admite módulos Go completos aunque el repositorio declare otros lenguajes. Devuelve `partial=true`, motivo `graph_language_unavailable` y advertencias `graph_language_unavailable:<lenguaje>` para lo no cubierto. Si no hay ningún lenguaje admitido, devuelve un resultado vacío parcial, no un error opaco. Esto no habilita observadores experimentales ni acredita aristas entre lenguajes.
 - **applies_to**: GraphQuery sobre un linked worktree explícito con cambios físicos frente a su HEAD
 - **not_applies_to**: `nav.refs` y `nav.affected`; sus contratos permanecen separados
 - **snapshot**:
@@ -469,7 +469,7 @@ En un container, el módulo Go se observa una sola vez desde el checkout y usa e
 - **concurrency**: mutex global limitado a lookup, referencias, publicación LRU y coordinación; observar, validar freshness y publicar ocurren fuera del lock; singleflight cancelable por fingerprint, y una entrada en uso no se desaloja. DB desalojadas se cierran fuera del mutex
 - **freshness**: validar antes de publicar y después de consultar; cambios concurrentes no se reportan como current
 - **cursor**: ligado al fingerprint del overlay además de operación/selectores/generación; continuación en la misma branch, rechazo como `GPH_QUERY_CURSOR_STALE` al cruzar snapshot o branch
-- **degradation**: un observer gated, parcial o ausente devuelve error tipado (`GPH_QUERY_BACKEND_UNAVAILABLE` cuando no puede producirse un grafo admitible); nunca se publica un grafo parcial ni se atribuye soporte Kotlin estable
+- **degradation**: un observer Go seleccionado que falla o produce un batch incompleto conserva el error tipado; nunca se publica un batch parcial. Los lenguajes sin observador de overlay no descartan el grafo Go válido y se declaran como cobertura parcial en la respuesta. No se atribuye soporte Kotlin estable
 - **Kotlin**: conserva el gate experimental de [[RF-GPH-008]] y [[ADR-KOTLIN-GRAPH-ADMISSION-V1]]; no se relaja `ReadyForStaging`
 - **Comprobación prevista**:
   - `.docs/wiki/06_tests/TP-GPH.md::TC-GPH-081`
@@ -484,6 +484,16 @@ En un container, el módulo Go se observa una sola vez desde el checkout y usa e
   - `internal/service/graph_query.go`
   - `internal/store/db.go`
   - `internal/workspace/worktree_overlay.go`
+
+### Reutilización del catálogo entre checkouts
+
+El indexador conserva en `.mi-lsp/catalog-stamps-v1.json` una caché versionada de tamaño, mtime en nanosegundos y hash por archivo. Los símbolos y archivos siguen teniendo una sola autoridad: el catálogo SQLite publicado. La lectura del catálogo base fija una transacción de lectura, incluidos los frames WAL confirmados; no copia jobs, locks, identidad ni generaciones de grafo.
+
+Primero intenta el índice de la raíz física; sin catálogo propio utiliza un checkout registrado con la misma identidad de repositorio. Una carpeta copiada que conserve `.mi-lsp` conserva también la procedencia de su caché. Sin identidad verificable/copiada o sin base indexada se extrae normalmente. Las filas se reatribuyen al repo de la topología destino. Un stamp coincidente con el hash publicado evita leer y extraer el archivo; un stamp distinto obliga a leerlo y comparar hash, pero un contenido igual evita la extracción. Los archivos nuevos o modificados se extraen y los borrados desaparecen de la sustitución transaccional del catálogo (máscara efectiva del catálogo base).
+
+La caché no acredita frescura semántica: el pipeline de observación del grafo y el de documentos conservan sus validaciones. Tampoco elimina el recorrido de archivos ni garantiza evitar hashing frío si el checkout cambió todos los mtimes. La restauración simultánea de tamaño y mtime puede ocultar una edición al fast path. Un fallo de caché degrada a lectura/extracción y advierte `catalog_stamp_cache_unavailable` si no puede persistir los stamps; `catalog_reused_files:<n>` contabiliza las filas reutilizadas. No se afirma reutilización del grafo incremental.
+
+Implementación: `internal/indexer/catalog_reuse.go`, `internal/indexer/indexer.go`, `internal/store/catalog_snapshot.go`.
 
 ### Observacion Roslyn, sellado y normalización de unresolved
 
