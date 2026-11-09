@@ -98,7 +98,7 @@ func loadDocQueryContext(ctx context.Context, registration model.WorkspaceRegist
 		return query
 	}
 
-	query.ftsScores = ftsScoresCached(ctx, db, indexRegistration.Root, rankingTask, generation)
+	query.ftsScores = query.unmaskedFTSScores(ftsScoresCached(ctx, db, indexRegistration.Root, rankingTask, generation))
 	query.ranked = rankDocs(rankingTask, query.family, docs, query.ftsScores, query.profile, query.recentChanges)
 	for _, item := range query.ranked {
 		query.rankedByPath[item.record.Path] = item
@@ -256,6 +256,24 @@ func (q *docQueryContext) applyWorktreeOverlay(docs []model.DocRecord, overlay w
 		note += fmt.Sprintf(", %d skipped", skipped)
 	}
 	q.profileWarnings = append(q.profileWarnings, note)
+	return out
+}
+
+// unmaskedFTSScores drops the base FTS score of every path the worktree delta
+// masks. That score was earned by base content, so a physical doc that replaced
+// it is judged by its own text, like a new doc. It returns a new map because
+// the input is the shared FTS cache entry, which must not change.
+func (q *docQueryContext) unmaskedFTSScores(scores map[string]float64) map[string]float64 {
+	if q == nil || q.worktreeBase == "" || len(q.worktreeMasked) == 0 || len(scores) == 0 {
+		return scores
+	}
+	out := make(map[string]float64, len(scores))
+	for docPath, score := range scores {
+		if q.hidesPath(docPath) {
+			continue
+		}
+		out[docPath] = score
+	}
 	return out
 }
 
