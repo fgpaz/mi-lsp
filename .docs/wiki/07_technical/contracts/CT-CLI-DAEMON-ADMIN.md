@@ -97,7 +97,7 @@ Flags globales mínimos:
 - `--session-id`
 - `--backend`
 - `--verbose`
-- `--profile agent` (auto para harness cuando se detecta `client_name=harness-*`)
+- `--profile agent` (automático para cualquier `client_name` explícito por `MI_LSP_CLIENT_NAME` o `--client-name`, p. ej. `claude`, `pi-<carril>`, `codex`; solo el default `manual-cli` o `human` quedan en perfil humano. Antes era una lista fija y los agentes con nombre propio recibían la salida completa, p. ej. 4,6 MB en `nav wiki matrix`; corregido el 09/11/2026)
 - `--allow-cross-workspace`
 
 Flags especificos:

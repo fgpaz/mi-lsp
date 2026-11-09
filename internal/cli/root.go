@@ -1035,23 +1035,15 @@ func envBool(name string) bool {
 	}
 }
 
+// isHarnessClient reports whether output goes to an agent. Agents set
+// MI_LSP_CLIENT_NAME (or --client-name) to any name: claude, pi-<lane>, codex...
+// Only the unset default and an explicit human name keep the human profile.
 func isHarnessClient(clientName string) bool {
-	lower := strings.ToLower(strings.TrimSpace(clientName))
-	harnessNames := map[string]bool{
-		"claude-code": true,
-		"codex":       true,
-		"mi-mcp":      true,
-		"pi":          true,
-		"claude-ai":   true,
-		"opencode":    true,
-		"copilot":     true,
-		"jetbrains":   true,
-		"cursor":      true,
-		"neovim":      true,
-		"emacs":       true,
-		"vim":         true,
+	switch strings.ToLower(strings.TrimSpace(clientName)) {
+	case "", "manual-cli", "human":
+		return false
 	}
-	return harnessNames[lower]
+	return true
 }
 
 func resolveProfile(flag string, clientName string) model.OutputProfile {
