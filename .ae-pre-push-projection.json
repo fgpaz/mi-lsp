@@ -1,0 +1,78 @@
+{
+  "schema": "ae-pre-push-guard-projection/v1",
+  "source_repository": "fgpaz/claude-skills",
+  "source_commit": "b8f0c9d65a974fdfdc2ee834cf67f7aba15198d8",
+  "source_manifest_sha256": "1f9ffbad072359b4186b9d3d5c0d0afc02f4d5e5d29cf46c4217cff57fec3eb9",
+  "artifacts": {
+    "engine": {
+      "path": "infra/git/Invoke-PrePushGuard.ps1",
+      "sha256": "15adb4820112a44565eb21adc9b3460ea5baef0e31893b828c6959f91df665fb",
+      "accepted_sha256": [
+        "15adb4820112a44565eb21adc9b3460ea5baef0e31893b828c6959f91df665fb",
+        "1a04b91c3ebbc66db95968f138a35bca374c1e6bb6cebfb5e591eeb501e24c95"
+      ]
+    },
+    "guardv2": {
+      "path": "ae-pre-push/scripts/GuardV2.psm1",
+      "sha256": "307c3037525678c16239d9c0ed1c08cb86bf4bdd095e572727b28752a3d507e8",
+      "accepted_sha256": [
+        "307c3037525678c16239d9c0ed1c08cb86bf4bdd095e572727b28752a3d507e8",
+        "5ef0fb0aa811ee01684774294044317990bd716058b07a407b54575300670a9a"
+      ]
+    },
+    "delivery_contract_module": {
+      "path": "infra/git/KernelDeliveryContract.psm1",
+      "sha256": "f98a789929e6121f15abf6eabaf64c1c73d4fc7dec48f2225247d7fc94961ea9",
+      "accepted_sha256": [
+        "f98a789929e6121f15abf6eabaf64c1c73d4fc7dec48f2225247d7fc94961ea9",
+        "1914acd7f5f24d2e64b03aaf4c3b6e5de7bffb5d92fa9ff7996492ce61bb3734"
+      ]
+    }
+  },
+  "binding": {
+    "product": "mi-lsp",
+    "repository": "mi-lsp",
+    "mode": "pull_request",
+    "remote": "origin",
+    "base": "main",
+    "branch": "current",
+    "source_root": ".",
+    "source_product": "mi-lsp",
+    "same_product_only": true,
+    "ae_sha256": "afc852342188509d0318975cb2ea7f7144fe82ff6346abe2ba8df691b25de145",
+    "remote_identity": "fgpaz/fgpaz/mi-lsp"
+  },
+  "legacy_adoption": {
+    "schema": "ae-pre-push-legacy-adoption/v1",
+    "review_sha256": "7c863b166f3e5366e32c8e3999047d567b0c29c24ccd843fc09eedaeecb95e45",
+    "archive": "C:\\Users\\fgpaz\\.cache\\milsp-utilidad-real\\guard-adoption",
+    "source_commit": "b8f0c9d65a974fdfdc2ee834cf67f7aba15198d8",
+    "source_manifest_sha256": "1f9ffbad072359b4186b9d3d5c0d0afc02f4d5e5d29cf46c4217cff57fec3eb9",
+    "artifacts": {
+      "engine": {
+        "preimage_sha256": "d4f4257e194d15791244ffe4150a55801477e6561f2bd8115f791d5fcf4d81ac",
+        "snapshot_sha256": "d4f4257e194d15791244ffe4150a55801477e6561f2bd8115f791d5fcf4d81ac",
+        "source_sha256": "15adb4820112a44565eb21adc9b3460ea5baef0e31893b828c6959f91df665fb",
+        "preimage_ref": "engine.preimage",
+        "source_ref": "engine.source",
+        "diff_ref": "engine.diff"
+      },
+      "guardv2": {
+        "preimage_sha256": null,
+        "snapshot_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "source_sha256": "307c3037525678c16239d9c0ed1c08cb86bf4bdd095e572727b28752a3d507e8",
+        "preimage_ref": "guardv2.preimage",
+        "source_ref": "guardv2.source",
+        "diff_ref": "guardv2.diff"
+      },
+      "delivery_contract_module": {
+        "preimage_sha256": null,
+        "snapshot_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "source_sha256": "f98a789929e6121f15abf6eabaf64c1c73d4fc7dec48f2225247d7fc94961ea9",
+        "preimage_ref": "delivery_contract_module.preimage",
+        "source_ref": "delivery_contract_module.source",
+        "diff_ref": "delivery_contract_module.diff"
+      }
+    }
+  }
+}
