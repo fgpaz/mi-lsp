@@ -421,7 +421,7 @@ func resolveGraphExplicitSelection(root string, project model.ProjectFile, selec
 			return graphExplicitSelection{}, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_REPO_NOT_FOUND", Field: "entrypoint", Message: "explicit entrypoint is outside every selected repository"}
 		}
 		kind := model.EntrypointKindProject
-		if strings.EqualFold(filepath.Ext(filepath.FromSlash(workspacePath)), ".sln") {
+		if isSolutionExt(filepath.Ext(filepath.FromSlash(workspacePath))) {
 			kind = model.EntrypointKindSolution
 		}
 		entrypoint = model.WorkspaceEntrypoint{ID: workspacePath, RepoID: repo.ID, Path: workspacePath, Kind: kind}
@@ -432,7 +432,7 @@ func resolveGraphExplicitSelection(root string, project model.ProjectFile, selec
 		return graphExplicitSelection{}, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_REPO_NOT_FOUND", Field: "entrypoint", Message: "explicit entrypoint references an undeclared repository"}
 	}
 	repoRoot := filepath.Join(root, filepath.FromSlash(normalizeRepoRoot(repo.Root)))
-	if entrypoint.Kind == model.EntrypointKindSolution || strings.EqualFold(filepath.Ext(filepath.FromSlash(entrypoint.Path)), ".sln") {
+	if entrypoint.Kind == model.EntrypointKindSolution || isSolutionExt(filepath.Ext(filepath.FromSlash(entrypoint.Path))) {
 		return graphExplicitSelection{}, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_SOLUTION_UNAVAILABLE", Field: "entrypoint", Message: "explicit C# solution selection is unavailable; select a declared or safe repository-relative .csproj"}
 	}
 	if !graphExplicitPathBelongsToRepo(root, repoRoot, entrypoint.Path) {
@@ -522,7 +522,7 @@ func graphSafeExplicitPath(root, configured string) (string, bool) {
 	}
 	ext := strings.ToLower(filepath.Ext(clean))
 	base := filepath.Base(clean)
-	if ext != ".csproj" && ext != ".sln" && strings.ToLower(base) != "go.mod" && base != "build.gradle" && base != "build.gradle.kts" {
+	if ext != ".csproj" && ext != ".sln" && ext != ".slnx" && strings.ToLower(base) != "go.mod" && base != "build.gradle" && base != "build.gradle.kts" {
 		return "", false
 	}
 	return filepath.ToSlash(clean), true
@@ -825,4 +825,8 @@ func graphPartialOmission(target graphObservationTarget, batch model.GraphObserv
 		ReasonCode:       "backend_partial",
 		RecoveryHintCode: "repair_project_or_retry",
 	}
+}
+
+func isSolutionExt(ext string) bool {
+	return strings.EqualFold(ext, ".sln") || strings.EqualFold(ext, ".slnx")
 }

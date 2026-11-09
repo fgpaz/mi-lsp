@@ -1097,7 +1097,7 @@ public sealed class RoslynService
             // fall back to stale semantic state.
             workspace.CloseSolution();
             failureSubscription = workspace.RegisterWorkspaceFailedHandler(onWorkspaceFailed);
-            if (solutionPath.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
+            if (IsSolutionPath(solutionPath))
             {
                 await workspace.OpenSolutionAsync(solutionPath, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
@@ -1176,6 +1176,9 @@ public sealed class RoslynService
         return Path.IsPathRooted(path) ? Path.GetFullPath(path) : Path.GetFullPath(Path.Combine(workspaceRoot, path));
     }
 
+    private static bool IsSolutionPath(string path) =>
+        path.EndsWith(".sln", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase);
+
     private static string ResolveSolutionPath(WorkerRequest request)
     {
         var workspaceRoot = Path.GetFullPath(request.Workspace);
@@ -1203,7 +1206,13 @@ public sealed class RoslynService
         }
 
         var searchRoot = !string.IsNullOrWhiteSpace(request.RepoRoot) ? Path.GetFullPath(request.RepoRoot) : workspaceRoot;
-        var solutions = Directory.EnumerateFiles(searchRoot, "*.sln", SearchOption.AllDirectories).ToList();
+        var solutions = Directory.EnumerateFiles(searchRoot, "*.sln", SearchOption.AllDirectories)
+            .Concat(Directory.EnumerateFiles(searchRoot, "*.slnx", SearchOption.AllDirectories))
+            .Where(IsSolutionPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path.Count(c => c == Path.DirectorySeparatorChar))
+            .ThenBy(path => path, StringComparer.Ordinal)
+            .ToList();
         if (solutions.Count > 0)
         {
             return solutions[0];

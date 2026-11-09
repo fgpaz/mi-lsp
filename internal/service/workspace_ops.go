@@ -935,7 +935,7 @@ func entrypointLanguageMismatchWarning(ctx context.Context, db *sql.DB, project 
 		return ""
 	}
 	ext := strings.ToLower(filepath.Ext(ep))
-	if ext != ".sln" && ext != ".csproj" {
+	if ext != ".sln" && ext != ".slnx" && ext != ".csproj" {
 		return ""
 	}
 	counts, err := store.FilesCountByLanguage(ctx, db)

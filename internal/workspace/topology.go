@@ -485,7 +485,7 @@ func detectRepo(workspaceRoot string, repoRoot string) (repoDetection, error) {
 		}
 		relPath = filepath.ToSlash(relPath)
 		switch strings.ToLower(filepath.Ext(entry.Name())) {
-		case ".sln":
+		case ".sln", ".slnx":
 			solutions = append(solutions, relPath)
 			languages["csharp"] = struct{}{}
 		case ".csproj":
