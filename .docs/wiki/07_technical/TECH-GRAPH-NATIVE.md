@@ -24,6 +24,10 @@ links:
     role: implementation
   - path: internal/docgraph/docgraph.go
     role: implementation
+  - path: internal/indexer/catalog_reuse.go
+    role: implementation
+  - path: internal/indexer/incremental.go
+    role: implementation
   - path: internal/indexer/extractor_go.go
     role: implementation
   - path: internal/indexer/extractor_kotlin.go
@@ -59,6 +63,8 @@ links:
   - path: internal/service/wiki_code_context.go
     role: implementation
   - path: internal/service/trace.go
+    role: implementation
+  - path: internal/store/catalog_snapshot.go
     role: implementation
   - path: internal/store/db.go
     role: implementation
@@ -456,14 +462,14 @@ En un container, el módulo Go se observa una sola vez desde el checkout y usa e
 - **Estado del comportamiento**: implemented_slice
 - **Cobertura por lenguaje**: el overlay admite módulos Go completos aunque el repositorio declare otros lenguajes. Devuelve `partial=true`, motivo `graph_language_unavailable` y advertencias `graph_language_unavailable:<lenguaje>` para lo no cubierto. Si no hay ningún lenguaje admitido, devuelve un resultado vacío parcial, no un error opaco. Esto no habilita observadores experimentales ni acredita aristas entre lenguajes.
 - **applies_to**: GraphQuery sobre un linked worktree explícito con cambios físicos frente a su HEAD
-- **not_applies_to**: `nav.refs` y `nav.affected`; sus contratos permanecen separados
+- **not_applies_to**: referencias semánticas `nav.refs` sin `--callers` y `nav.affected`; sus contratos permanecen separados. `nav refs <selector> --callers` sí entra por GraphQuery
 - **snapshot**:
   - **workspace**: raíz física seleccionada, sin fallback al worktree principal
   - **storage**: SQLite en memoria, solo lectura para el DB base
   - **registration**: no auto-registro ni escritura de configuración/índice
   - **publication**: batches completos bajo una identidad común y una generación atómica
   - **entrypoints**: el default de otro lenguaje no oculta los módulos Go declarados ni el `go.mod` raíz; un default Go explícito prevalece
-  - **admission**: `ReadyForStaging` estricto; observación parcial o backend no disponible rechaza la consulta completa
+  - **admission**: `ReadyForStaging` estricto para cada módulo Go seleccionado; no se relaja la admisión de batches. La cobertura de otros lenguajes se declara aparte en la respuesta
 - **fingerprint**: común de Git, HEAD base, raíz física, delta de paths/contenido y configuración/runtime seleccionados; raíz incluida para separar branches con deltas equivalentes
 - **cache**: LRU en proceso, máximo cuatro snapshots, claveado por fingerprint, identidad, selecciones, caller semántico y fingerprint de runtime de observadores (entorno/toolchains/artefactos); el fingerprint de runtime es read-only y no expone configuración cruda. Solo reutiliza generaciones completas e idénticas
 - **concurrency**: mutex global limitado a lookup, referencias, publicación LRU y coordinación; observar, validar freshness y publicar ocurren fuera del lock; singleflight cancelable por fingerprint, y una entrada en uso no se desaloja. DB desalojadas se cierran fuera del mutex
@@ -495,7 +501,9 @@ La detección incremental normal contrasta también el disco con el catálogo pu
 
 La caché no acredita frescura semántica: el pipeline de observación del grafo y el de documentos conservan sus validaciones. Tampoco elimina el recorrido de archivos ni garantiza evitar hashing frío si el checkout cambió todos los mtimes. La restauración simultánea de tamaño y mtime puede ocultar una edición al fast path. Un fallo de caché degrada a lectura/extracción y advierte `catalog_stamp_cache_unavailable` si no puede persistir los stamps; `catalog_reused_files:<n>` contabiliza las filas reutilizadas. No se afirma reutilización del grafo incremental.
 
-Implementación: `internal/indexer/catalog_reuse.go`, `internal/indexer/indexer.go`, `internal/store/catalog_snapshot.go`.
+Implementación: `internal/indexer/catalog_reuse.go`, `internal/indexer/indexer.go`, `internal/indexer/incremental.go`, `internal/store/catalog_snapshot.go`.
+
+**Límite medido, 09/11/2026, tesla-desktop**: sobre mi-lsp de 586 archivos con dos Go modificados, el catálogo pasó de 1,573 s a 1,314 s y reutilizó 584 archivos; el índice completo con observación Go pasó de 30,776 s a 30,370 s. Son corridas únicas, no un benchmark estadístico. La observación Go completa sigue dominando: esta entrega no acredita que abrir el worktree deje de reconstruir todo el grafo. La copia sin Git con edición/alta/baja procesó tres paths en 55,8 ms; la siguiente pasada procesó cero en 23,8 ms. Evidencia detallada y comandos en el resultado durable del frente `milsp-indice-delta-20261109`, fuera de la wiki normativa.
 
 ### Observacion Roslyn, sellado y normalización de unresolved
 
