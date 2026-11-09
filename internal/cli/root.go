@@ -486,18 +486,24 @@ func buildCLIErrorEnvelope(request model.CommandRequest, route string, err error
 	return env
 }
 
+// workspaceRecoveryCommand names the path a path selector points at. A bare
+// alias never borrows the caller cwd: that checkout is usually a different one,
+// and registering it under the alias sends the agent the wrong way.
 func workspaceRecoveryCommand(opts model.QueryOptions) string {
 	cwd := strings.TrimSpace(opts.CallerCWD)
+	selector := strings.TrimSpace(opts.Workspace)
+	if !isWorkspacePathSelector(selector) {
+		return "pass --workspace with the absolute path of the checkout, or list registered aliases with `mi-lsp workspace list --group-by-root`"
+	}
 	if cwd == "" {
 		return "mi-lsp workspace scan"
 	}
-	selector := strings.TrimSpace(opts.Workspace)
 	root := cwd
 	alias := selector
 	if filepath.IsAbs(selector) {
 		root = selector
 		alias = filepath.Base(filepath.Clean(selector))
-	} else if selector != "" && (strings.ContainsAny(selector, `/\\`) || selector == "." || selector == "..") {
+	} else {
 		root = filepath.Clean(filepath.Join(cwd, selector))
 		alias = filepath.Base(root)
 	}
@@ -508,6 +514,10 @@ func workspaceRecoveryCommand(opts model.QueryOptions) string {
 		return "mi-lsp workspace scan"
 	}
 	return "mi-lsp workspace add " + shellCommandArgument(root) + " --name " + shellCommandArgument(alias) + " --no-index"
+}
+
+func isWorkspacePathSelector(selector string) bool {
+	return filepath.IsAbs(selector) || strings.ContainsAny(selector, `/\`) || selector == "." || selector == ".."
 }
 
 func shellCommandArgument(value string) string {

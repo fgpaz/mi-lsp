@@ -17,6 +17,7 @@ import (
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 // Auto-index self-heal for navigation reads.
@@ -260,6 +261,11 @@ func autoIndexRateLimited(root string, now time.Time) bool {
 // because the self-heal could not start.
 func (a *App) triggerAutoIndex(ctx context.Context, registration model.WorkspaceRegistration) string {
 	if !autoIndexEnabled() {
+		return autoIndexOutcomeSkipped
+	}
+	// Linked worktrees never get an index of their own: reads answer from the
+	// registered base index and the physical overlay instead.
+	if linked, err := workspace.IsLinkedWorktree(registration.Root); err != nil || linked {
 		return autoIndexOutcomeSkipped
 	}
 	now := time.Now()

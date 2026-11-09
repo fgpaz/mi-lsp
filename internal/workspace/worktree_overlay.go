@@ -58,6 +58,20 @@ func sortedUnionPaths(lists ...[]string) []string {
 	return out
 }
 
+// IsLinkedWorktree reports whether root sits in a linked worktree. Unlike
+// TryResolveWorktreeOverlay it does not compute the physical delta.
+func IsLinkedWorktree(root string) (bool, error) {
+	physicalRoot, ok := gitTopLevel(root)
+	if !ok {
+		return false, nil
+	}
+	linked, _, valid := linkedWorktree(physicalRoot)
+	if !valid {
+		return false, fmt.Errorf("cannot resolve git common-dir: %s", physicalRoot)
+	}
+	return linked, nil
+}
+
 // TryResolveWorktreeOverlay distinguishes an ordinary repository from a linked worktree.
 func TryResolveWorktreeOverlay(root string) (WorktreeOverlay, bool, error) {
 	physicalRoot, ok := gitTopLevel(root)

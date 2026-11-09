@@ -14,6 +14,7 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/wikisource"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 func (a *App) wikiGraph(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
@@ -28,7 +29,26 @@ func (a *App) wikiGraph(ctx context.Context, request model.CommandRequest) (mode
 	if err != nil {
 		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: "graph backend is unavailable"}
 	}
-	db, err := openWorkspaceDB(registration, request.Operation, true)
+	// Same rule as graphQuery: a linked worktree reads the shared base graph
+	// when it is clean, and reports the graph unavailable when it has changes.
+	graphRegistration := registration
+	overlay, linkedOverlay, overlayErr := workspace.TryResolveWorktreeOverlay(registration.Root)
+	if overlayErr != nil {
+		return model.Envelope{}, store.SanitizeGraphQueryError(overlayErr)
+	}
+	if linkedOverlay {
+		baseRegistration, found, baseErr := workspace.RegisteredWorktreeBase(overlay)
+		if baseErr != nil {
+			return model.Envelope{}, store.SanitizeGraphQueryError(baseErr)
+		}
+		if found {
+			graphRegistration = baseRegistration
+		}
+		if len(overlay.Changed) > 0 || len(overlay.Deleted) > 0 {
+			return worktreeGraphUnavailable(registration, request.Operation), nil
+		}
+	}
+	db, err := openWorkspaceDB(graphRegistration, request.Operation, true)
 	if err != nil {
 		return model.Envelope{}, store.SanitizeGraphQueryError(err)
 	}
