@@ -270,6 +270,9 @@ func buildCatalog(ctx context.Context, root string, progress ProgressFunc) (mode
 		return model.ProjectFile{}, nil, nil, nil, nil, err
 	}
 
+	prior, identity := loadCatalogReuse(ctx, root, projectFile)
+	stamps := catalogStamps{Version: catalogStampVersion, Identity: identity, Files: map[string]catalogStamp{}}
+	reused := 0
 	files := make([]model.FileRecord, 0, len(candidates))
 	symbols := make([]model.SymbolRecord, 0, len(candidates)*2)
 	warnings := make([]string, 0)
@@ -281,7 +284,7 @@ func buildCatalog(ctx context.Context, root string, progress ProgressFunc) (mode
 		if err := reportProgress(ctx, progress, Progress{Stage: "catalog.read", Path: relativePath, Files: len(files), Symbols: len(symbols), FilesTotal: len(candidates)}); err != nil {
 			return model.ProjectFile{}, nil, nil, nil, nil, err
 		}
-		content, err := os.ReadFile(candidate)
+		info, err := os.Stat(candidate)
 		if err != nil {
 			return model.ProjectFile{}, nil, nil, nil, nil, err
 		}
@@ -290,12 +293,39 @@ func buildCatalog(ctx context.Context, root string, progress ProgressFunc) (mode
 			warnings = appendIfMissing(warnings, fmt.Sprintf("catalog file '%s' did not match any configured repo; treating it as workspace root content", candidate))
 			repo, _ = workspace.FindRepo(projectFile, projectFile.Project.DefaultRepo)
 		}
-		extractedSymbols, fileRecord := ExtractCatalog(root, repo, candidate, content)
+		fileRecord, extractedSymbols, hit := prior.reuse(relativePath, info, nil, repo)
+		if !hit {
+			content, err := os.ReadFile(candidate)
+			if err != nil {
+				return model.ProjectFile{}, nil, nil, nil, nil, err
+			}
+			after, err := os.Stat(candidate)
+			if err != nil {
+				return model.ProjectFile{}, nil, nil, nil, nil, err
+			}
+			if after.Size() != info.Size() || !after.ModTime().Equal(info.ModTime()) {
+				return model.ProjectFile{}, nil, nil, nil, nil, fmt.Errorf("catalog source changed during extraction: %s", relativePath)
+			}
+			fileRecord, extractedSymbols, hit = prior.reuse(relativePath, info, content, repo)
+			if !hit {
+				extractedSymbols, fileRecord = ExtractCatalog(root, repo, candidate, content)
+			}
+		}
+		if hit {
+			reused++
+		}
+		stamps.Files[relativePath] = catalogStamp{Size: info.Size(), Mtime: info.ModTime().UnixNano(), Hash: fileRecord.ContentHash}
 		files = append(files, fileRecord)
 		symbols = append(symbols, extractedSymbols...)
 	}
 	if err := reportProgress(ctx, progress, Progress{Stage: "catalog.read", Files: len(files), Symbols: len(symbols), FilesTotal: len(candidates), Force: true}); err != nil {
 		return model.ProjectFile{}, nil, nil, nil, nil, err
+	}
+	if err := writeCatalogStamps(root, stamps); err != nil {
+		warnings = append(warnings, "catalog_stamp_cache_unavailable")
+	}
+	if reused > 0 {
+		warnings = append(warnings, fmt.Sprintf("catalog_reused_files:%d", reused))
 	}
 	return projectFile, files, symbols, warnings, matcher, nil
 }

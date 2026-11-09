@@ -314,6 +314,25 @@ func incrementalIndexWithGraphProgressAndChanges(ctx context.Context, workspaceR
 		if err := ctx.Err(); err != nil {
 			return Result{}, err
 		}
+		diskChanged, diskDeleted, err := catalogDiskChanges(ctx, workspaceRoot)
+		if err != nil {
+			return Result{}, fmt.Errorf("detect catalog delta: %w", err)
+		}
+		// Preserve Git's config/doc invalidations. Source changes instead come
+		// from the published catalog, including clean commits and non-Git copies.
+		var nonSourceChanged, nonSourceDeleted []string
+		for _, path := range changedFiles {
+			if languageFromExt(strings.ToLower(filepath.Ext(path))) == "" {
+				nonSourceChanged = append(nonSourceChanged, path)
+			}
+		}
+		for _, path := range deletedFiles {
+			if languageFromExt(strings.ToLower(filepath.Ext(path))) == "" {
+				nonSourceDeleted = append(nonSourceDeleted, path)
+			}
+		}
+		changedFiles = append(nonSourceChanged, diskChanged...)
+		deletedFiles = append(nonSourceDeleted, diskDeleted...)
 	}
 	hasChanges := len(changedFiles) != 0 || len(deletedFiles) != 0
 	if requiresFullReindex(changedFiles) || requiresFullReindex(deletedFiles) {
@@ -473,14 +492,11 @@ func incrementalIndexWithGraphProgressAndChanges(ctx context.Context, workspaceR
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			symbols, language, extractErr := ExtractFileSymbols(workspaceRoot, relPath, "", "")
-			if extractErr != nil {
-				return fmt.Errorf("extract symbols for %s: %w", relPath, extractErr)
-			}
 			repoID, repoName := ResolveRepoFromProjectFile(workspaceRoot, projectFile, relPath)
+			symbols, fileRecord := ExtractCatalog(workspaceRoot, model.WorkspaceRepo{ID: repoID, Name: repoName}, absPath, content)
 			fileChanges = append(fileChanges, store.IncrementalFileChange{
-				FilePath: relPath, RepoID: repoID, RepoName: repoName, Language: language,
-				ContentHash: fmt.Sprintf("%x", md5.Sum(content)), Symbols: symbols,
+				FilePath: relPath, RepoID: repoID, RepoName: repoName, Language: fileRecord.Language,
+				ContentHash: fileRecord.ContentHash, Symbols: symbols,
 			})
 			allSymbols = append(allSymbols, symbols...)
 			processedFiles++

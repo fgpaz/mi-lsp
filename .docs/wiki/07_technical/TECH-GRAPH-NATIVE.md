@@ -24,6 +24,10 @@ links:
     role: implementation
   - path: internal/docgraph/docgraph.go
     role: implementation
+  - path: internal/indexer/catalog_reuse.go
+    role: implementation
+  - path: internal/indexer/incremental.go
+    role: implementation
   - path: internal/indexer/extractor_go.go
     role: implementation
   - path: internal/indexer/extractor_kotlin.go
@@ -59,6 +63,8 @@ links:
   - path: internal/service/wiki_code_context.go
     role: implementation
   - path: internal/service/trace.go
+    role: implementation
+  - path: internal/store/catalog_snapshot.go
     role: implementation
   - path: internal/store/db.go
     role: implementation
@@ -454,22 +460,22 @@ En un container, el módulo Go se observa una sola vez desde el checkout y usa e
 
 - **Marcador estable**: TECH-GRAPH-NATIVE.worktree-graph-query-overlay
 - **Estado del comportamiento**: implemented_slice
-- **Alcance de la entrega Go-only**: solo topologías íntegramente Go; C#, Kotlin y cualquier mezcla se rechazan con `GPH_QUERY_BACKEND_UNAVAILABLE`. El código multilenguaje experimental y sus humos históricos quedan diferidos a otra versión; no forman parte de la entrega candidata 0.16.7, todavía no publicada.
+- **Cobertura por lenguaje**: el overlay admite módulos Go completos aunque el repositorio declare otros lenguajes. Devuelve `partial=true`, motivo `graph_language_unavailable` y advertencias `graph_language_unavailable:<lenguaje>` para lo no cubierto. Si no hay ningún lenguaje admitido, devuelve un resultado vacío parcial, no un error opaco. Esto no habilita observadores experimentales ni acredita aristas entre lenguajes.
 - **applies_to**: GraphQuery sobre un linked worktree explícito con cambios físicos frente a su HEAD
-- **not_applies_to**: `nav.refs` y `nav.affected`; sus contratos permanecen separados
+- **not_applies_to**: referencias semánticas `nav.refs` sin `--callers` y `nav.affected`; sus contratos permanecen separados. `nav refs <selector> --callers` sí entra por GraphQuery
 - **snapshot**:
   - **workspace**: raíz física seleccionada, sin fallback al worktree principal
   - **storage**: SQLite en memoria, solo lectura para el DB base
   - **registration**: no auto-registro ni escritura de configuración/índice
   - **publication**: batches completos bajo una identidad común y una generación atómica
   - **entrypoints**: el default de otro lenguaje no oculta los módulos Go declarados ni el `go.mod` raíz; un default Go explícito prevalece
-  - **admission**: `ReadyForStaging` estricto; observación parcial o backend no disponible rechaza la consulta completa
+  - **admission**: `ReadyForStaging` estricto para cada módulo Go seleccionado; no se relaja la admisión de batches. La cobertura de otros lenguajes se declara aparte en la respuesta
 - **fingerprint**: común de Git, HEAD base, raíz física, delta de paths/contenido y configuración/runtime seleccionados; raíz incluida para separar branches con deltas equivalentes
 - **cache**: LRU en proceso, máximo cuatro snapshots, claveado por fingerprint, identidad, selecciones, caller semántico y fingerprint de runtime de observadores (entorno/toolchains/artefactos); el fingerprint de runtime es read-only y no expone configuración cruda. Solo reutiliza generaciones completas e idénticas
 - **concurrency**: mutex global limitado a lookup, referencias, publicación LRU y coordinación; observar, validar freshness y publicar ocurren fuera del lock; singleflight cancelable por fingerprint, y una entrada en uso no se desaloja. DB desalojadas se cierran fuera del mutex
 - **freshness**: validar antes de publicar y después de consultar; cambios concurrentes no se reportan como current
 - **cursor**: ligado al fingerprint del overlay además de operación/selectores/generación; continuación en la misma branch, rechazo como `GPH_QUERY_CURSOR_STALE` al cruzar snapshot o branch
-- **degradation**: un observer gated, parcial o ausente devuelve error tipado (`GPH_QUERY_BACKEND_UNAVAILABLE` cuando no puede producirse un grafo admitible); nunca se publica un grafo parcial ni se atribuye soporte Kotlin estable
+- **degradation**: si el presupuesto vence durante la construcción del snapshot, devuelve resultado vacío parcial con `graph_observer_timeout`, advertencia por backend y recuperación mediante `MI_LSP_INTERACTIVE_TIMEOUT`; no acredita ausencia de callers. Un observer Go seleccionado que falla por otra causa o produce un batch incompleto conserva el error tipado; nunca se publica un batch parcial. Los lenguajes sin observador de overlay no descartan el grafo Go válido y se declaran como cobertura parcial en la respuesta. No se atribuye soporte Kotlin estable
 - **Kotlin**: conserva el gate experimental de [[RF-GPH-008]] y [[ADR-KOTLIN-GRAPH-ADMISSION-V1]]; no se relaja `ReadyForStaging`
 - **Comprobación prevista**:
   - `.docs/wiki/06_tests/TP-GPH.md::TC-GPH-081`
@@ -484,6 +490,20 @@ En un container, el módulo Go se observa una sola vez desde el checkout y usa e
   - `internal/service/graph_query.go`
   - `internal/store/db.go`
   - `internal/workspace/worktree_overlay.go`
+
+### Reutilización del catálogo entre checkouts
+
+El indexador conserva en `.mi-lsp/catalog-stamps-v1.json` una caché versionada de tamaño, mtime en nanosegundos y hash por archivo. Los símbolos y archivos siguen teniendo una sola autoridad: el catálogo SQLite publicado. La lectura del catálogo base fija una transacción de lectura, incluidos los frames WAL confirmados; no copia jobs, locks, identidad ni generaciones de grafo.
+
+Primero intenta el índice de la raíz física; sin catálogo propio utiliza un checkout registrado con la misma identidad de repositorio. Una carpeta copiada que conserve `.mi-lsp` conserva también la procedencia de su caché. Sin identidad verificable/copiada o sin base indexada se extrae normalmente. Las filas se reatribuyen al repo de la topología destino. Un stamp coincidente con el hash publicado evita leer y extraer el archivo; un stamp distinto obliga a leerlo y comparar hash, pero un contenido igual evita la extracción. Los archivos nuevos o modificados se extraen y los borrados desaparecen de la sustitución transaccional del catálogo (máscara efectiva del catálogo base).
+
+La detección incremental normal contrasta también el disco con el catálogo publicado: no depende solamente de `git status`, por lo que detecta archivos editados en copias sin Git y commits posteriores al índice. Mantiene las invalidaciones Git de configuración/documentos y la ruta acotada del watcher. El hash publicado por la extracción incremental usa el mismo SHA-1 de `ExtractCatalog`; no mezcla el MD5 histórico de esa ruta con los stamps nuevos. El contenido leído para ese delta se extrae sin una segunda lectura.
+
+La caché no acredita frescura semántica: el pipeline de observación del grafo y el de documentos conservan sus validaciones. Tampoco elimina el recorrido de archivos ni garantiza evitar hashing frío si el checkout cambió todos los mtimes. La restauración simultánea de tamaño y mtime puede ocultar una edición al fast path. Un fallo de caché degrada a lectura/extracción y advierte `catalog_stamp_cache_unavailable` si no puede persistir los stamps; `catalog_reused_files:<n>` contabiliza las filas reutilizadas. No se afirma reutilización del grafo incremental.
+
+Implementación: `internal/indexer/catalog_reuse.go`, `internal/indexer/indexer.go`, `internal/indexer/incremental.go`, `internal/store/catalog_snapshot.go`.
+
+**Límite medido, 09/11/2026, tesla-desktop**: sobre mi-lsp de 586 archivos con dos Go modificados, el catálogo pasó de 1,573 s a 1,314 s y reutilizó 584 archivos; el índice completo con observación Go pasó de 30,776 s a 30,370 s. Son corridas únicas, no un benchmark estadístico. La observación Go completa sigue dominando: esta entrega no acredita que abrir el worktree deje de reconstruir todo el grafo. La copia sin Git con edición/alta/baja procesó tres paths en 55,8 ms; la siguiente pasada procesó cero en 23,8 ms. Evidencia detallada y comandos en el resultado durable del frente `milsp-indice-delta-20261109`, fuera de la wiki normativa.
 
 ### Observacion Roslyn, sellado y normalización de unresolved
 
