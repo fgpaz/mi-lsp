@@ -7,6 +7,7 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/reentry"
 	"github.com/fgpaz/mi-lsp/internal/store"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 type loadedReentryMemory struct {
@@ -16,6 +17,12 @@ type loadedReentryMemory struct {
 }
 
 func loadReentryMemory(ctx context.Context, root string) (*loadedReentryMemory, error) {
+	// A linked worktree has no reentry memory. The memory belongs to the branch of
+	// its main checkout, and opening the worktree would create an index inside it.
+	linked, err := workspace.IsLinkedWorktree(root)
+	if err != nil || linked {
+		return nil, nil
+	}
 	db, err := store.Open(root)
 	if err != nil {
 		return nil, nil

@@ -120,7 +120,9 @@ func (a *App) route(ctx context.Context, request model.CommandRequest) (model.En
 	defer func() { _ = query.Close() }()
 	result := query.canonicalRoute(request.Context, includeDiscovery)
 	refreshWarnings := []string{}
-	if paths := routeDocCandidatePaths(query, result, 5); len(paths) > 0 {
+	// A worktree answer comes from the base index; refreshing would write the
+	// worktree's own index, so the refresh is skipped there.
+	if paths := routeDocCandidatePaths(query, result, 5); len(paths) > 0 && query.worktreeBase == "" {
 		refreshed, refreshErr := RefreshQueryPaths(ctx, registration.Root, paths, 500*time.Millisecond)
 		if refreshErr != nil {
 			refreshWarnings = append(refreshWarnings, "route document refresh unavailable; using the currently published snapshot: "+sanitizeIntentError(refreshErr))

@@ -469,7 +469,7 @@ Los casos `TC-WKS-048..060` se definen únicamente en estos bloques TOON; las fi
   - **test**: TestExecuteLinkedWorktreeWithoutRegisteredMainDoesNotIndex
 - **expected**:
   - **registered_main**: resolve_without_worktree_registration
-  - **unregistered_main**: explicit_incomplete_reason_code_invalid_workspace_without_index
+  - **unregistered_main**: partial_worktree_base_unregistered_without_index
   - **registry_consistent**: true
 
 #### TC-WKS-065

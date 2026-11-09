@@ -52,6 +52,11 @@ func governanceHint(alias string, status model.GovernanceStatus) string {
 func governanceInspectTarget(registration model.WorkspaceRegistration, project model.ProjectFile) (string, bool, []string) {
 	inspectRoot := registration.Root
 	autoSync := true
+	// A linked worktree never writes its read-model projection. The projection is
+	// rendered and compared in memory, and drift is reported rather than repaired.
+	if linked, err := workspace.IsLinkedWorktree(registration.Root); err != nil || linked {
+		return inspectRoot, false, nil
+	}
 	if docgraph.ResolveSetupWikiSource(registration.Root).Configured {
 		return inspectRoot, autoSync, nil
 	}

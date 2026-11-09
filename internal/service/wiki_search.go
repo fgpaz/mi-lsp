@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,6 +54,10 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 	query := loadDocQueryContext(ctx, registration, queryText)
 	defer query.Close()
 	if query.dbErr != nil {
+		var unregistered *worktreeBaseUnregisteredError
+		if errors.As(query.dbErr, &unregistered) {
+			return applyCoachPolicy(worktreeBaseUnregisteredEnvelope(registration, "wiki.search", queryText, unregistered), request.Context), nil
+		}
 		return model.Envelope{}, query.dbErr
 	}
 
@@ -60,6 +65,10 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 	warnings = append(warnings, fmt.Sprintf("read_model=%s", query.profileSource))
 	if len(query.docs) == 0 {
 		hint := fmt.Sprintf("documentation index is empty; rerun 'mi-lsp index --workspace %s --docs-only' before wiki search", registration.Name)
+		if query.worktreeBase != "" {
+			// The worktree answers from its base index, so the rebuild belongs there.
+			hint = fmt.Sprintf("documentation index of registered base %s is empty; rerun 'mi-lsp index --workspace %s --docs-only' there before wiki search", query.worktreeBase, query.worktreeBase)
+		}
 		warnings = appendStringIfMissing(warnings, hint)
 		env := model.Envelope{
 			Ok:        true,
@@ -68,6 +77,11 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 			Items:     []map[string]any{},
 			Warnings:  warnings,
 			Hint:      hint,
+		}
+		if query.worktreeBase != "" {
+			env.Partial = true
+			env.Reason = worktreeBaseDocsReason
+			env.Continuation = worktreeNavSearchContinuation(registration.Root, queryText, worktreeBaseDocsReason)
 		}
 		return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
 	}
@@ -85,6 +99,7 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	exactDocs = query.visibleDocs(exactDocs)
 	identitySnapshotCurrent, err := store.DocIdentitySnapshotCurrent(ctx, query.db)
 	if err != nil {
 		return model.Envelope{}, err
@@ -97,6 +112,7 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 	if mentionErr != nil {
 		return model.Envelope{}, mentionErr
 	}
+	mentionCandidates = query.visibleScoredDocs(mentionCandidates)
 	for _, warning := range mentionWarnings {
 		warnings = appendStringIfMissing(warnings, warning)
 	}
@@ -126,6 +142,9 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 	totalMatches := len(eligible)
 	nextHint := wikiExpansionHint("nav.wiki.search", registration.Name, queryText, len(candidates), totalMatches)
 	sourceIdentity, hasSourceIdentity, _ := sourceIdentityForQuery(ctx, query.db, queryText)
+	if hasSourceIdentity && query.hidesPath(sourceIdentity.path) {
+		hasSourceIdentity = false
+	}
 	for i := range candidates {
 		status := wikiLookupStatusForDoc(registration.Name, queryText, model.DocRecord{
 			Path:   candidates[i].Path,
@@ -160,6 +179,10 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 	}
 	if nextHint != "" {
 		env.NextHint = &nextHint
+	}
+	if query.worktreeBase != "" {
+		env.Partial = true
+		env.Reason = worktreeBaseDocsReason
 	}
 	return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
 }

@@ -2,13 +2,37 @@ package service
 
 import (
 	"database/sql"
+	"errors"
+	"os"
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 const workspaceDBOpenErrorCode = "workspace_db_open_failed"
+
+// errWorktreeIndexAbsent is returned when a read-only open would have to create
+// an index inside a linked worktree. Worktrees never get an index of their own.
+var errWorktreeIndexAbsent = errors.New("worktree_index_absent")
+
+// refuseWorktreeIndexCreation stops a read-only open from creating
+// .mi-lsp/index.db inside a linked worktree that has none. An existing index is
+// left alone, and ordinary roots are unaffected.
+func refuseWorktreeIndexCreation(root string) error {
+	if _, err := os.Stat(store.WorkspaceDBPath(root)); err == nil {
+		return nil
+	}
+	linked, err := workspace.IsLinkedWorktree(root)
+	if err != nil {
+		return err
+	}
+	if linked {
+		return errWorktreeIndexAbsent
+	}
+	return nil
+}
 
 type workspaceDBOpenError struct {
 	cause error
@@ -35,6 +59,9 @@ func openWorkspaceDB(registration model.WorkspaceRegistration, operation string,
 	var db *sql.DB
 	var err error
 	if readOnly {
+		if err := refuseWorktreeIndexCreation(registration.Root); err != nil {
+			return nil, err
+		}
 		db, err = store.OpenReadOnly(registration.Root)
 	} else {
 		db, err = store.Open(registration.Root)

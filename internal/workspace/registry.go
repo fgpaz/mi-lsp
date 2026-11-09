@@ -115,7 +115,8 @@ func ContinuationForUnresolvedSelector(operation string, err error) (*model.Cont
 		return nil, "", false
 	}
 	alias := strings.TrimSpace(resolution.Fallback.Registration.Name)
-	if alias == "" {
+	if alias == "" || alias == strings.TrimSpace(resolution.Selector) {
+		// Never point the caller back at the command that just failed.
 		return nil, "", false
 	}
 	detail := fmt.Sprintf("caller cwd resolves to workspace %s; rerun with --workspace %s", alias, alias)
@@ -1201,17 +1202,15 @@ func resolveWorkspaceFromGitTopLevel(callerCWD string, registry model.RegistryFi
 	if !ok {
 		return WorkspaceResolution{}, false
 	}
-	if linked, commonDir, valid := linkedWorktree(gitRoot); valid && linked {
+	if linked, _, valid := linkedWorktree(gitRoot); valid && linked {
 		if registration, _, found := registeredWorkspaceForRoot(gitRoot, registry); found {
 			return WorkspaceResolution{Registration: registration, Source: ResolutionSourceGitTopLevel}, true
 		}
 		// Preserve the physical worktree as the query root. Resolving to the
 		// common-dir's main checkout would leak content from a different branch.
-		resolution := linkedWorktreeInspectionResolution(gitRoot)
-		if registration, found := registeredMainWorktree(commonDir, registry); found {
-			resolution.Warnings = append(resolution.Warnings, fmt.Sprintf("linked worktree shares git common-dir with registered base %q; physical text overlay is used; semantic base-index plus delta overlay remains explicit_incomplete", registration.Name))
-		}
-		return resolution, true
+		// The shared-base note is not a resolution warning: every nav answer
+		// would carry it, and only semantic answers have a real partial state.
+		return linkedWorktreeInspectionResolution(gitRoot), true
 	}
 	canonicalRoot, ok := normalizeComparablePath(gitRoot)
 	if !ok {

@@ -481,23 +481,37 @@ func buildCLIErrorEnvelope(request model.CommandRequest, route string, err error
 	if env.Error != nil && (env.Error.Kind == "workspace" || strings.Contains(strings.ToLower(env.Error.Code), "workspace") || isWorkspaceErrorMessage(env.Error.Message)) {
 		if command := workspaceRecoveryCommand(request.Context); command != "" {
 			env.NextHint = &command
+			// The recovery command is the next step, so it is also the continuation.
+			// It never repeats the selector that just failed.
+			if env.Continuation == nil {
+				env.Continuation = &model.Continuation{Reason: "workspace_selector_invalid", Next: model.ContinuationTarget{Command: command}}
+			}
+			if !isWorkspacePathSelector(strings.TrimSpace(request.Context.Workspace)) && env.Hint == "" {
+				env.Hint = "pass --workspace with the absolute path of the checkout; a bare alias is not resolved from the caller cwd"
+			}
 		}
 	}
 	return env
 }
 
+// workspaceRecoveryCommand names the path a path selector points at. A bare
+// alias never borrows the caller cwd: that checkout is usually a different one,
+// and registering it under the alias sends the agent the wrong way.
 func workspaceRecoveryCommand(opts model.QueryOptions) string {
 	cwd := strings.TrimSpace(opts.CallerCWD)
+	selector := strings.TrimSpace(opts.Workspace)
+	if !isWorkspacePathSelector(selector) {
+		return "mi-lsp workspace list --group-by-root"
+	}
 	if cwd == "" {
 		return "mi-lsp workspace scan"
 	}
-	selector := strings.TrimSpace(opts.Workspace)
 	root := cwd
 	alias := selector
 	if filepath.IsAbs(selector) {
 		root = selector
 		alias = filepath.Base(filepath.Clean(selector))
-	} else if selector != "" && (strings.ContainsAny(selector, `/\\`) || selector == "." || selector == "..") {
+	} else {
 		root = filepath.Clean(filepath.Join(cwd, selector))
 		alias = filepath.Base(root)
 	}
@@ -508,6 +522,10 @@ func workspaceRecoveryCommand(opts model.QueryOptions) string {
 		return "mi-lsp workspace scan"
 	}
 	return "mi-lsp workspace add " + shellCommandArgument(root) + " --name " + shellCommandArgument(alias) + " --no-index"
+}
+
+func isWorkspacePathSelector(selector string) bool {
+	return filepath.IsAbs(selector) || strings.ContainsAny(selector, `/\`) || selector == "." || selector == ".."
 }
 
 func shellCommandArgument(value string) string {

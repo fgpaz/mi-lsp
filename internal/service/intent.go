@@ -17,6 +17,7 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 // intentMatch is one file-level code match: Symbol is the best symbol of the
@@ -73,6 +74,16 @@ func (a *App) intent(ctx context.Context, request model.CommandRequest) (env mod
 	}
 	offset := intFromAny(request.Payload["offset"], 0)
 
+	// A linked worktree whose main checkout is not registered has no base index.
+	// The answer is partial and names the registration; nothing is indexed here.
+	mainRoot, isLinked, mainRegistered, linkedErr := workspace.LinkedWorktreeMain(registration.Root)
+	if linkedErr != nil {
+		return model.Envelope{}, linkedErr
+	}
+	if isLinked && !mainRegistered {
+		return worktreeBaseUnregisteredEnvelope(registration, "intent", question, &worktreeBaseUnregisteredError{Worktree: registration.Root, MainRoot: mainRoot}), nil
+	}
+
 	scopedRepo, scopeWarnings, scopeEnvelope := resolveCatalogRepoScope(registration, project, request.Payload)
 	if scopeEnvelope != nil {
 		return *scopeEnvelope, nil
@@ -82,6 +93,7 @@ func (a *App) intent(ctx context.Context, request model.CommandRequest) (env mod
 		return planned, planErr
 	}
 
+	linked := isLinked
 	profile, _, _ := docgraph.LoadProfile(registration.Root)
 	mode := classifyIntentMode(question, profile)
 	if mode == "docs" {
@@ -92,7 +104,15 @@ func (a *App) intent(ctx context.Context, request model.CommandRequest) (env mod
 			}
 			return model.Envelope{}, model.NewStableError(sanitizeIntentError(docsErr))
 		}
+		if linked {
+			// A linked worktree has no catalog of its own; the shared base catalog
+			// does not describe its edits, so code identifiers are searched as text.
+			return a.intentWorktreeMix(ctx, registration, project, question, topN, env), nil
+		}
 		return a.intentMixWithCode(ctx, registration, question, topN, offset, scopedRepo, env), nil
+	}
+	if linked {
+		return a.intentWorktreeCode(ctx, registration, project, question, topN, scopeWarnings), nil
 	}
 
 	if ready, readyErr := store.WorkspaceCatalogReady(ctx, registration.Root); readyErr != nil || !ready {
@@ -555,7 +575,9 @@ func (a *App) intentDocs(ctx context.Context, request model.CommandRequest, regi
 
 	route := query.canonicalRoute(request.Context, false)
 	refreshWarnings := []string{}
-	if paths := routeDocCandidatePaths(query, route, min(max(topN, 1), 5)); len(paths) > 0 {
+	// A worktree answer comes from the base index: refreshing would write the
+	// worktree's own (non-existent) index, so the refresh is skipped there.
+	if paths := routeDocCandidatePaths(query, route, min(max(topN, 1), 5)); len(paths) > 0 && query.worktreeBase == "" {
 		refreshed, refreshErr := RefreshQueryPaths(ctx, registration.Root, paths, 500*time.Millisecond)
 		if refreshErr != nil {
 			refreshWarnings = append(refreshWarnings, "intent document refresh unavailable; using the currently published snapshot: "+sanitizeIntentError(refreshErr))
@@ -592,8 +614,147 @@ func (a *App) intentDocs(ctx context.Context, request model.CommandRequest, regi
 		Warnings:  dedupeStrings(warnings),
 		Stats:     model.Stats{Files: len(items)},
 	}
+	if query.worktreeBase != "" {
+		env.Partial = true
+		env.Reason = worktreeBaseDocsReason
+	}
 	return applyAXIPreviewHints(env, request.Context, axiPreviewSummaryHint), nil
 }
+
+// intentWorktreeIdentifierLimit bounds the text searches one question may run
+// inside a linked worktree.
+const intentWorktreeIdentifierLimit = 3
+
+// intentWorktreeIdentifiers returns the code-like identifiers of a question in
+// their original case: CamelCase, snake_case and dotted names.
+func intentWorktreeIdentifiers(question string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, pattern := range []*regexp.Regexp{intentCamelCasePattern, intentSnakeCasePattern, intentDottedPattern} {
+		for _, match := range pattern.FindAllString(question, -1) {
+			match = strings.Trim(match, ".")
+			if len(match) < 3 || seen[match] {
+				continue
+			}
+			seen[match] = true
+			out = append(out, match)
+			if len(out) == intentWorktreeIdentifierLimit {
+				return out
+			}
+		}
+	}
+	return out
+}
+
+// intentWorktreeTextHits searches the question identifiers as text in the
+// physical worktree, through the same overlay nav search uses. It never builds
+// or reads a catalog for the worktree.
+func (a *App) intentWorktreeTextHits(ctx context.Context, registration model.WorkspaceRegistration, project model.ProjectFile, question string, topN int) ([]map[string]any, []string, []string) {
+	identifiers := intentWorktreeIdentifiers(question)
+	items := []map[string]any{}
+	if len(identifiers) == 0 {
+		return items, nil, nil
+	}
+	if topN <= 0 {
+		topN = 10
+	}
+	searchCtx, searchCancel := withSearchTimeout(ctx, a.Config.SearchTimeout)
+	defer searchCancel()
+	var warnings []string
+	seen := map[string]bool{}
+	for _, identifier := range identifiers {
+		diagnostics := &searchPatternDiagnostics{}
+		hits, _, err := searchWorktreeOverlay(searchCtx, registration.Root, registration.Root, project, identifier, false, topN, diagnostics)
+		warnings = appendSearchDiagnosticsWarnings(warnings, diagnostics)
+		if err != nil {
+			warnings = append(warnings, "worktree_text_code: text search failed: "+sanitizeIntentError(err))
+			continue
+		}
+		for _, hit := range hits {
+			file, _ := hit["file"].(string)
+			line, _ := hit["line"].(int)
+			key := fmt.Sprintf("%s:%d", file, line)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			items = append(items, map[string]any{
+				"result_kind": "text",
+				"origin":      model.ItemOriginText,
+				"file":        file,
+				"line":        line,
+				"symbol":      identifier,
+				"snippet":     hit["text"],
+			})
+			if len(items) >= topN {
+				return items, warnings, identifiers
+			}
+		}
+	}
+	return items, warnings, identifiers
+}
+
+// intentWorktreeMix adds text hits for code identifiers to a docs answer from a
+// linked worktree. The docs stay first; the text hits are weaker code evidence.
+func (a *App) intentWorktreeMix(ctx context.Context, registration model.WorkspaceRegistration, project model.ProjectFile, question string, topN int, docs model.Envelope) model.Envelope {
+	items, warnings, _ := a.intentWorktreeTextHits(ctx, registration, project, question, topN)
+	docs.Partial = true
+	if docs.Reason == "" {
+		docs.Reason = worktreeBaseDocsReason
+	}
+	// The continuation is the physical nav search, never the question that was just asked.
+	docs.Continuation = worktreeNavSearchContinuation(registration.Root, question, docs.Reason)
+	docs.Warnings = dedupeStrings(append(docs.Warnings, warnings...))
+	if len(items) == 0 {
+		return docs
+	}
+	docItems, _ := docs.Items.([]map[string]any)
+	merged := make([]map[string]any, 0, len(docItems)+len(items))
+	merged = append(merged, docItems...)
+	merged = append(merged, items...)
+	if topN > 0 && len(merged) > topN {
+		merged = merged[:topN]
+	}
+	docs.Items = merged
+	docs.Mode = "mixed"
+	docs.Stats = model.Stats{Files: len(docItems), Symbols: len(items)}
+	return docs
+}
+
+// intentWorktreeCode answers a code question from a linked worktree with text
+// matches from the physical tree. The next hint names the exact nav search to
+// continue with, and the reason stays explicit so callers never read an empty
+// list as "no code".
+func (a *App) intentWorktreeCode(ctx context.Context, registration model.WorkspaceRegistration, project model.ProjectFile, question string, topN int, scopeWarnings []string) model.Envelope {
+	items, warnings, identifiers := a.intentWorktreeTextHits(ctx, registration, project, question, topN)
+	env := model.Envelope{
+		Ok:        true,
+		Workspace: registration.Name,
+		Backend:   "intent",
+		Mode:      "code",
+		Items:     items,
+		Partial:   true,
+		Reason:    worktreeTextCodeReason,
+		Warnings:  append(append([]string{}, scopeWarnings...), warnings...),
+		Stats:     model.Stats{Symbols: len(items)},
+	}
+	env.Warnings = append(env.Warnings, "worktree_text_code: linked worktree has no code catalog; hits are text matches in the physical worktree")
+	// Partial by missing catalog: the continuation is the nav search, never a repeat of this question.
+	env.Continuation = worktreeNavSearchContinuation(registration.Root, question, worktreeTextCodeReason)
+	if len(identifiers) == 0 {
+		env.Hint = "name a symbol, file or identifier in the question to search this worktree as text"
+		return env
+	}
+	next := worktreeNavSearchCommand(registration.Root, question)
+	env.NextHint = &next
+	if len(items) == 0 {
+		env.Hint = fmt.Sprintf("0 text matches for %q in this worktree", identifiers[0])
+	}
+	return env
+}
+
+// worktreeTextCodeReason marks a code answer served as text from a linked worktree.
+const worktreeTextCodeReason = "worktree_text_code"
 
 func intentSnippet(sym model.SymbolRecord) string {
 	if sym.Signature != "" {
