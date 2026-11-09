@@ -709,7 +709,6 @@ func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly boo
 					// An unregistered linked tree is a physical read-only overlay,
 					// never an alias to the main checkout or a new full index.
 					res := linkedWorktreeInspectionResolution(gitRoot)
-					res.Warnings = []string{"worktree_overlay_index_explicit_incomplete: explicit linked worktree resolved to its physical root; semantic base-index plus delta overlay is not implemented"}
 					return res, nil
 				}
 			}
@@ -1194,7 +1193,6 @@ func linkedWorktreeInspectionResolution(root string) WorkspaceResolution {
 		},
 		Source:    ResolutionSourceGitTopLevel,
 		Synthetic: true,
-		Warnings:  []string{"worktree_overlay_index_explicit_incomplete: linked worktree is kept at its physical root; semantic base-index plus delta overlay is not implemented"},
 	}
 }
 

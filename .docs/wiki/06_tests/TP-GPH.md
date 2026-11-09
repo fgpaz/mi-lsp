@@ -24,10 +24,6 @@ links:
     role: test
   - path: internal/indexer/extractor_go_test.go
     role: test
-  - path: internal/service/graph_query_cache_test.go
-    role: test
-  - path: internal/worker/graph_runtime_fingerprint_test.go
-    role: test
   - path: internal/workspace/worktree_overlay_test.go
     role: test
 ---
@@ -49,10 +45,10 @@ Las referencias siguientes identifican oráculos existentes; no acreditan ejecuc
 Referencias complementarias a los casos existentes de overlay, sin atribuirles oráculos que no ejecutan. Todas son evidencia prevista parcial, `manual_evidence_pending`, no ejecución nueva ni cobertura completa de criterios:
 
 - TC-GPH-081 — RF-GPH-005 — Criterio 3; RF-GPH-005 — Criterio 4; Alcance parcial: fingerprint de Go ignorado; `internal/workspace/worktree_overlay_test.go`, `TestWorktreeOverlayFingerprintsIgnoredGoSourceCreationAndModification`, verifica solo la detección y fingerprint de creación/modificación de Go ignorado, insumo para identidad del snapshot. No ejercita cursor stale, aislamiento entre branches ni hash/mtime de DB; esos oráculos del caso siguen pendientes.
-- TC-GPH-083 — RF-GPH-005 — Criterio 3; Alcance parcial: identidad y retry de caché; `internal/service/graph_query_cache_test.go`, `TestWorktreeGraphCacheHitAndDifferentIdentity` y `TestWorktreeGraphCacheCancelledFlightCannotReplaceRetry`, verifican solo hit, separación de identidad y que un vuelo cancelado no reemplace el retry. Son apoyo a identidad del snapshot, no pruebas de selector, generation, cursor ni budgets; tampoco acreditan dedupe concurrente, fairness o eviction del caso completo.
-- TC-GPH-084 — RF-GPH-005 — Criterio 3; Alcance parcial: fingerprint GoENV; `internal/worker/graph_runtime_fingerprint_test.go`, `TestGoEnvConfigDigestHashesContentsWithoutExposure`, `TestGoEnvConfigDigestResolvesDefaultPath`, `TestGoEnvConfigDigestHonorsOff` y `TestGraphObserverRuntimeFingerprintDoesNotCacheUnreadableGoEnv`, verifican solo digest y tratamiento GoENV acotados que contribuyen a la identidad del snapshot; no prueban cursor stale ni todos los toolchains o budgets.
+- TC-GPH-083 — RF-GPH-005 — Criterio 3; Sin evidencia automatizada: `internal/service/graph_query_cache_test.go` (`TestWorktreeGraphCacheHitAndDifferentIdentity`, `TestWorktreeGraphCacheCancelledFlightCannotReplaceRetry`) se retiró junto con la caché de snapshots por worktree. El caso queda pendiente; no hay prueba de hit, identidad ni retry que lo respalde.
+- TC-GPH-084 — RF-GPH-005 — Criterio 3; Sin evidencia automatizada: `internal/worker/graph_runtime_fingerprint_test.go` (digest GoENV y fingerprint de runtime de observadores) se retiró junto con el fingerprint de snapshots por worktree. El caso queda pendiente.
 
-**Límites del slice Go:** los hunks de `internal/service/graph_query.go` y `internal/service/app.go` seleccionan topología, consulta y snapshot overlay; `internal/model/graph_query.go`, `internal/store/db.go`, `internal/worker/graph_runtime_fingerprint.go` y `internal/workspace/worktree_overlay.go` son componentes de ese recorrido. TC-GPH-081/083/084 son evidencia parcial prevista para RF-GPH-005 criterios 3/4, no prueba de esos criterios completos. El owner de TP debe conservar pendientes los oráculos de selector/generation/cursor/budget, aislamiento y lectura sin escritura que no se hayan observado. Para la admisión Go-only, TC-GPH-086 permanece pendiente; no se infiere soporte de otras topologías.
+**Límites del slice Go:** los hunks de `internal/service/graph_query.go` y `internal/service/app.go` seleccionan topología y consulta; el snapshot overlay por worktree fue retirado y un linked worktree con delta responde `partial` con `worktree_graph_unavailable`. `internal/model/graph_query.go`, `internal/store/db.go` y `internal/workspace/worktree_overlay.go` son componentes de ese recorrido. TC-GPH-081 es evidencia parcial prevista para RF-GPH-005 criterios 3/4, no prueba de esos criterios completos; TC-GPH-083/084 quedan sin evidencia automatizada tras la retirada. El owner de TP debe conservar pendientes los oráculos de selector/generation/cursor/budget, aislamiento y lectura sin escritura que no se hayan observado. Para la admisión Go-only, TC-GPH-086 permanece pendiente; no se infiere soporte de otras topologías.
 
 ### Kotlin — oráculo futuro de la extensión fuente
 

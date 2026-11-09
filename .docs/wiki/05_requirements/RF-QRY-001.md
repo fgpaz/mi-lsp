@@ -107,7 +107,7 @@ CLI `mi-lsp`, con operaciones y selectores detallados en el comportamiento del r
 - **Campo**: `ok`; **Tipo**: bool; **Destino**: usuario/skill; **Efecto observable**: estado de la operación
 - **Campo**: `backend`; **Tipo**: string; **Destino**: usuario/skill; **Efecto observable**: origen semántico o sintactico de la respuesta
 - **Campo**: `items`; **Tipo**: lista; **Destino**: usuario/skill; **Efecto observable**: resultado truncado o completo
-- **Campo**: `truncated`; **Tipo**: bool; **Destino**: usuario/skill; **Efecto observable**: explícita recorte
+- **Campo**: `truncated`; **Tipo**: bool; **Destino**: usuario/skill; **Efecto observable**: recorte explícito. `output_budget` solo indica que se quitó una fila, un item o un snippet; si se quita otro campo, el `reason` nombra ese campo (`output_checks_budget`, `output_metadata_budget`, `output_warnings_budget`). Un warning de más de 512 bytes se condensa sin marcar `truncated` y deja la omisión `output_warning_condensed`
 - **Campo**: `warnings`; **Tipo**: lista; **Destino**: usuario/skill; **Efecto observable**: contexto de degradacion o frescura
 - **Campo**: `hint`; **Tipo**: string/null; **Destino**: usuario/skill; **Efecto observable**: diagnóstico accionable cuando `items=[]`, el índice no está listo o el daemon no está disponible (omitempty)
 - **Campo**: `next_hint`; **Tipo**: string/null; **Destino**: usuario/skill; **Efecto observable**: sugerencia para pedir más detalle
@@ -144,6 +144,9 @@ El campo `reason` pertenece a un catálogo versionado (`primitives-v2`) para que
 - **`reason`**: `semantic_empty_text_hits`; **Significado**: el backend semántico devolvió vacío pero la verificación textual encontró coincidencias
 - **`reason`**: `language_unsupported`; **Significado**: el archivo o símbolo no tiene backend semántico para su lenguaje
 - **`reason`**: `no_matches`; **Significado**: ninguna vía encontró coincidencias; el vacío está verificado y es un resultado válido (`degraded=true` solo si faltaba el catálogo y respondió texto)
+- **`reason`**: `backend_warming`; **Significado**: el servidor de lenguaje recién arrancado devolvió cero items en referencias o definición; es un resultado parcial, no un vacío verificado; repetir la consulta cuando el backend haya indexado
+- **`reason`**: `output_budget`; **Significado**: se quitó una fila, item o snippet por presupuesto de salida; repetir el comando completo para el detalle omitido
+- **`reason`**: `output_checks_budget`, `output_metadata_budget` o `output_warnings_budget`; **Significado**: se quitó el detalle de validación, la metadata de grafo o los warnings sobrantes (se conservan 3); el envelope queda `truncated` y `partial`, y el `reason` solo se fija si no había otra razón
 
 `fallback_used` toma `catalog` o `text`; `items[].origin` toma `semantic`, `catalog`, `text` o `wiki`. Las superficies que no degradan omiten `degraded`, `reason` y `fallback_used`.
 

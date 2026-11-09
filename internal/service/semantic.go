@@ -133,6 +133,8 @@ func (a *App) semanticCore(ctx context.Context, registration model.WorkspaceRegi
 	warnings = append(warnings, response.Warnings...)
 	return model.Envelope{
 		Ok:        response.Ok,
+		Partial:   response.Partial,
+		Reason:    response.Reason,
 		Workspace: registration.Name,
 		Backend:   response.Backend,
 		Items:     response.Items,

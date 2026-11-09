@@ -24,7 +24,10 @@ type Client struct {
 	stdin     io.WriteCloser
 	stdout    io.ReadCloser
 	stderr    *bytes.Buffer
-	mu        sync.Mutex
+	// lastStderr keeps the stderr of a worker reaped after a transport failure,
+	// so the next error can name its cause (for example a missing SDK).
+	lastStderr string
+	mu         sync.Mutex
 }
 
 func NewClient(repoRoot string, workspace model.WorkspaceRegistration) (*Client, error) {
@@ -100,6 +103,7 @@ func (c *Client) startSpec(index int) error {
 	c.stdin = stdin
 	c.stdout = stdout
 	c.stderr = &stderr
+	c.lastStderr = ""
 	return nil
 }
 
@@ -118,10 +122,15 @@ func (c *Client) Call(ctx context.Context, request model.WorkerRequest) (model.W
 		if err == nil {
 			return response, nil
 		}
+		if attempt == 0 && isUnsentRequestError(err) {
+			// The worker died while idle: the request never reached it, so a
+			// fresh process can serve it without repeating any work.
+			continue
+		}
 		if attempt == 0 && c.shouldRetryCurrentError(err) && c.advanceToNextSpec() {
 			continue
 		}
-		if c.shouldAnnotateCurrentError(err) {
+		if c.shouldAnnotateCurrentError(err) || isWorkerTransportError(err) {
 			return response, decorateLaunchError(c.spec, err, c.stderrText())
 		}
 		return response, err
@@ -135,7 +144,9 @@ func (c *Client) callOnce(ctx context.Context, request model.WorkerRequest) (mod
 		return model.WorkerResponse{}, err
 	}
 	if err := WriteFrame(c.stdin, request); err != nil {
-		return model.WorkerResponse{}, err
+		failure := c.transportFailure(err).(workerTransportError)
+		failure.unsent = true
+		return model.WorkerResponse{}, failure
 	}
 
 	responseChannel := make(chan model.WorkerResponse, 1)
@@ -156,13 +167,45 @@ func (c *Client) callOnce(ctx context.Context, request model.WorkerRequest) (mod
 		_ = c.closeProcess()
 		return model.WorkerResponse{}, ctx.Err()
 	case err := <-errorChannel:
-		return model.WorkerResponse{}, err
+		return model.WorkerResponse{}, c.transportFailure(err)
 	case response := <-responseChannel:
 		if !response.Ok && response.Error != "" {
 			return response, fmt.Errorf("%s", response.Error)
 		}
 		return response, nil
 	}
+}
+
+// workerTransportError marks a failed frame exchange. The worker process is
+// unusable afterwards, so the client reaps it and the next call starts a fresh one.
+type workerTransportError struct {
+	err    error
+	unsent bool
+}
+
+func (e workerTransportError) Error() string { return e.err.Error() }
+
+func (e workerTransportError) Unwrap() error { return e.err }
+
+func isUnsentRequestError(err error) bool {
+	var transport workerTransportError
+	return errors.As(err, &transport) && transport.unsent
+}
+
+func isWorkerTransportError(err error) bool {
+	var transport workerTransportError
+	return errors.As(err, &transport)
+}
+
+// transportFailure reaps a worker whose pipes failed. Waiting on the process
+// drains its stderr into the buffer, which is kept for error decoration.
+func (c *Client) transportFailure(err error) error {
+	stderr := c.stderr
+	_ = c.closeProcess()
+	if stderr != nil {
+		c.lastStderr = strings.TrimSpace(stderr.String())
+	}
+	return workerTransportError{err: err}
 }
 
 func (c *Client) shouldRetryCurrentError(err error) bool {
@@ -219,7 +262,7 @@ func (c *Client) advanceToNextSpec() bool {
 
 func (c *Client) stderrText() string {
 	if c.stderr == nil {
-		return ""
+		return c.lastStderr
 	}
 	return strings.TrimSpace(c.stderr.String())
 }

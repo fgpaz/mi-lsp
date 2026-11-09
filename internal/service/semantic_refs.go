@@ -257,6 +257,11 @@ func (a *App) findRefs(ctx context.Context, registration model.WorkspaceRegistra
 			env = fallback
 		case !env.Ok:
 			fallback.Warnings = append(env.Warnings, fallback.Warnings...)
+			reason := env.Reason
+			if reason == "" {
+				reason = model.ReasonLSPError
+			}
+			markRefsFallback(&fallback, reason)
 			env = fallback
 		}
 	}
@@ -364,10 +369,14 @@ func (a *App) finalizeRefs(ctx context.Context, registration model.WorkspaceRegi
 	a.attachRefCallers(ctx, registration, items, symbol)
 	attachRefContext(registration.Root, items, contextLines)
 	env.Items = items
-	if len(items) == 0 && env.Ok {
-		env.Degraded = false
-		env.FallbackUsed = ""
+	// An empty answer is "no_matches" only when it is verified. A partial answer
+	// (for example backend_warming) or a degraded text fallback after a semantic
+	// failure keeps its own reason, so an empty result is never presented as verified.
+	if len(items) == 0 && env.Ok && !env.Degraded && !env.Partial {
 		env.Reason = model.ReasonNoMatches
+	}
+	if len(items) == 0 && env.Degraded {
+		env.Partial = true
 	}
 	env.Stats.Ms = time.Since(started).Milliseconds()
 	return env

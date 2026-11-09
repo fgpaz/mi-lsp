@@ -1558,7 +1558,7 @@ func (a *App) graphQuery(ctx context.Context, request model.CommandRequest) (mod
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	registration, project, err := a.resolveWorkspaceWithProjectForNavigation(request)
+	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: "graph backend is unavailable"}
 	}
@@ -1576,7 +1576,7 @@ func (a *App) graphQuery(ctx context.Context, request model.CommandRequest) (mod
 			graphRegistration = baseRegistration
 		}
 		if len(overlay.Changed) > 0 || len(overlay.Deleted) > 0 {
-			return a.overlayGraphSnapshot(ctx, registration, project, overlay, q)
+			return worktreeGraphUnavailable(registration, q.Operation), nil
 		}
 	}
 	db, err := openWorkspaceDB(graphRegistration, request.Operation, true)
@@ -1706,7 +1706,7 @@ func (a *App) symbols(ctx context.Context, request model.CommandRequest) (model.
 		if found {
 			indexRegistration, baseIndexAvailable = baseRegistration, true
 		}
-		if baseIndexAvailable && worktreeOverlayContains(overlay.Changed, relativeFile) {
+		if baseIndexAvailable && worktreeOverlayContains(overlay.ReadPaths(), relativeFile) {
 			absPath := filepath.Join(registration.Root, filepath.FromSlash(relativeFile))
 			rootReal, rootErr := filepath.EvalSymlinks(registration.Root)
 			fileReal, fileErr := filepath.EvalSymlinks(absPath)

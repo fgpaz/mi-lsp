@@ -233,6 +233,7 @@ func (c *LSPClient) Call(ctx context.Context, request model.WorkerRequest) (mode
 	defer c.mu.Unlock()
 	c.requestCtx = ctx
 
+	coldStart := !c.started || c.transport == nil || !c.transport.alive()
 	if err := c.startContext(ctx); err != nil {
 		return model.WorkerResponse{}, err
 	}
@@ -241,11 +242,13 @@ func (c *LSPClient) Call(ctx context.Context, request model.WorkerRequest) (mode
 	case "diagnostics":
 		return c.diagnostics(ctx, request)
 	case "find_refs":
-		return c.findReferences(ctx, request)
+		response, err := c.findReferences(ctx, request)
+		return coldEmptyAsPartial(response, err, coldStart)
 	case "get_context":
 		return c.getContext(ctx, request)
 	case "find_definition":
-		return c.definition(ctx, request)
+		response, err := c.definition(ctx, request)
+		return coldEmptyAsPartial(response, err, coldStart)
 	case "document_symbols":
 		return c.documentSymbols(ctx, request)
 	case "rename_symbol":
@@ -255,6 +258,18 @@ func (c *LSPClient) Call(ctx context.Context, request model.WorkerRequest) (mode
 	default:
 		return model.WorkerResponse{}, fmt.Errorf("LSP backend does not support method %q", request.Method)
 	}
+}
+
+// coldEmptyAsPartial keeps an empty answer from a server that had just started
+// from reading as a verified "no results": the index may not be ready yet.
+func coldEmptyAsPartial(response model.WorkerResponse, err error, coldStart bool) (model.WorkerResponse, error) {
+	if err != nil || !response.Ok || !coldStart || len(response.Items) > 0 {
+		return response, err
+	}
+	response.Partial = true
+	response.Reason = "backend_warming"
+	response.Warnings = append(response.Warnings, "backend_warming: the LSP server had just started and returned no results; repeat the query once it has indexed the workspace")
+	return response, nil
 }
 
 // Close shuts down the LSP server.

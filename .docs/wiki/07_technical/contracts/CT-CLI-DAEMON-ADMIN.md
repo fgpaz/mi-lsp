@@ -233,7 +233,7 @@ Reglas:
 
 - `index [path]` es wrapper de compatibilidad que ejecuta `index start --mode full --wait`; con `--docs-only`, ejecuta `--mode docs --wait`.
 - `index start` crea un registro durable en `index_jobs` sin consultar primero jobs activos; sin `--wait` lanza un proceso detached y retorna el `job_id`; con `--wait` bloquea hasta que la indexación complete. Si hay competencia, el runner queda serializado por `.mi-lsp/index.lock` y el resultado se inspecciona con `index status`.
-- `--entrypoint` selecciona un ID declarado o una ruta relativa segura del repositorio a la entrada solicitada en modo `full`. Go acepta `go.mod` y dirige la observación al backend `go`; C# acepta proyectos `.csproj` declarados o rutas seguras compatibles y dirige la observación a Roslyn; las soluciones `.sln` explícitas fallan cerrado porque no existe un helper de membresía autoritativo. No aplica a `docs`/`catalog`. Sin el flag se conservan exactamente los defaults actuales y no se infiere un módulo Go. El selector se persiste con el job y se rechazan rutas absolutas, traversal, symlinks, `go.work`, tipos no compatibles o repositorios no coincidentes.
+- `--entrypoint` selecciona un ID declarado o una ruta relativa segura del repositorio a la entrada solicitada en modo `full`. Go acepta `go.mod` y dirige la observación al backend `go`; C# acepta proyectos `.csproj` declarados o rutas seguras compatibles y dirige la observación a Roslyn; las soluciones `.sln` y `.slnx` explícitas fallan cerrado porque no existe un helper de membresía autoritativo. No aplica a `docs`/`catalog`. Sin el flag se conservan exactamente los defaults actuales y no se infiere un módulo Go. El selector se persiste con el job y se rechazan rutas absolutas, traversal, symlinks, `go.work`, tipos no compatibles o repositorios no coincidentes.
 La política offline y su envelope se definen exclusivamente en este bloque; aceptación acotada en [[TP-IDX]] / TC-IDX-029.
 
 - **Marcador estable**: CT-CLI-DAEMON-ADMIN-GO-OFFLINE
@@ -459,6 +459,7 @@ Reglas:
 - `--backend <hint>` explícito conserva precedencia; las excepciones deliberadas de Kotlin y `get_deps` permanecen intactas
 - el routing no altera `slice_text` ni las señales existentes de fallback/degradación; una respuesta parcial no se presenta como resultado semántico exacto
 - si el warning proviene de bootstrap Roslyn, debe sugerir `mi-lsp worker install`; si proviene de SDK/global.json, la telemetria debe clasificarlo como `sdk/*`; si proviene de permisos/arranque de proceso, debe clasificarlo como `backend_runtime/process_spawn_access_denied` o `backend_runtime/process_spawn_failed`
+- el error del worker Roslyn es una sola línea acotada a 400 caracteres: la excepción principal y, si existe, su causa interna, sin stack trace. En `graph_observe` el mensaje es genérico (`GPH_BACKEND_UNAVAILABLE`) para no exponer rutas; en otros métodos la causa puede contener rutas locales. La telemetría clasifica `sdk/dotnet_global_json_mismatch` cuando el texto contiene `global.json` o `requested sdk version`, y `sdk/dotnet_sdk_missing` cuando no hay SDK instalado
 
 #### `nav affected`
 

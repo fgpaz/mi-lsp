@@ -70,11 +70,9 @@ func findSymbolsWithWorktreeOverlay(ctx context.Context, db *sql.DB, registratio
 }
 
 func worktreeOverlayDeltaSymbols(registration model.WorkspaceRegistration, project model.ProjectFile, overlay workspace.WorktreeOverlay) ([]model.SymbolRecord, []string, error) {
-	excludedSet := make(map[string]struct{}, len(overlay.Changed)+len(overlay.Deleted))
-	for _, path := range overlay.Changed {
-		excludedSet[filepath.ToSlash(path)] = struct{}{}
-	}
-	for _, path := range overlay.Deleted {
+	masked := overlay.MaskedPaths()
+	excludedSet := make(map[string]struct{}, len(masked))
+	for _, path := range masked {
 		excludedSet[filepath.ToSlash(path)] = struct{}{}
 	}
 	excluded := make([]string, 0, len(excludedSet))
@@ -87,7 +85,7 @@ func worktreeOverlayDeltaSymbols(registration model.WorkspaceRegistration, proje
 		return nil, nil, err
 	}
 	delta := make([]model.SymbolRecord, 0)
-	for _, rel := range overlay.Changed {
+	for _, rel := range overlay.ReadPaths() {
 		if _, deleted := containsPath(overlay.Deleted, rel); deleted {
 			continue
 		}

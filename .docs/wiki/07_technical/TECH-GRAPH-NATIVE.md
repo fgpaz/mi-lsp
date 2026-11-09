@@ -86,8 +86,6 @@ links:
     role: implementation
   - path: internal/workspace/worktree_overlay.go
     role: implementation
-  - path: internal/worker/graph_runtime_fingerprint.go
-    role: implementation
   - path: internal/docgraph/governance.go
     role: implementation
 ---
@@ -382,7 +380,7 @@ Los adapters no conocen SQLite ni publican. Store no inventa identidad. Durante 
 
 `ResolveRepositoryIdentity` normaliza todas las identidades explícitas y exige que sean una sola; si faltan, ejecuta unicamente `git -C <workspace> rev-parse --show-toplevel` y `git -C <git-root> config --local --get-all remote.origin.url`. Se exige exactamente un origin HTTPS/SSH normalizable; no hay fetch, red, alias, basename ni fallback de path. La identidad resuelta es simultaneamente `WorkspaceIdentity` y `RepositoryIdentity` para todos los batches y queda en la generation, sin escribir `.mi-lsp/project.toml`.
 
-En un container, el módulo Go se observa una sola vez desde el checkout y usa el fallback del root (`go.mod`). En una topología single/no-container con un repo Go seleccionado, el core puede elegir el `go.mod` configurado como ruta de módulo repo-local exacta o resolver un ID de `WorkspaceEntrypoint` mediante coincidencia exacta de repo y entrypoint; para un ID, rebasa la ruta workspace-relative declarada al root del repo seleccionado y revalida que el resultado sea un `go.mod` repo-local, seguro y regular. Un `--entrypoint` explícito puede seleccionar además una ruta segura existente (`go.mod` o `.csproj`) dentro del repositorio resuelto; su backend se determina por el tipo solicitado (Go o Roslyn) y nunca se sustituye silenciosamente por otro default. Las soluciones `.sln` explícitas fallan cerrado porque no existe un helper autoritativo de membresía de proyectos. Solo cuando no hay selector explícito se conserva el fallback vigente del root del repo (`go.mod`) y la selección C# configurada. Un selector explícito faltante, ID desconocido/malformado, no regular, symlink o inseguro falla cerrado con diagnóstico accionable. `go.work` no es compatible con la observación de grafo y se rechaza. La ruta declarada se mantiene relativa al workspace para la topología, mientras el batch recibe el selector repo-local rebasado.
+En un container, el módulo Go se observa una sola vez desde el checkout y usa el fallback del root (`go.mod`). En una topología single/no-container con un repo Go seleccionado, el core puede elegir el `go.mod` configurado como ruta de módulo repo-local exacta o resolver un ID de `WorkspaceEntrypoint` mediante coincidencia exacta de repo y entrypoint; para un ID, rebasa la ruta workspace-relative declarada al root del repo seleccionado y revalida que el resultado sea un `go.mod` repo-local, seguro y regular. Un `--entrypoint` explícito puede seleccionar además una ruta segura existente (`go.mod` o `.csproj`) dentro del repositorio resuelto; su backend se determina por el tipo solicitado (Go o Roslyn) y nunca se sustituye silenciosamente por otro default. Las soluciones `.sln` y `.slnx` explícitas fallan cerrado con `GPH_ENTRYPOINT_SOLUTION_UNAVAILABLE` porque no existe un helper autoritativo de membresía de proyectos; la topología y el worker de Roslyn reconocen ambas extensiones como solución. Solo cuando no hay selector explícito se conserva el fallback vigente del root del repo (`go.mod`) y la selección C# configurada. Un selector explícito faltante, ID desconocido/malformado, no regular, symlink o inseguro falla cerrado con diagnóstico accionable. `go.work` no es compatible con la observación de grafo y se rechaza. La ruta declarada se mantiene relativa al workspace para la topología, mientras el batch recibe el selector repo-local rebasado.
 - Todo selector explícito que contenga el separador `\` se rechaza antes de cualquier normalización de separadores; el fallback a `go.mod` solo aplica al selector vacío.
 - Los campos embebidos Go de structs (`T`, `*T`, `pkg.T`, `*pkg.T` e instanciaciones genéricas) se emiten como declaraciones respaldadas por `go/types` (`*types.Var`) y conservan una referencia tipada al tipo embebido cuando es local. Si falta información del compilador, se registra omisión o unresolved y el batch permanece parcial; `ReadyForStaging` no se relaja.
 
@@ -459,31 +457,19 @@ En un container, el módulo Go se observa una sola vez desde el checkout y usa e
 ### GraphQuery de linked worktrees dirty
 
 - **Marcador estable**: TECH-GRAPH-NATIVE.worktree-graph-query-overlay
-- **Estado del comportamiento**: implemented_slice
-- **Cobertura por lenguaje**: el overlay admite módulos Go completos aunque el repositorio declare otros lenguajes. Devuelve `partial=true`, motivo `graph_language_unavailable` y advertencias `graph_language_unavailable:<lenguaje>` para lo no cubierto. Si no hay ningún lenguaje admitido, devuelve un resultado vacío parcial, no un error opaco. Esto no habilita observadores experimentales ni acredita aristas entre lenguajes.
-- **applies_to**: GraphQuery sobre un linked worktree explícito con cambios físicos frente a su HEAD
-- **not_applies_to**: referencias semánticas `nav.refs` sin `--callers` y `nav.affected`; sus contratos permanecen separados. `nav refs <selector> --callers` sí entra por GraphQuery
-- **snapshot**:
-  - **workspace**: raíz física seleccionada, sin fallback al worktree principal
-  - **storage**: SQLite en memoria, solo lectura para el DB base
-  - **registration**: no auto-registro ni escritura de configuración/índice
-  - **publication**: batches completos bajo una identidad común y una generación atómica
-  - **entrypoints**: el default de otro lenguaje no oculta los módulos Go declarados ni el `go.mod` raíz; un default Go explícito prevalece
-  - **admission**: `ReadyForStaging` estricto para cada módulo Go seleccionado; no se relaja la admisión de batches. La cobertura de otros lenguajes se declara aparte en la respuesta
-- **fingerprint**: común de Git, HEAD base, raíz física, delta de paths/contenido y configuración/runtime seleccionados; raíz incluida para separar branches con deltas equivalentes
-- **cache**: LRU en proceso, máximo cuatro snapshots, claveado por fingerprint, identidad, selecciones, caller semántico y fingerprint de runtime de observadores (entorno/toolchains/artefactos); el fingerprint de runtime es read-only y no expone configuración cruda. Solo reutiliza generaciones completas e idénticas
-- **concurrency**: mutex global limitado a lookup, referencias, publicación LRU y coordinación; observar, validar freshness y publicar ocurren fuera del lock; singleflight cancelable por fingerprint, y una entrada en uso no se desaloja. DB desalojadas se cierran fuera del mutex
-- **freshness**: validar antes de publicar y después de consultar; cambios concurrentes no se reportan como current
-- **cursor**: ligado al fingerprint del overlay además de operación/selectores/generación; continuación en la misma branch, rechazo como `GPH_QUERY_CURSOR_STALE` al cruzar snapshot o branch
-- **degradation**: si el presupuesto vence durante la construcción del snapshot, devuelve resultado vacío parcial con `graph_observer_timeout`, advertencia por backend y recuperación mediante `MI_LSP_INTERACTIVE_TIMEOUT`; no acredita ausencia de callers. Un observer Go seleccionado que falla por otra causa o produce un batch incompleto conserva el error tipado; nunca se publica un batch parcial. Los lenguajes sin observador de overlay no descartan el grafo Go válido y se declaran como cobertura parcial en la respuesta. No se atribuye soporte Kotlin estable
+- **Estado del comportamiento**: retired_for_linked_worktrees
+- **Regla**: no se reconstruye un grafo tipado por worktree. No existen para worktrees enlazados el snapshot por fingerprint, el LRU de snapshots, el singleflight de construcción, la caché de runtime de observadores ni el presupuesto `graph_observer_timeout`.
+- **applies_to**: GraphQuery (`nav refs <selector> --callers` y operaciones de grafo) sobre un linked worktree explícito
+- **not_applies_to**: referencias semánticas `nav.refs` sin `--callers` y `nav.affected`; sus contratos permanecen separados
+- **worktree sin delta**: si los archivos del linked worktree coinciden con su HEAD base, la consulta usa el grafo del worktree base registrado, en solo lectura, sin overlay ni escritura de configuración o índice
+- **worktree con delta**: si hay archivos nuevos, modificados o borrados frente a su base, la consulta devuelve `ok=true`, `partial=true`, `reason=worktree_graph_unavailable`, `items` vacío, la advertencia `worktree_graph_unavailable` y la continuación `mi-lsp nav refs <symbol> --file <path> --line <n>`
+- **refs en vivo**: esa continuación pregunta al servidor de lenguaje sobre la raíz física del worktree, donde ya aparecen los llamadores nuevos; no reconstruye grafo
+- **cambios solo en el checkout base**: las ediciones locales del checkout base no cuentan como delta del linked worktree ni cambian la decisión de grafo (`worktree_graph_unavailable`). La búsqueda y `nav find` las tratan aparte: las rutas editadas en la base se enmascaran de los resultados base y se leen desde el worktree físico (`MaskedPaths` y `ReadPaths` en `internal/workspace/worktree_overlay.go`)
 - **Kotlin**: conserva el gate experimental de [[RF-GPH-008]] y [[ADR-KOTLIN-GRAPH-ADMISSION-V1]]; no se relaja `ReadyForStaging`
 - **Comprobación prevista**:
-  - `.docs/wiki/06_tests/TP-GPH.md::TC-GPH-081`
-  - `.docs/wiki/06_tests/TP-GPH.md::TC-GPH-082`
-  - `.docs/wiki/06_tests/TP-GPH.md::TC-GPH-083`
-  - `.docs/wiki/06_tests/TP-GPH.md::TC-GPH-084`
-  - `.docs/wiki/06_tests/TP-GPH.md::TC-GPH-086`
-- **Caso futuro excluido de esta verificación**: `TC-GPH-085` conserva el objetivo histórico Go+C# de selección de entrypoint; sigue `manual_evidence_pending`, fuera de la admisión 0.16.7 y no constituye evidencia de aceptación.
+  - `TC-GPH-081` conserva su alcance parcial de detección de delta (`internal/workspace/worktree_overlay_test.go`)
+  - `TC-GPH-082`, `TC-GPH-083`, `TC-GPH-084` y `TC-GPH-086` quedan pendientes: las pruebas de snapshot, caché y fingerprint de runtime se retiraron con su código y no hay oráculo automatizado para la respuesta `partial` de worktree con delta
+- **Caso futuro excluido de esta verificación**: `TC-GPH-085` conserva el objetivo histórico Go+C# de selección de entrypoint; sigue `manual_evidence_pending`, fuera de la admisión 0.16.7 y no constituye evidencia de aceptación
 - **Evidencia referenciada**:
   - `internal/model/graph_query.go`
   - `internal/service/app.go`

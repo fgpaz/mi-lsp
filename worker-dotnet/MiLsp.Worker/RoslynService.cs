@@ -56,11 +56,26 @@ public sealed class RoslynService
             }
 
             var graphObservation = request.Method == "graph_observe";
+            // Graph observation stays generic: its contract forbids local paths in errors.
             var error = graphObservation
                 ? "Graph observation backend is unavailable"
-                : errorCode == "solution_config_error" ? "Solution configuration is invalid" : "Worker request failed";
+                : errorCode == "solution_config_error" ? "Solution configuration is invalid" : $"Worker request failed: {BoundedCause(exception)}";
             return new WorkerResponse(false, "roslyn", Error: error, ErrorCode: graphObservation ? "GPH_BACKEND_UNAVAILABLE" : errorCode, Stats: new WorkerStats(Ms: started.ElapsedMilliseconds));
         }
+    }
+
+    // Keeps the first cause visible (for example a missing SDK or an unloadable
+    // solution) without a stack trace: one line, one inner message, bounded size.
+    private static string BoundedCause(Exception exception)
+    {
+        var message = exception.Message ?? string.Empty;
+        var inner = exception.InnerException?.Message;
+        if (!string.IsNullOrWhiteSpace(inner) && !message.Contains(inner, StringComparison.Ordinal))
+        {
+            message = $"{message} ({inner})";
+        }
+        var collapsed = string.Join(" ", message.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)).Trim();
+        return collapsed.Length <= 400 ? collapsed : collapsed.Substring(0, 400) + "...";
     }
 
     private async Task<WorkerResponse> GetStatusAsync(WorkerRequest request, long elapsedMs, CancellationToken cancellationToken)
@@ -1062,6 +1077,18 @@ public sealed class RoslynService
         var cacheKey = ResolveCacheKey(request);
         var workspace = _workspaceCache.GetOrAdd(cacheKey, _ => MSBuildWorkspace.Create());
         var workspaceLock = _workspaceLocks.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
+        var failures = new List<string>();
+        IDisposable? failureSubscription = null;
+        Action<WorkspaceDiagnosticEventArgs> onWorkspaceFailed = args =>
+        {
+            lock (failures)
+            {
+                if (args.Diagnostic.Kind == WorkspaceDiagnosticKind.Failure && failures.Count < 3)
+                {
+                    failures.Add(args.Diagnostic.Message);
+                }
+            }
+        };
         await workspaceLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -1069,7 +1096,8 @@ public sealed class RoslynService
             // CloseSolution clears the workspace before every request, so a failed reload cannot
             // fall back to stale semantic state.
             workspace.CloseSolution();
-            if (solutionPath.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
+            failureSubscription = workspace.RegisterWorkspaceFailedHandler(onWorkspaceFailed);
+            if (IsSolutionPath(solutionPath))
             {
                 await workspace.OpenSolutionAsync(solutionPath, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
@@ -1080,12 +1108,19 @@ public sealed class RoslynService
 
             if (workspace.CurrentSolution.ProjectIds.Count == 0)
             {
-                throw new InvalidOperationException("Roslyn workspace reload produced no projects");
+                string[] reported;
+                lock (failures)
+                {
+                    reported = failures.ToArray();
+                }
+                var detail = reported.Length == 0 ? string.Empty : $": {string.Join("; ", reported)}";
+                throw new InvalidOperationException($"Roslyn workspace reload produced no projects{detail}");
             }
             return workspace.CurrentSolution;
         }
         finally
         {
+            failureSubscription?.Dispose();
             workspaceLock.Release();
         }
     }
@@ -1121,7 +1156,8 @@ public sealed class RoslynService
             }
 
             items.AddRange(compilation.GetSymbolsWithName(
-                name => string.Equals(name, query, StringComparison.OrdinalIgnoreCase) || name.Contains(query, StringComparison.OrdinalIgnoreCase),
+                // Exact name only: a substring match returned unrelated symbols (IStartupRetryDelay for RetryDelay).
+                name => string.Equals(name, query, StringComparison.OrdinalIgnoreCase),
                 SymbolFilter.TypeAndMember));
         }
         return items
@@ -1139,6 +1175,9 @@ public sealed class RoslynService
         }
         return Path.IsPathRooted(path) ? Path.GetFullPath(path) : Path.GetFullPath(Path.Combine(workspaceRoot, path));
     }
+
+    private static bool IsSolutionPath(string path) =>
+        path.EndsWith(".sln", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase);
 
     private static string ResolveSolutionPath(WorkerRequest request)
     {
@@ -1167,7 +1206,13 @@ public sealed class RoslynService
         }
 
         var searchRoot = !string.IsNullOrWhiteSpace(request.RepoRoot) ? Path.GetFullPath(request.RepoRoot) : workspaceRoot;
-        var solutions = Directory.EnumerateFiles(searchRoot, "*.sln", SearchOption.AllDirectories).ToList();
+        var solutions = Directory.EnumerateFiles(searchRoot, "*.sln", SearchOption.AllDirectories)
+            .Concat(Directory.EnumerateFiles(searchRoot, "*.slnx", SearchOption.AllDirectories))
+            .Where(IsSolutionPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path.Count(c => c == Path.DirectorySeparatorChar))
+            .ThenBy(path => path, StringComparer.Ordinal)
+            .ToList();
         if (solutions.Count > 0)
         {
             return solutions[0];
