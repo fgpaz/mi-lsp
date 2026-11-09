@@ -29,6 +29,7 @@ const (
 )
 
 type QueryOptions struct {
+	Operation           string `json:"-"`
 	Workspace           string `json:"workspace,omitempty"`
 	WorkspaceSource     string `json:"workspace_source,omitempty"`
 	CallerCWD           string `json:"caller_cwd,omitempty"`
@@ -108,7 +109,8 @@ type Coach struct {
 }
 
 type ContinuationTarget struct {
-	Op        string                `json:"op"`
+	Command   string                `json:"command,omitempty"`
+	Op        string                `json:"op,omitempty"`
 	Query     string                `json:"query,omitempty"`
 	Workspace string                `json:"workspace,omitempty"`
 	Repo      string                `json:"repo,omitempty"`
