@@ -1,0 +1,17 @@
+[
+  {
+    "path": "README.md",
+    "sha256": "093a57f18b243647b27bee6e44d009cf1f84eaca3a4db12a314aa1a7402b286d",
+    "bytes": 2462
+  },
+  {
+    "path": "evidencia/results/catalog-generation-docs-only-gap-20261101.md",
+    "sha256": "f327c8a95f116b2d60dbe6cea5089cc219d3364540d13dd3fcc4a5ecdf742602",
+    "bytes": 5870
+  },
+  {
+    "path": "evidencia/results/overlay-go-delta-20261030.md",
+    "sha256": "5d04cf1afb76f5472be0f2a8e27e67fc70dfc0987e68a44d79f1dbf8d6efcaa6",
+    "bytes": 804
+  }
+]
