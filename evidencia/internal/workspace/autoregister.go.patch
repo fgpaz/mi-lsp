@@ -1,0 +1,154 @@
+diff --git a/internal/workspace/autoregister.go b/internal/workspace/autoregister.go
+index 105d938..3a0e122 100644
+--- a/internal/workspace/autoregister.go
++++ b/internal/workspace/autoregister.go
+@@ -217,6 +217,149 @@ func linkedWorktree(root string) (bool, string, bool) {
+ 	return gitDir != commonDir, commonDir, true
+ }
+ 
++// worktreeControlBacklink is a cheap preflight, not evidence of identity by itself.
++// Git verification below is still required before any provenance is recorded.
++func worktreeControlBacklink(root string) bool {
++	control := filepath.Join(root, ".git")
++	info, err := os.Stat(control)
++	if err != nil || !info.Mode().IsRegular() || info.Size() > 16384 {
++		return false
++	}
++	data, err := os.ReadFile(control)
++	if err != nil {
++		return false
++	}
++	line := strings.TrimSpace(string(data))
++	if !strings.HasPrefix(line, "gitdir: ") {
++		return false
++	}
++	gitDir := strings.TrimSpace(strings.TrimPrefix(line, "gitdir: "))
++	if gitDir == "" || strings.ContainsAny(gitDir, "\r\n") {
++		return false
++	}
++	if !filepath.IsAbs(gitDir) {
++		gitDir = filepath.Join(root, gitDir)
++	}
++	gitDir, err = filepath.EvalSymlinks(gitDir)
++	if err != nil {
++		return false
++	}
++	backlinkFile := filepath.Join(gitDir, "gitdir")
++	backlinkInfo, err := os.Stat(backlinkFile)
++	if err != nil || !backlinkInfo.Mode().IsRegular() || backlinkInfo.Size() > 16384 {
++		return false
++	}
++	backlink, err := os.ReadFile(backlinkFile)
++	if err != nil || len(backlink) > 16384 {
++		return false
++	}
++	backlinkPath := strings.TrimSpace(string(backlink))
++	if !filepath.IsAbs(backlinkPath) {
++		backlinkPath = filepath.Join(gitDir, backlinkPath)
++	}
++	return sameFilePath(backlinkPath, control)
++}
++
++// verifiedWorktreeIdentity records provenance only while both physical trees exist.
++func verifiedWorktreeIdentity(root string) *model.WorktreeIdentity {
++	physical, err := filepath.EvalSymlinks(root)
++	if err != nil || !filepath.IsAbs(physical) {
++		return nil
++	}
++	physical = filepath.Clean(physical)
++	if !worktreeControlBacklink(physical) {
++		return nil
++	}
++	top, ok := gitTopLevel(physical)
++	if !ok || !sameFilePath(top, physical) {
++		return nil
++	}
++	linked, common, ok := linkedWorktree(physical)
++	if !ok || !linked {
++		return nil
++	}
++	main := filepath.Dir(common)
++	mainTop, ok := gitTopLevel(main)
++	if !ok || !sameFilePath(mainTop, main) {
++		return nil
++	}
++	mainLinked, mainCommon, ok := linkedWorktree(main)
++	if !ok || mainLinked || !sameFilePath(mainCommon, common) || sameFilePath(main, physical) {
++		return nil
++	}
++	out, err := processutil.Command("git", "-C", physical, "rev-parse", "--absolute-git-dir").Output()
++	if err != nil {
++		return nil
++	}
++	gitDir, err := filepath.EvalSymlinks(strings.TrimSpace(string(out)))
++	if err != nil || !filepath.IsAbs(gitDir) || sameFilePath(gitDir, common) {
++		return nil
++	}
++	backlink, err := os.ReadFile(filepath.Join(gitDir, "gitdir"))
++	if err != nil || len(backlink) > 16384 {
++		return nil
++	}
++	backlinkPath := strings.TrimSpace(string(backlink))
++	if !filepath.IsAbs(backlinkPath) {
++		backlinkPath = filepath.Join(gitDir, backlinkPath)
++	}
++	if !sameFilePath(backlinkPath, filepath.Join(physical, ".git")) {
++		return nil
++	}
++	return &model.WorktreeIdentity{
++		Version: 1, Verification: "verified", PhysicalRoot: physical, MainRoot: filepath.Clean(main),
++		CommonDir: filepath.Clean(common), GitDir: filepath.Clean(gitDir),
++	}
++}
++
++// refreshedWorktreeIdentity distinguishes positive non-WT proof from an
++// indeterminate verification. Uncertainty preserves provenance but disqualifies
++// it for automatic GC until a living tree can be verified again.
++func refreshedWorktreeIdentity(root string, previous *model.WorktreeIdentity) *model.WorktreeIdentity {
++	if previous != nil && previous.Version != 1 {
++		identity := *previous
++		return &identity
++	}
++	if identity := verifiedWorktreeIdentity(root); identity != nil {
++		return identity
++	}
++	if previous == nil {
++		return nil
++	}
++	if marker, err := os.Lstat(filepath.Join(root, ".git")); err == nil && marker.IsDir() {
++		// Directory shape alone is not positive Git proof: permissions,
++		// corruption or a transient command failure must retain provenance.
++		top, topOK := gitTopLevel(root)
++		linked, common, commonOK := linkedWorktree(root)
++		if topOK && commonOK && !linked && sameFilePath(top, root) && sameFilePath(common, filepath.Join(root, ".git")) {
++			return nil
++		}
++	}
++	if previous != nil {
++		identity := *previous
++		identity.Verification = "indeterminate"
++		return &identity
++	}
++	return nil
++}
++
++// validRecordedWorktreeIdentity never attempts to infer a missing tree's identity.
++func validRecordedWorktreeIdentity(root string, id *model.WorktreeIdentity) bool {
++	if id == nil || id.Version != 1 || id.Verification != "verified" {
++		return false
++	}
++	for _, path := range []string{root, id.PhysicalRoot, id.MainRoot, id.CommonDir, id.GitDir} {
++		if path == "" || !filepath.IsAbs(path) || filepath.Clean(path) != path {
++			return false
++		}
++	}
++	return sameFilePath(root, id.PhysicalRoot) &&
++		!sameFilePath(id.PhysicalRoot, id.MainRoot) &&
++		!sameFilePath(id.GitDir, id.CommonDir) &&
++		!sameFilePath(id.MainRoot, id.CommonDir) &&
++		!sameFilePath(id.PhysicalRoot, id.CommonDir)
++}
++
+ func registeredMainWorktree(commonDir string, registry model.RegistryFile) (model.WorkspaceRegistration, bool) {
+ 	lastWorkspace := registry.Defaults.LastWorkspace
+ 	var selected model.WorkspaceRegistration

@@ -1,0 +1,180 @@
+diff --git a/internal/daemon/health_cache.go b/internal/daemon/health_cache.go
+index 48c6b55..a7a754d 100644
+--- a/internal/daemon/health_cache.go
++++ b/internal/daemon/health_cache.go
+@@ -3,6 +3,7 @@ package daemon
+ import (
+ 	"context"
+ 	"encoding/json"
++	"errors"
+ 	"os"
+ 	"path/filepath"
+ 	"strings"
+@@ -113,9 +114,53 @@ type healthCache struct {
+ 	StateSize int64     `json:"state_size"`
+ }
+ 
+-// rememberLegacyHealth records the successful startup probe, so the first
+-// ordinary client does not immediately repeat it. Failure to cache is harmless.
+-func rememberLegacyHealth() {
++type legacyHealthCache struct {
++	healthCache
++	StateDigest     string    `json:"state_digest"`
++	PID             int       `json:"pid"`
++	RunID           int64     `json:"run_id"`
++	StartedAt       time.Time `json:"started_at"`
++	Endpoint        string    `json:"endpoint"`
++	Version         string    `json:"version"`
++	ProtocolVersion string    `json:"protocol_version"`
++}
++
++// legacyOwnerMatches compares the status observation with a stable on-disk
++// owner, including the admin binding without storing the token in the cache.
++func legacyOwnerMatches(observed, state model.DaemonState) bool {
++	return observed.PID > 0 && observed.RunID > 0 && !observed.StartedAt.IsZero() &&
++		observed.Endpoint == defaultEndpoint() && observed.Version != "" && observed.ProtocolVersion != "" &&
++		observed.ExecutablePath != "" && observed.ExecutableSHA256 != "" && observed.AdminURL != "" && observed.AdminToken != "" &&
++		processExists(observed.PID) && state.PID == observed.PID && state.RunID == observed.RunID &&
++		state.StartedAt.Equal(observed.StartedAt) && state.Endpoint == observed.Endpoint && state.Version == observed.Version &&
++		state.ProtocolVersion == observed.ProtocolVersion && state.ExecutablePath == observed.ExecutablePath &&
++		state.ExecutableSHA256 == observed.ExecutableSHA256 && state.AdminURL == observed.AdminURL && state.AdminToken == observed.AdminToken
++}
++
++// writeLegacyHealth must be called under health.lock, and only with a real
++// successful status observation. The digest covers the binding but is not a token.
++func writeLegacyHealth(dir string, observed model.DaemonState) {
++	path, err := daemonStatePath()
++	if err != nil {
++		return
++	}
++	state, info, digest, err := readUpdateOwnerState(path)
++	if err != nil || !legacyOwnerMatches(observed, state) {
++		return
++	}
++	stateAfter, after, afterDigest, err := readUpdateOwnerState(path)
++	if err != nil || !legacyOwnerMatches(observed, stateAfter) || !os.SameFile(info, after) ||
++		!info.ModTime().Equal(after.ModTime()) || info.Size() != after.Size() || digest != afterDigest {
++		return
++	}
++	cache := legacyHealthCache{healthCache: healthCache{Checked: time.Now(), StateMod: after.ModTime(), StateSize: after.Size()}, StateDigest: digest,
++		PID: state.PID, RunID: state.RunID, StartedAt: state.StartedAt, Endpoint: state.Endpoint, Version: state.Version, ProtocolVersion: state.ProtocolVersion}
++	if body, err := json.Marshal(cache); err == nil {
++		_ = os.WriteFile(filepath.Join(dir, "health-cache.json"), body, 0600)
++	}
++}
++
++func rememberLegacyHealthForOwner(observed model.DaemonState) {
+ 	dir, err := daemonRootDir()
+ 	if err != nil {
+ 		return
+@@ -130,78 +175,79 @@ func rememberLegacyHealth() {
+ 		return
+ 	}
+ 	defer unlockStartGuard(lock)
+-	writeLegacyHealth(dir)
++	writeLegacyHealth(dir, observed)
+ }
+ 
+-func writeLegacyHealth(dir string) {
+-	statePath, err := daemonStatePath()
++// On contention do not convert a dial into an authenticated health result.
++func probeLegacyOwner(ctx context.Context, probeClient string) (model.DaemonState, error) {
++	observed, err := probeDaemonWithTransport(ctx, probeClient, &Client{dial: dialDaemon})
+ 	if err != nil {
+-		return
++		return model.DaemonState{}, err
+ 	}
+-	info, err := os.Stat(statePath)
++	path, err := daemonStatePath()
+ 	if err != nil {
+-		return
++		return model.DaemonState{}, err
+ 	}
+-	body, err := json.Marshal(healthCache{Checked: time.Now(), StateMod: info.ModTime(), StateSize: info.Size()})
+-	if err == nil {
+-		_ = os.WriteFile(filepath.Join(dir, "health-cache.json"), body, 0600)
++	state, _, _, err := readUpdateOwnerState(path)
++	if err != nil {
++		return model.DaemonState{}, err
++	}
++	if !legacyOwnerMatches(observed, state) {
++		return model.DaemonState{}, errors.New("daemon status owner does not match local state")
+ 	}
++	return observed, nil
+ }
+ 
+ func ensureLegacyHealth(ctx context.Context, probeClient string) error {
+ 	dir, err := daemonRootDir()
+ 	if err != nil {
+-		_, err = probeDaemonWithClient(ctx, probeClient)
++		_, err = probeLegacyOwner(ctx, probeClient)
+ 		return err
+ 	}
+ 	lock, err := os.OpenFile(filepath.Join(dir, "health.lock"), os.O_CREATE|os.O_RDWR, 0600)
+ 	if err != nil {
+-		_, err = probeDaemonWithClient(ctx, probeClient)
++		_, err = probeLegacyOwner(ctx, probeClient)
+ 		return err
+ 	}
+ 	defer lock.Close()
+ 	locked, err := tryLockStartGuard(lock)
+ 	if err != nil {
+-		_, err = probeDaemonWithClient(ctx, probeClient)
++		_, err = probeLegacyOwner(ctx, probeClient)
+ 		return err
+ 	}
+ 	if !locked {
+-		// Another process is checking; a live transport suffices for this call.
+-		conn, err := dialDaemon(ctx)
+-		if err == nil {
+-			_ = conn.Close()
+-		}
++		_, err := probeLegacyOwner(ctx, probeClient)
+ 		return err
+ 	}
+ 	defer unlockStartGuard(lock)
+ 	statePath, err := daemonStatePath()
+ 	if err != nil {
+-		_, err = probeDaemonWithClient(ctx, probeClient)
++		_, err = probeLegacyOwner(ctx, probeClient)
+ 		return err
+ 	}
+-	info, statErr := os.Stat(statePath)
++	state, info, digest, stateErr := readUpdateOwnerState(statePath)
+ 	cachePath := filepath.Join(dir, "health-cache.json")
+-	var cache healthCache
++	var cache legacyHealthCache
+ 	body, readErr := os.ReadFile(cachePath)
+-	if statErr == nil && readErr == nil && json.Unmarshal(body, &cache) == nil &&
++	if stateErr == nil && readErr == nil && json.Unmarshal(body, &cache) == nil &&
+ 		time.Since(cache.Checked) >= 0 && time.Since(cache.Checked) < 70*time.Second &&
+-		info.ModTime().Equal(cache.StateMod) && info.Size() == cache.StateSize {
++		cache.StateDigest != "" && digest == cache.StateDigest && info.ModTime().Equal(cache.StateMod) && info.Size() == cache.StateSize &&
++		cache.PID == state.PID && cache.RunID == state.RunID && cache.StartedAt.Equal(state.StartedAt) &&
++		cache.Endpoint == state.Endpoint && cache.Version == state.Version && cache.ProtocolVersion == state.ProtocolVersion && legacyOwnerMatches(state, state) {
+ 		conn, dialErr := dialDaemon(ctx)
+ 		if dialErr == nil {
+ 			_ = conn.Close()
+-			return nil
++			afterState, after, afterDigest, afterErr := readUpdateOwnerState(statePath)
++			if afterErr == nil && os.SameFile(info, after) && info.ModTime().Equal(after.ModTime()) && info.Size() == after.Size() &&
++				digest == afterDigest && legacyOwnerMatches(state, afterState) {
++				return nil
++			}
+ 		}
+ 	}
+-	_, err = probeDaemonWithClient(ctx, probeClient)
++	observed, err := probeLegacyOwner(ctx, probeClient)
+ 	if err != nil {
+ 		return err
+ 	}
+-	info, err = os.Stat(statePath)
+-	if err == nil {
+-		body, marshalErr := json.Marshal(healthCache{Checked: time.Now(), StateMod: info.ModTime(), StateSize: info.Size()})
+-		if marshalErr == nil {
+-			_ = os.WriteFile(cachePath, body, 0600)
+-		}
+-	}
++	writeLegacyHealth(dir, observed)
+ 	return nil
+ }

@@ -1,0 +1,42 @@
+[
+  {
+    "path": "README.md",
+    "sha256": "559cf2cd1d8aa7049a1014a2aa2fef7c12c07d9c131eb00551cb23464fd80a1c",
+    "bytes": 2595
+  },
+  {
+    "path": "evidencia/.docs/wiki/05_requirements/RF-DAE-002.md.patch",
+    "sha256": "654807a13f351bcdaec5e1c2fbc24288b7ba16a05ce099ac80c431097b6194c2",
+    "bytes": 2003
+  },
+  {
+    "path": "evidencia/.docs/wiki/05_requirements/RF-WKS-007.md.patch",
+    "sha256": "69fe205d4daad6cda3f04a94a500570f0272e84c7f3e3578ae88778a64c313f5",
+    "bytes": 2448
+  },
+  {
+    "path": "evidencia/internal/daemon/health_cache.go.patch",
+    "sha256": "8e183a3f2e2dfd3686ba40c621266d7c23f53b1f63a2f5872aed2c5df57f4fbc",
+    "bytes": 7323
+  },
+  {
+    "path": "evidencia/internal/daemon/server.go.patch",
+    "sha256": "24dd6c88fc2071dcca7953a6e7b3e020502096ccd26d6af778cd750f78abdb29",
+    "bytes": 3526
+  },
+  {
+    "path": "evidencia/internal/model/types.go.patch",
+    "sha256": "c569ca4fc58f658aad0285a84f45076b45af8867d56fe1cd13bcb43c14b0cdbc",
+    "bytes": 1804
+  },
+  {
+    "path": "evidencia/internal/workspace/autoregister.go.patch",
+    "sha256": "bc339c6fba7d4f32296f5ed68af0eee88618cf28e390aee824530702922301d1",
+    "bytes": 5466
+  },
+  {
+    "path": "evidencia/internal/workspace/registry.go.patch",
+    "sha256": "a5b8251b2b2deb4f10211b28f6c62f11481d632bb24c1c4c156d6543482e1caf",
+    "bytes": 5894
+  }
+]

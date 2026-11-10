@@ -1,0 +1,47 @@
+diff --git a/.docs/wiki/05_requirements/RF-WKS-007.md b/.docs/wiki/05_requirements/RF-WKS-007.md
+index ce48473..f54387f 100644
+--- a/.docs/wiki/05_requirements/RF-WKS-007.md
++++ b/.docs/wiki/05_requirements/RF-WKS-007.md
+@@ -24,6 +24,8 @@ links:
+     role: behavior
+   - path: internal/workspace/registry.go
+     role: behavior
++  - path: internal/model/types.go
++    role: behavior
+ ---
+ 
+ ## Propósito
+@@ -206,7 +208,15 @@ Las pruebas cubren snapshots antes/después de parent, worktree, home y fixtures
+   - **triggers**:
+     - workspace_list
+     - workspace_resolve
+-  - **removable_only_when**: root_is_definitively_missing
++  - **removable_only_when**: linked_worktree_identity_v1_verification_verified_and_root_entry_definitively_missing_ENOENT
++  - **absence_proof**: Lstat_entry_and_ancestors_no_existing_or_dangling_symlink
++  - **identity_provenance**: capture_physical_root_main_root_common_dir_and_git_dir_while_alive
++  - **identity_refresh**: reverify_v1_while_alive_clear_only_on_positive_non_worktree_proof
++  - **indeterminate_verification**: preserve_provenance_with_verification_indeterminate_ineligible_for_GC_until_live_reverification
++  - **legacy_missing_or_unknown_identity_version**: retain_never_infer_worktree_from_missing_path
++  - **main_root**: never_automatically_prune
++  - **publication**: registry_lock_atomic_save_and_second_ENOENT_check
++  - **identity_enrichment**: authorized_mutating_registration_or_gc_maintenance_only_never_read_only_probe
+   - **ambiguous_permission_or_io_errors**: retain_and_report_skipped
+   - **cleanup_log**: sanitized_counts_without_paths
+   - **empty_root**: retain_and_report_skipped
+@@ -226,8 +236,16 @@ Las pruebas cubren snapshots antes/después de parent, worktree, home y fixtures
+     - delete_cache
+     - delete_worktree
+   - **manual_command**: mi-lsp workspace prune --stale
++  - **manual_scope**: explicit_stale_alias_cleanup_unchanged_not_automatic_worktree_gc
+ - **registration**:
+   - **root**: git_top_level
++  - **worktree_identity**:
++    - **optional**: true
++    - **version**: 1
++    - **fields**: physical_root_main_root_common_dir_git_dir_verification
++    - **verification**: verified_or_indeterminate_missing_value_is_not_verified
++    - **provenance**: verified_git_identity_while_roots_alive
++    - **unknown_version**: preserve_without_automatic_prune
+   - **project_toml**:
+     - **create_only_if_missing**: true
+     - **preserve_existing**: true
