@@ -1,3 +1,4 @@
+<!-- deprecation-scan-file: historical -->
 # mi-lsp Agent Runtime Hardening Implementation Plan
 
 > **For Hermes/OpenCode:** Use `subagent-driven-development` and `dispatching-parallel-agents` to execute this plan lane-by-lane. Dispatch one subagent per lane or worktree after the serial gates are complete.
