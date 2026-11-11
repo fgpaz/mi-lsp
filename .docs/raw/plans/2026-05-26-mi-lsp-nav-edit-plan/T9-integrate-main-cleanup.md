@@ -1,4 +1,5 @@
 ---
+# deprecation-scan-file: historical
 linear_parent: null
 linear_child: null
 goal_id: G1

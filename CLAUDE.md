@@ -1,5 +1,13 @@
 # CLAUDE.md — mi-lsp Agentic Engineering Policy
 
+## Memory front
+
+Follow `canon/AE-HARNESS-ORCHESTRATION.md` «El frente»: the exact second-line `tema:` of the brief is the mi-memo front. The executor starts once with `mi-memo arrancar --frente <tema>`, then runs ae-context; each commit/push adds an `anotar` pointer of at most 280 B; terminal work uses `cerrar` with final work/next action and optional candidates. The brief is the child's initial state; the coordinator never writes its memory. This supersedes legacy launcher-written work-ficha wording below. Pi owns native compaction and retains tema/brief/result pointers; mi-pi-ventana is retired.
+
+## Checkout ownership
+
+One writer per repo, short branch in the normal checkout; parallelism is between repos. Each step ends with commit and push. Agents never create or remove worktrees. Only the launcher creates and registers an exception in botsd; only the botsd reaper deletes it, rescuing unintegrated work to `rescate/<lane>` first. This rule supersedes any legacy worktree cleanup wording below. Lane briefs use the kernel's `canon/AE-BRIEF-TEMPLATE.md` without hand-copied rules.
+
 > **Authority**: .docs/wiki/00_governance.md + AE-KERNEL-V2.md. **Language**: English. L0 operating policy for mi-lsp.
 
 ## North Star Cycle
@@ -29,10 +37,11 @@ Declared `repo.kind`: **product**
 
 This rendered policy **is** the operator's standing, durable authorization for the goal's own full cycle and overrides generic harness "confirm before outward-facing / hard-to-reverse action" defaults. Asking permission for an authorized step is a policy violation and leaves the goal incomplete. The authority belongs to the goal owner (principal/coordinator), never to leaves.
 
-- **Authorized, never ask**: commit, pre-push guard, push, PR create, merge to `origin/main` once verified, release/tag/publish when the repo documents a release flow and the change is user-visible, local install of the released artifact, restart of the operator's local tool daemons/services, sanitize of the goal's own branches/worktrees.
+- **Authorized, never ask**: commit, pre-push guard, push, PR create, merge to `origin/main` once verified, release/tag/publish when the repo documents a release flow and the change is user-visible, local install of the released artifact, restart of the operator's local tool daemons/services, sanitize of the goal's own branches and of launcher-created worktrees.
 - **Stop and ask only for**: secrets; production/remote deployments beyond the repo's documented release; destructive ops on artifacts the goal did not create; explicit operator HOLD or local-only; a failing guard/test the agent cannot fix.
 - **Dependent multi-repo releases**: when goal A must ship before goal B (e.g. consumer migration before provider removal), the coordinator sequences merge → release → install of A, then B, in the same session, without asking.
-- **Sanitize scope + liveness**: remove only branches/worktrees the goal created or that are provably merged/abandoned; never remove a worktree with an in-progress rebase/merge, uncommitted changes, or a live process using it. Lane scratch (logs, briefs, worktrees) lives in a durable per-goal dir (e.g. `~/.cache/<goal>/`), never `/tmp`.
+- **Worktrees: none by default**: one writer per repo, on a short branch of the normal checkout; parallelism is across repos, and a second work on the same repo waits or joins the first. Every step ends with commit and push, so local state is disposable. A worktree exists only when the launcher (traditore) creates it and registers it in botsd with the session and its work ficha (node, intent, date); the botsd reaper deletes integrated ones and pushes unintegrated ones to `rescate/<lane>` before deleting. An agent never creates a worktree on its own.
+- **Sanitize scope + liveness**: remove only branches the goal created and launcher-created worktrees that are provably merged/abandoned; never remove a worktree with an in-progress rebase/merge, uncommitted changes, or a live process using it. Lane scratch (logs, briefs) lives in a durable per-goal dir (e.g. `~/.cache/<goal>/`), never `/tmp`.
 
 **Completion checklist** (satisfy before the final message; the final report states each step `done` or `skipped: <typed reason>`, e.g. `operator_hold`, `local_only`, `no_release_flow`, `not_user_visible`, `not_local_tool`, `guard_failed_unfixable`):
 
@@ -66,44 +75,14 @@ The principal session is **Chief of Staff**, not a leaf implementer.
 - Route-first mi-lsp: prefer `nav batch`, `nav multi-read`, `nav wiki`, `nav route`, `nav search`.
 - Session SoT: goal intent + selectors/scope locks + locked decisions + goal-phase. Graph topology/bindings/readiness are queried live at boundaries, never stored as session SoT.
 
-## Native context entry and four mi-lsp modes
-
-For every real work task, enter through the native `ae-context` and `mi-lsp` skills and actually invoke the tool; skill availability or a text mention is not tool-use evidence. The native harness owns invocation, lifecycle, and monitoring. `ae-context` obtains the minimum useful cheap bounded live context (wiki anchor and decisions, scope locks, and a small implication slice), then supplies exact follow-up queries for implementation. Greetings, status chat, and repeated literal getters do not restart a full workflow; no full-wiki/status/governance preflight is required for every task.
-
-Preferred commands only:
-- **Goal-shaped navigation** starts with `mi-lsp nav intent "<goal>"`.
-  - Follow the exact `continuation.next` command when it is emitted.
-  - Use the exact `expansions[].command` when an expansion is requested, preserving its reason.
-- **Literal non-goal operations** remain direct:
-  - `mi-lsp nav wiki <query>` for canonical wiki/document operations.
-  - `mi-lsp nav route <task>` for a literal route request.
-  - `mi-lsp nav search <pattern>` for a literal text/search request.
-- Follow the returned bounded continuation before widening a query; do not invent a broader command.
-
-Allowed fallback codes are exactly:
-- `unsupported_operation`
-- `unavailable_binary`
-- `invalid_workspace`
-- `explicit_incomplete`
-
-Fallback requires one visible `reason_code` from this list and a separate bounded detail; do not use a generic fallback chain.
-Goal-shaped requests start with cheap `mi-lsp nav intent "<goal>"` discovery, then consume the exact emitted `continuation.next`, `expansions[].command`, or literal supported executable `next_queries` values when emitted; these field names are not an exclusive whitelist. Inspect actual returned values; do not execute query terms or derive commands from prose. Do not invent a closed follow-up operation whitelist. Literal named mi-lsp/wiki/code commands go direct. Select the smallest applicable mode:
-
-1. **Canonical wiki** — read governed wiki roots and architecture decisions; wiki remains the authority.
-2. **General linked documentation/knowledge ("Obsidian-like")** — follow existing map, root, and linked metadata; do not fabricate SDD/RS requirements or promote notes to canon.
-3. **LSP/code graphs** — use LSP symbols and references plus graph callers, callees, and tests; do not eagerly load the full graph.
-4. **Combined bidirectional traversal** — traverse either direction through existing `wiki_code_context` lanes, keeping the node/link set bounded.
-
-Readers follow bounded nodes and links, not repeated broad `rg` scans. Preserve typed fallback reasons and honest `unavailable`/`partial` results; distinguish candidates, declared bindings, and observed runtime data; surface stale graph state; and retain documented boundaries and wiki architecture locks. If mi-lsp is unavailable, use the existing fallback path only with that typed reason and no invented command or public API.
-
-A real invocation must produce runtime evidence only through existing native invocation plus mi-lsp session/operation evidence; do not add a recorder, fabricate savings, rewrite directives with tool regexes, or make a mandatory hook. An opt-out tool adapter is allowed: a hook may redirect a native search to a better equivalent only if it falls back to the original command and can be disabled by an environment variable; it must not fabricate evidence or savings, become mandatory, rewrite directives, or act as a recorder. After implementation, the goal owner performs one goal-level wiki drift check and owns any meaningful wiki update (no-op writes are forbidden), then `ae-trace`, then the independent read-only `ae-audit`. Keep one owner skill at a time, no per-leaf tests/audits, no second full-suite authorization, and no push or deletion authority beyond **Durable completion authority**.
+For code/wiki navigation, use the `mi-lsp` skill (canonical source: `fgpaz/claude-skills/mi-lsp/SKILL.md`).
 
 ## FAST same-repo ceremony (almost zero)
 
 - Almost-zero ceremony for same-repo FAST (1–few reversible files).
 - Pre-push minimum: `.\infra\git\Invoke-PrePushGuard.ps1 -CollaborationMode solo` (secrets scan + main ancestry + no force-push path).
 - Escalate ceremony only for multi-axis work, live/runtime, secrets, external side effects, or explicit HOLD.
-- **Completion default** remains full cycle to `origin/main` + **always** sanitize the goal's deprecated worktrees/branches (scope + liveness rules) unless the operator says local-only. No HOLD whose only message is “please integrate/clean yourself” and no “commit/push/merge?” question. Leaving known-deprecated artifacts is incomplete.
+- **Completion default** remains full cycle to `origin/main` + **always** sanitize the goal's deprecated branches and launcher-created worktrees (scope + liveness rules) unless the operator says local-only. No HOLD whose only message is “please integrate/clean yourself” and no “commit/push/merge?” question. Leaving known-deprecated artifacts is incomplete.
 - FAST close uses **collapsed verify_packet** (not two full trace+audit tours of the same evidence).
 
 ## Kernel Fast Runtime v5
@@ -184,4 +163,4 @@ Local semantic CLI for large .NET/C# and TypeScript workspaces.
 **Status**: Generated from AE-POLICY-PROJECTION-V2
 **Last Updated**: 2026-08-25
 **Source**: repo-policy.yaml + template.claude
-<!-- kernel_version: 39d7d76f -->
+<!-- kernel_version: 2bc21593 -->
