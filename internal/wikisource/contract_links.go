@@ -394,7 +394,7 @@ var contractRequiredH2 = map[string][]string{
 	"outcome":      {"Resultado observable", "Beneficiario", "Criterios de éxito", "Fuera de alcance del RS"},
 	"architecture": {"Contexto", "Contenedores (C4)", "Decisiones clave"},
 	"decision":     {"Contexto", "Decisión", "Consecuencias", "Alternativas descartadas"},
-	"flow":         {"Objetivo", "Alcance", "Actores", "Pre/postcondiciones", "Secuencia", "Restricciones ADR"},
+	"flow":         {"Objetivo", "Alcance", "Actores", "Pre/postcondiciones", "Secuencia"},
 	"requirement":  {"Propósito", "Comportamiento ordenado", "Superficies", "Entradas/salidas tipadas", "Errores", "Criterios de aceptación (numerados)"},
 	"test":         {"Alcance", "Casos (cada caso cita el número del criterio RF, con disposición y evidencia esperada)"},
 	"technical":    {"Resumen", "Mapa de componentes"},
