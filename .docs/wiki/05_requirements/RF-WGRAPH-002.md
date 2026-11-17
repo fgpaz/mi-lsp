@@ -33,7 +33,7 @@ Los avisos de idioma, secciones y diagramas son advisory. No se suprimen los che
 ## Criterios de aceptación
 1. Los títulos es/en y las referencias Criterio N/Criterion N se interpretan en validate-contract y matrix según language, sin admitir el otro idioma como cobertura.
 2. Falta de language devuelve es con warning; un valor inválido no se convierte silenciosamente a es ni en criterios cubiertos.
-3. Falta de C4Context/C4Container en ARCH y sequenceDiagram en FL produce findings diagram_missing con blocking=false; los checks anteriores siguen activos.
+3. Falta de C4Context/C4Container en ARCH produce findings diagram_missing con blocking=false; la ausencia de sequenceDiagram en FL no produce finding; los checks anteriores siguen activos.
 4. Un scope sin documentos es ADVISORY, nunca PASS vacuo; fuentes inválidas o esquema Setup desconocido no abren una raíz alternativa.
 5. El registro de retiros admite `entries` y el YAML previo `retirements`: filas con `id`, `old_path`, `archived_path`, `reason`, `terminal` y `superseded_by` según el contrato técnico. La ausencia explícita y válida no inventa filas; filas inválidas, ambigüedad o contradicción permanecen ADVISORY.
 

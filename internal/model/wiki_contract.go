@@ -103,7 +103,6 @@ var wikiContractLocalizedSections = map[string][]wikiContractSectionPair{
 		{"actors", "Actores", "Actors"},
 		{"pre_postconditions", "Pre/postcondiciones", "Pre/postconditions"},
 		{"sequence", "Secuencia", "Sequence"},
-		{"adr_constraints", "Restricciones ADR", "ADR constraints"},
 	},
 	"requirement": {
 		{"purpose", "Propósito", "Purpose"},
@@ -478,7 +477,7 @@ func wikiHarnessMetadataState(content string) (bool, bool) {
 	return wikiHarnessMarkerPattern.MatchString(content), false
 }
 
-// WikiContractDiagramFindings checks required diagram presence only; it is not a Mermaid linter.
+// WikiContractDiagramFindings checks required architecture diagram presence only; it is not a Mermaid linter.
 func WikiContractDiagramFindings(path, kind, body string, language WikiContractLanguage) []WikiContractFinding {
 	if language != WikiContractLanguageES && language != WikiContractLanguageEN {
 		return nil
@@ -501,16 +500,6 @@ func WikiContractDiagramFindings(path, kind, body string, language WikiContractL
 					Message: "diagram_missing:architecture:" + key, Blocking: false,
 				})
 			}
-		}
-	case kind == "flow":
-		sections := WikiContractRequiredSections("flow", language)
-		section := sectionByKey(sections, "sequence")
-		content, _ := wikiContractSectionBody(body, section)
-		if !wikiMermaidContains(content, "sequenceDiagram") {
-			findings = append(findings, WikiContractFinding{
-				Code: "diagram_missing", Kind: kind, SectionKey: "sequence", Expected: "sequenceDiagram",
-				Message: "diagram_missing:flow:sequence", Blocking: false,
-			})
 		}
 	}
 	return findings

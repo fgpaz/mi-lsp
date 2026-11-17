@@ -52,7 +52,7 @@ El envelope identifica generaciones de grafo, documentos y código (`generation_
 
 La autoría v1 usa el header `links` con `fulfills|implements|verifies|affects|supports|materializes|supersedes|experiences|stages|maps|grounds_in|code`; las inversas son derivadas y nunca se autoran. Las listas Markdown `doc_related|doc_depends|doc_supports|doc_contradicts|doc_supersedes` descritas más abajo son compatibilidad distinta, no reemplazan esas relaciones.
 
-`matrix` conserva criterios RF numerados y casos TP referidos a esos números, con disposición y evidencia esperada. El idioma contractual procede de `00_governance.md`: `es|en`, aquí `es`; las H2 se interpretan por stable key, no como jerarquía legacy. `diagram_missing` es un warning con `blocking=false`, no un gate: arquitectura lleva C4Context en Contexto y C4Container en Contenedores (C4); cada FL activo lleva exactamente un sequenceDiagram en Secuencia.
+`matrix` conserva criterios RF numerados y casos TP referidos a esos números, con disposición y evidencia esperada. El idioma contractual procede de `00_governance.md`: `es|en`, aquí `es`; las H2 se interpretan por stable key, no como jerarquía legacy. `diagram_missing` es un warning con `blocking=false`, no un gate: arquitectura lleva C4Context en Contexto y C4Container en Contenedores (C4); en FL, los pasos `P<n>` de Secuencia son la fuente y `sequenceDiagram` es opcional.
 
 ### Roadmap local complementario
 
