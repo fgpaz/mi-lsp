@@ -97,6 +97,7 @@ Las reglas imports/exports y los slots SDD conservados debajo describen el consu
   - qa.canon_paths[]
   - last_updated
 - **optional_when_absent**: repo.description, repo.structure_rules[], secrets.vault, secrets.tool, wiki.paths_file. When present, strings must be non-empty and structure_rules must be a non-empty string list. A present secrets section must be a mapping; an absent section does not require new fields.
+- **authority.kernel.source**: optional nonblank string accepted only within `authority.kernel`. The validator does not resolve or execute it. Other authority entities still accept only `id`.
 - **policy**:
   - **supported_tracker_providers**:
     - Linear

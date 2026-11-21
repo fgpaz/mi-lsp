@@ -7,6 +7,46 @@ import (
 	"testing"
 )
 
+func TestKernelV2AuthoritySourceOnlyInKernel(t *testing.T) {
+	for _, tc := range []struct {
+		name, layer, key string
+		value            any
+		wantValid        bool
+	}{
+		{name: "legacy", wantValid: true},
+		{name: "kernel", layer: "kernel", key: "source", value: "vendor-kernel@tools", wantValid: true},
+		{name: "blank", layer: "kernel", key: "source", value: "  "},
+		{name: "number", layer: "kernel", key: "source", value: 7},
+		{name: "null", layer: "kernel", key: "source"},
+		{name: "unknown key", layer: "kernel", key: "vendor", value: "tools"},
+		{name: "team", layer: "team", key: "source", value: "tools"},
+		{name: "repository", layer: "repository", key: "source", value: "tools"},
+		{name: "person", layer: "person", key: "source", value: "tools"},
+		{name: "session", layer: "session", key: "source", value: "tools"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			authority := map[string]any{
+				"schema": kernelV2AuthoritySchema, "version": kernelV2AuthorityVersion,
+				"model":     []any{"Kernel", "Team", "Repository", "Person", "Session"},
+				"allowlist": map[string]any{"version": kernelV2AuthorityAllowlist, "paths": []any{".docs/ae/repo-policy.yaml"}},
+			}
+			for _, layer := range []string{"kernel", "team", "repository", "person", "session"} {
+				entity := map[string]any{"id": layer + "-id"}
+				if tc.layer == layer {
+					entity[tc.key] = tc.value
+				}
+				authority[layer] = entity
+			}
+			invalid := invalidKernelV2AuthorityBindingSlots(map[string]any{
+				"schema": kernelV2RepoPolicySchema, "version": kernelV2RepoPolicyVersion, "authority": authority,
+			})
+			if (len(invalid) == 0) != tc.wantValid {
+				t.Fatalf("authority slots: %v; want valid=%v", invalid, tc.wantValid)
+			}
+		})
+	}
+}
+
 func writeGovernanceYAML(t *testing.T, root, rel, body string) {
 	t.Helper()
 	abs := filepath.Join(root, filepath.FromSlash(rel))
