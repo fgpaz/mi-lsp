@@ -45,3 +45,4 @@ stop_if:
 evidence:
   - .docs/wiki/00_governance.md
 ```
+babel_project: 81d4584c-bb8f-4c05-ab5d-b788a895a727
