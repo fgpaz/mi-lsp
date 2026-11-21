@@ -31,7 +31,7 @@ function Get-AeDeliveryScalar {
         $key = $match.Groups[2].Value
         $prefix = if ($stack.Count -gt 0) { (($stack | ForEach-Object { $_.Key }) -join '.') + '.' } else { '' }
         $current = $prefix + $key
-        if ($current -eq $Path) {
+        if ($current -ceq $Path) {
             $raw = $match.Groups[3].Value
             return [pscustomobject]@{ Present = $true; Value = if ($null -eq $raw) { '' } else { Unquote-AeDeliveryScalar $raw } }
         }
@@ -135,13 +135,17 @@ function Test-AeDeliveryPathHasReparsePoint {
 }
 
 function Read-AeDeliveryContract {
-    param([string]$Path, [string]$RepositoryRoot)
+    param([string]$Path, [string]$RepositoryRoot, [string]$Content)
     $errors = New-Object System.Collections.ArrayList
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        [void]$errors.Add('delivery contract not found: ' + $Path)
-        return [pscustomobject]@{ Valid = $false; Errors = @($errors); Path = $Path }
+    if ($PSBoundParameters.ContainsKey('Content')) {
+        $text = [string]$Content
+    } else {
+        if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+            [void]$errors.Add('delivery contract not found: ' + $Path)
+            return [pscustomobject]@{ Valid = $false; Errors = @($errors); Path = $Path }
+        }
+        $text = [System.IO.File]::ReadAllText($Path)
     }
-    $text = [System.IO.File]::ReadAllText($Path)
     $lines = @($text -split "`r?`n")
     if ($text -match "`t") { [void]$errors.Add('delivery contract contains tabs; use spaces only') }
 
@@ -263,21 +267,22 @@ function Read-AeDeliveryContract {
         @{ Name = 'delivery.installation.stage'; Value = $installationStage }, @{ Name = 'delivery.installation.target_policy'; Value = $targetPolicy }
     )
     foreach ($field in $required) { if ([string]::IsNullOrWhiteSpace([string]$field.Value)) { [void]$errors.Add('delivery contract required field is missing or empty: ' + $field.Name) } }
-    if ($schema -ne 'ae-delivery-contract/v1') { [void]$errors.Add('delivery contract schema must be exactly ae-delivery-contract/v1') }
-    if ($mode -notin @('mainline','pull_request')) { [void]$errors.Add('delivery.mode must be mainline or pull_request') }
+    if ($schema -cne 'ae-delivery-contract/v1') { [void]$errors.Add('delivery contract schema must be exactly ae-delivery-contract/v1') }
+    if ($mode -cnotin @('mainline','pull_request')) { [void]$errors.Add('delivery.mode must be mainline or pull_request') }
+    if ($remote -match '^-') { [void]$errors.Add('delivery.remote must not begin with a dash') }
     if ($remote -notmatch '^[A-Za-z0-9._-]+$') { [void]$errors.Add('delivery.remote is malformed') }
     if ($base -notmatch '^[A-Za-z0-9._-]+$') { [void]$errors.Add('delivery.base must be a branch name without a remote prefix') }
-    if ($branch -notin @('main','current')) { [void]$errors.Add('delivery.branch must be main for mainline or current for pull_request') }
-    if ($mode -eq 'mainline' -and $branch -ne 'main') { [void]$errors.Add('mainline delivery requires delivery.branch: main') }
-    if ($mode -eq 'pull_request' -and $branch -ne 'current') { [void]$errors.Add('pull_request delivery requires delivery.branch: current') }
-    if ($sourceProduct -and $product -and $sourceProduct -ne $product) { [void]$errors.Add('delivery.source_product must match product') }
-    if ($sameProductOnly -ine 'true') { [void]$errors.Add('delivery.same_product_only must be true') }
-    if ($publicationStage -ne 'publication') { [void]$errors.Add('delivery.publication.stage must be publication') }
-    if ($installationStage -ne 'installation') { [void]$errors.Add('delivery.installation.stage must be installation') }
-    if ($mirrors.Count -eq 0 -and $mirrorPolicy -ne 'none_declared') { [void]$errors.Add('empty distribution_mirrors requires mirror_policy: none_declared') }
-    if ($mirrors.Count -gt 0 -and $mirrorPolicy -ne 'required_declared') { [void]$errors.Add('declared distribution_mirrors require mirror_policy: required_declared') }
-    if ($targets.Count -eq 0 -and $targetPolicy -ne 'manual_only') { [void]$errors.Add('empty installation_targets requires target_policy: manual_only') }
-    if ($targets.Count -gt 0 -and $targetPolicy -ne 'declared') { [void]$errors.Add('declared installation_targets require target_policy: declared') }
+    if ($branch -cnotin @('main','current')) { [void]$errors.Add('delivery.branch must be main for mainline or current for pull_request') }
+    if ($mode -ceq 'mainline' -and $branch -cne 'main') { [void]$errors.Add('mainline delivery requires delivery.branch: main') }
+    if ($mode -ceq 'pull_request' -and $branch -cne 'current') { [void]$errors.Add('pull_request delivery requires delivery.branch: current') }
+    if ($sourceProduct -and $product -and $sourceProduct -cne $product) { [void]$errors.Add('delivery.source_product must match product') }
+    if ($sameProductOnly -cne 'true') { [void]$errors.Add('delivery.same_product_only must be true') }
+    if ($publicationStage -cne 'publication') { [void]$errors.Add('delivery.publication.stage must be publication') }
+    if ($installationStage -cne 'installation') { [void]$errors.Add('delivery.installation.stage must be installation') }
+    if ($mirrors.Count -eq 0 -and $mirrorPolicy -cne 'none_declared') { [void]$errors.Add('empty distribution_mirrors requires mirror_policy: none_declared') }
+    if ($mirrors.Count -gt 0 -and $mirrorPolicy -cne 'required_declared') { [void]$errors.Add('declared distribution_mirrors require mirror_policy: required_declared') }
+    if ($targets.Count -eq 0 -and $targetPolicy -cne 'manual_only') { [void]$errors.Add('empty installation_targets requires target_policy: manual_only') }
+    if ($targets.Count -gt 0 -and $targetPolicy -cne 'declared') { [void]$errors.Add('declared installation_targets require target_policy: declared') }
     if ([System.IO.Path]::IsPathRooted($sourceRoot) -or $sourceRoot -match '(^|[\\/])\.\.([\\/]|$)' -or $sourceRoot -notmatch '[^\\/]') { [void]$errors.Add('delivery.source_root must be a repository-relative non-empty path') }
     $sourcePath = Resolve-AeDeliveryPath $RepositoryRoot $sourceRoot
     if (Test-AeDeliveryPathHasReparsePoint $sourcePath) { [void]$errors.Add('delivery source root contains a symlink or reparse point: ' + $sourceRoot) }
@@ -290,7 +295,7 @@ function Read-AeDeliveryContract {
         foreach ($field in @('name','product','root')) {
             if (-not ($destination.PSObject.Properties.Name -contains $field) -or [string]::IsNullOrWhiteSpace([string]$destination.$field)) { [void]$errors.Add('delivery destination requires name, product, and root') }
         }
-        if (($destination.PSObject.Properties.Name -contains 'product') -and $destination.product -ne $product) { [void]$errors.Add('delivery destination product must match the contract product: ' + $destinationName) }
+        if (($destination.PSObject.Properties.Name -ccontains 'product') -and [string]$destination.product -cne $product) { [void]$errors.Add('delivery destination product must match the contract product: ' + $destinationName) }
         if (($destination.PSObject.Properties.Name -contains 'root') -and $destination.root) {
             $destinationPath = Resolve-AeDeliveryPath $RepositoryRoot ([string]$destination.root)
             if (Test-AeDeliveryPathHasReparsePoint $destinationPath) { [void]$errors.Add('delivery destination contains a symlink or reparse point: ' + [string]$destination.root) }
@@ -302,8 +307,8 @@ function Read-AeDeliveryContract {
     $mirrorFields = @('name','product','root')
     foreach ($destination in @($mirrors + $targets)) {
         foreach ($fieldName in @($destination.PSObject.Properties.Name)) {
-            if ($fieldName -eq '__duplicate_fields') { continue }
-            if ($mirrorFields -notcontains $fieldName) { [void]$errors.Add('delivery destination has unknown field: ' + $fieldName) }
+            if ($fieldName -ceq '__duplicate_fields') { continue }
+            if ($mirrorFields -cnotcontains $fieldName) { [void]$errors.Add('delivery destination has unknown field: ' + $fieldName) }
         }
     }
     return [pscustomobject]@{

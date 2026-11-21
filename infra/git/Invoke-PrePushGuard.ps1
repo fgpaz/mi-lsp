@@ -51,8 +51,9 @@ function ConvertTo-ContentScanArgument {
 }
 
 function Invoke-ContentScanProcess {
-    param([string]$FileName, [string[]]$Arguments, [string]$StdinText, [int]$TimeoutSeconds, [string]$WorkingDirectory, [switch]$ScannerClock)
+    param([string]$FileName, [string[]]$Arguments, [string]$StdinText, [int]$TimeoutSeconds, [string]$WorkingDirectory, [switch]$ScannerClock, [switch]$CaptureBytes)
     $process = $null
+    $stdoutBytes = $null
     $clockStart = 0
     if ($ScannerClock) { $clockStart = [System.Diagnostics.Stopwatch]::GetTimestamp() }
     try {
@@ -67,23 +68,31 @@ function Invoke-ContentScanProcess {
         if ($WorkingDirectory) { $start.WorkingDirectory = $WorkingDirectory }
         $process = New-Object System.Diagnostics.Process
         $process.StartInfo = $start
-        if (-not $process.Start()) { return [pscustomobject]@{ ExitCode = 127; TimedOut = $false; OutputText = '' } }
+        if (-not $process.Start()) { return [pscustomobject]@{ ExitCode = 127; TimedOut = $false; OutputText = ''; OutputBytes = @() } }
         if ($null -ne $StdinText) { $process.StandardInput.Write($StdinText) }
         $process.StandardInput.Close()
-        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        if ($CaptureBytes) {
+            $stdoutBytes = New-Object System.IO.MemoryStream
+            $stdoutTask = $process.StandardOutput.BaseStream.CopyToAsync($stdoutBytes)
+        } else {
+            $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        }
         $stderrTask = $process.StandardError.ReadToEndAsync()
         $timeoutMs = 1000
         if ($TimeoutSeconds -gt 0) { $timeoutMs = [int][Math]::Min([int64]$TimeoutSeconds * 1000, [int]::MaxValue) }
         if (-not $process.WaitForExit($timeoutMs)) {
             try { $process.Kill() } catch { }
-            return [pscustomobject]@{ ExitCode = 124; TimedOut = $true; OutputText = '' }
+            return [pscustomobject]@{ ExitCode = 124; TimedOut = $true; OutputText = ''; OutputBytes = @() }
         }
         [void][System.Threading.Tasks.Task]::WaitAll(@($stdoutTask, $stderrTask), 5000)
-        return [pscustomobject]@{ ExitCode = [int]$process.ExitCode; TimedOut = $false; OutputText = [string]$stdoutTask.Result }
+        $outputText = if ($CaptureBytes) { '' } else { [string]$stdoutTask.Result }
+        $outputBytes = if ($CaptureBytes) { [byte[]]$stdoutBytes.ToArray() } else { @() }
+        return [pscustomobject]@{ ExitCode = [int]$process.ExitCode; TimedOut = $false; OutputText = $outputText; OutputBytes = $outputBytes }
     } catch {
         if ($process) { try { $process.Kill() } catch { } }
-        return [pscustomobject]@{ ExitCode = 127; TimedOut = $false; OutputText = '' }
+        return [pscustomobject]@{ ExitCode = 127; TimedOut = $false; OutputText = ''; OutputBytes = @() }
     } finally {
+        if ($stdoutBytes) { $stdoutBytes.Dispose() }
         if ($ScannerClock) {
             $scanTicks = [System.Diagnostics.Stopwatch]::GetTimestamp() - [int64]$clockStart
             $script:scannerDurationMs += [int][Math]::Max(0, [Math]::Round(($scanTicks * 1000.0) / [System.Diagnostics.Stopwatch]::Frequency))
@@ -97,6 +106,92 @@ function Add-ContentScanVerdict {
     if ($Result.TimedOut -or $Result.ExitCode -eq 124) { [void]$Infra.Add('content scan timed out: ' + $Label); return }
     if ($Result.ExitCode -eq 1) { [void]$Blockers.Add('content scan findings: ' + $Label); return }
     if ($Result.ExitCode -ne 0) { [void]$Infra.Add('content scan failed: ' + $Label + ' exit ' + $Result.ExitCode) }
+}
+
+$script:ApprovedGitleaksBlobSha256 = @('27630a96d6c55755cc37620f3933d5cab94b1eb78a726a32e11212972525d76e')
+
+function Test-ClosedApprovedGitleaksBlob {
+    param([string]$Hash)
+    foreach ($approved in @($script:ApprovedGitleaksBlobSha256)) {
+        if ([string]::Equals([string]$approved, [string]$Hash, [System.StringComparison]::Ordinal)) { return $true }
+    }
+    return $false
+}
+
+function Get-GitleaksConfigBlobSha256 {
+    param([string]$Repo,[string]$Commit,[int]$TimeoutSeconds)
+    $blob = Invoke-ContentScanProcess -FileName 'git' -Arguments @('-C',$Repo,'cat-file','blob',($Commit + ':.gitleaks.toml')) -StdinText $null -TimeoutSeconds $TimeoutSeconds -WorkingDirectory $Repo -CaptureBytes
+    if ($blob.TimedOut -or $blob.ExitCode -ne 0) { return '' }
+    $sha = $null
+    try {
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        $bytes = [byte[]]$blob.OutputBytes
+        return ([System.BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant()
+    } catch { return '' }
+    finally { if ($sha) { $sha.Dispose() } }
+}
+
+function New-GitleaksPolicyReviewError {
+    param([string]$Kind,[string]$Message)
+    return [pscustomobject]@{ Kind=$Kind; Message=$Message }
+}
+
+function Test-GitleaksHumanReview {
+    param([string]$Repo,[string]$BaseSha,[string]$HeadSha,[bool]$FirstPush,[int]$TimeoutSeconds)
+    if ($HeadSha -notmatch '^[0-9a-fA-F]{40}$' -or (-not $FirstPush -and $BaseSha -notmatch '^[0-9a-fA-F]{40}$')) { return $null }
+    $reviewPath = 'infra/git/gitleaks-policy-review.json'
+    $rangeArgs = if ($FirstPush) { @('rev-list','--reverse','--full-history',$HeadSha,'--','.gitleaks.toml') } else { @('rev-list','--reverse','--full-history',($BaseSha + '..' + $HeadSha),'--','.gitleaks.toml') }
+    $listed = Invoke-ContentScanProcess -FileName 'git' -Arguments (@('-C',$Repo) + $rangeArgs) -StdinText $null -TimeoutSeconds $TimeoutSeconds -WorkingDirectory $Repo
+    if ($listed.TimedOut -or $listed.ExitCode -ne 0) { return (New-GitleaksPolicyReviewError 'infrastructure' 'gitleaks policy review commit range binding failed') }
+    $commits = @($listed.OutputText -split "`r?`n" | ForEach-Object { ([string]$_).Trim().ToLowerInvariant() } | Where-Object { $_ })
+    $recordDiff = Invoke-ContentScanProcess -FileName 'git' -Arguments @('-C',$Repo,'diff','--quiet','--no-ext-diff','--no-textconv',$HeadSha,'--',$reviewPath) -StdinText $null -TimeoutSeconds $TimeoutSeconds -WorkingDirectory $Repo
+    if ($recordDiff.ExitCode -eq 1) { return (New-GitleaksPolicyReviewError 'configuration' 'gitleaks policy review record has staged or unstaged changes') }
+    if ($recordDiff.TimedOut -or $recordDiff.ExitCode -ne 0) { return (New-GitleaksPolicyReviewError 'infrastructure' 'gitleaks policy review worktree binding failed') }
+    if ($commits.Count -eq 0) { return $null }
+
+    $treeEntry = Invoke-ContentScanProcess -FileName 'git' -Arguments @('-C',$Repo,'ls-tree',$HeadSha,'--',$reviewPath) -StdinText $null -TimeoutSeconds $TimeoutSeconds -WorkingDirectory $Repo
+    if ($treeEntry.TimedOut -or $treeEntry.ExitCode -ne 0) { return (New-GitleaksPolicyReviewError 'infrastructure' 'gitleaks policy review Git binding failed') }
+    $entries = @($treeEntry.OutputText -split "`r?`n" | Where-Object { ([string]$_).Trim() })
+    if ($entries.Count -ne 1) { return (New-GitleaksPolicyReviewError 'configuration' 'gitleaks policy review record is not tracked at HEAD') }
+    if ($entries[0] -match '^120000\s+blob\s') { return (New-GitleaksPolicyReviewError 'configuration' 'gitleaks policy review record is a symlink') }
+    if ($entries[0] -notmatch '^100[0-7]{3}\s+blob\s') { return (New-GitleaksPolicyReviewError 'configuration' 'gitleaks policy review record is not a regular file at HEAD') }
+
+    $reviewBlob = Invoke-ContentScanProcess -FileName 'git' -Arguments @('-C',$Repo,'cat-file','blob',($HeadSha + ':' + $reviewPath)) -StdinText $null -TimeoutSeconds $TimeoutSeconds -WorkingDirectory $Repo
+    if ($reviewBlob.TimedOut -or $reviewBlob.ExitCode -ne 0) { return (New-GitleaksPolicyReviewError 'infrastructure' 'gitleaks policy review record is unreadable at HEAD') }
+    try { $document = ConvertFrom-Json -InputObject $reviewBlob.OutputText -ErrorAction Stop }
+    catch { return (New-GitleaksPolicyReviewError 'configuration' 'gitleaks policy review record is invalid JSON') }
+    if ($document -isnot [pscustomobject]) { return (New-GitleaksPolicyReviewError 'configuration' 'gitleaks policy review record schema is invalid') }
+    $rootNames = @($document.PSObject.Properties | ForEach-Object { [string]$_.Name })
+    $schemaProperty = $document.PSObject.Properties['schema']
+    $recordsProperty = $document.PSObject.Properties['records']
+    if ($null -eq $schemaProperty -or $schemaProperty.Value -isnot [string] -or [string]$schemaProperty.Value -cne 'ae-gitleaks-policy-review/v1' -or
+        $null -eq $recordsProperty -or $rootNames.Count -ne 2 -or @(@('records','schema') | Where-Object { $rootNames -cnotcontains $_ }).Count -gt 0 -or $recordsProperty.Value -isnot [array]) {
+        return (New-GitleaksPolicyReviewError 'configuration' 'gitleaks policy review record schema is invalid')
+    }
+    $rows = @($document.records)
+    if ($rows.Count -ne $commits.Count) { return (New-GitleaksPolicyReviewError 'configuration' 'gitleaks policy review record does not cover every outgoing config commit') }
+    $seen = @{}
+    foreach ($row in $rows) {
+        if ($row -isnot [pscustomobject]) { return (New-GitleaksPolicyReviewError 'configuration' 'gitleaks policy review record has an invalid entry') }
+        $names = @($row.PSObject.Properties | ForEach-Object { [string]$_.Name })
+        if ($names.Count -ne 4 -or @(@('approval_text','blob_sha256','commit','path') | Where-Object { $names -cnotcontains $_ }).Count -gt 0) { return (New-GitleaksPolicyReviewError 'configuration' 'gitleaks policy review record has an invalid entry') }
+        $commit = [string]$row.commit
+        $path = [string]$row.path
+        $hash = [string]$row.blob_sha256
+        $approvalText = [string]$row.approval_text
+        if ($commit -notmatch '^[0-9a-f]{40}$' -or $path -cne '.gitleaks.toml' -or $hash -notmatch '^[0-9a-f]{64}$' -or [string]::IsNullOrWhiteSpace($approvalText)) { return (New-GitleaksPolicyReviewError 'configuration' 'gitleaks policy review record has an invalid entry') }
+        if ($seen.ContainsKey($commit)) { return (New-GitleaksPolicyReviewError 'configuration' 'gitleaks policy review record repeats a commit') }
+        $seen[$commit] = $hash
+        if ($commits -cnotcontains $commit) { return (New-GitleaksPolicyReviewError 'configuration' 'gitleaks policy review record commit is outside the outgoing config changes') }
+    }
+    foreach ($commit in $commits) {
+        if (-not $seen.ContainsKey($commit)) { return (New-GitleaksPolicyReviewError 'configuration' 'gitleaks policy review record misses an outgoing config commit') }
+        $actual = Get-GitleaksConfigBlobSha256 -Repo $Repo -Commit $commit -TimeoutSeconds $TimeoutSeconds
+        if (-not $actual) { return (New-GitleaksPolicyReviewError 'infrastructure' 'gitleaks policy review could not read the resulting config blob') }
+        if ([string]$actual -cne [string]$seen[$commit]) { return (New-GitleaksPolicyReviewError 'configuration' 'gitleaks policy review blob sha256 does not match the commit') }
+        if (-not (Test-ClosedApprovedGitleaksBlob $actual)) { return (New-GitleaksPolicyReviewError 'configuration' 'gitleaks policy blob sha256 is not in the closed approved set') }
+    }
+    return $null
 }
 
 # Reuses the Gitleaks CLI contract. It does not embed rules, install the binary,
@@ -145,6 +240,17 @@ function Invoke-OutgoingContentScan {
         [void]$ConfigErrors.Add('content scanner config invalid: .gitleaks.toml is empty; outgoing content was not scanned')
         return
     }
+    $configTracked = Invoke-ContentScanProcess -FileName 'git' -Arguments @('-C',$Repo,'ls-tree','--name-only',$HeadSha,'--','.gitleaks.toml') -StdinText $null -TimeoutSeconds $GitTimeoutSeconds -WorkingDirectory $Repo
+    if ($configTracked.TimedOut -or $configTracked.ExitCode -ne 0) { [void]$Infra.Add('content scanner config Git binding failed; outgoing content was not scanned'); return }
+    if (@($configTracked.OutputText -split "`r?`n" | Where-Object { ([string]$_).Trim() -eq '.gitleaks.toml' }).Count -ne 1) { [void]$ConfigErrors.Add('content scanner config is not tracked at HEAD; outgoing content was not scanned'); return }
+    $policyReview = Test-GitleaksHumanReview -Repo $Repo -BaseSha $BaseSha -HeadSha $HeadSha -FirstPush $FirstPush -TimeoutSeconds $GitTimeoutSeconds
+    if ($policyReview) {
+        if ($policyReview.Kind -eq 'infrastructure') { [void]$Infra.Add([string]$policyReview.Message) }
+        else { [void]$ConfigErrors.Add([string]$policyReview.Message) }
+    }
+    $pendingPolicy = Invoke-ContentScanProcess -FileName 'git' -Arguments @('-C',$Repo,'diff','--quiet','--no-ext-diff','--no-textconv',$HeadSha,'--','.gitleaks.toml') -StdinText $null -TimeoutSeconds $GitTimeoutSeconds -WorkingDirectory $Repo
+    if ($pendingPolicy.ExitCode -eq 1) { [void]$ConfigErrors.Add('.gitleaks.toml has staged or unstaged changes; scanner policy review is required') }
+    elseif ($pendingPolicy.TimedOut -or $pendingPolicy.ExitCode -ne 0) { [void]$Infra.Add('content scanner policy worktree binding failed') }
     $gitTimeout = $GitTimeoutSeconds
     if ($gitTimeout -lt 1) { $gitTimeout = 1 }
     $scanTimeout = $ScannerTimeoutSeconds
@@ -199,12 +305,198 @@ function Invoke-OutgoingContentScan {
     }
 }
 
+# Published source of identity; initial admission is optional and source-only.
+$canonicalDeliveryCatalog = @(
+    @{ product = 'ae-kernel'; repository = 'ae-kernel'; identity = 'github.com/fgpaz/ae-kernel' }
+    @{ product = 'claude-skills'; repository = 'claude-skills'; identity = 'github.com/fgpaz/claude-skills' }
+    @{ product = 'bots-herramientas'; repository = 'bots-herramientas'; identity = 'github.com/fgpaz/bots-herramientas' }
+    @{ product = 'mi-lsp'; repository = 'mi-lsp'; identity = 'github.com/fgpaz/mi-lsp' }
+    @{
+        product = 'mi-mcp'; repository = 'mi-mcp'; identity = 'github.com/fgpaz/mi-mcp'; named_tools = $true
+        fetch_url = 'git@github.com:fgpaz/mi-mcp.git'; push_url = 'git@github.com:fgpaz/mi-mcp.git'
+        base_ref = 'origin/main'; base_sha = '4bd90496084d5832920b14f44ce0df13d5ab71db'
+        contract_sha256 = 'ddb8568b6a9d76fbb68b7befb29e6aafdb990d7072f66e2d577686e845fdb334'
+        paths = @(
+            '.ae.yaml'
+            '.ae-pre-push-projection.json'
+            'infra/git/Invoke-PrePushGuard.ps1'
+            'infra/git/KernelDeliveryContract.psm1'
+            'ae-pre-push/scripts/GuardV2.psm1'
+            '.docs/auditoria/ae-guard-admision-20261120/session-contract.yaml'
+            '.docs/auditoria/ae-guard-admision-20261120/closure-packet.yaml'
+        )
+    }
+    @{
+        product = 'mi-openui'; repository = 'mi-openui'; identity = 'github.com/fgpaz/mi-openui'
+        fetch_url = 'git@github.com:fgpaz/mi-openui.git'; push_url = 'git@github.com:fgpaz/mi-openui.git'
+        base_ref = 'origin/main'; base_sha = 'e315152413943835716e7126314286f3bb43ab42'
+        contract_sha256 = '6bf58a7dd6b550c4fecd7b05a20d1cb7640b0c5f7341600acb54f9152b856607'
+        paths = @(
+            '.ae.yaml'
+            '.ae-pre-push-projection.json'
+            '.gitleaks.toml'
+            'infra/git/gitleaks-policy-review.json'
+            'infra/git/Invoke-PrePushGuard.ps1'
+            'infra/git/KernelDeliveryContract.psm1'
+            'ae-pre-push/scripts/GuardV2.psm1'
+            '.docs/ae/repo-policy.yaml'
+            '.docs/auditoria/ae-admision-mi-openui-20261120/session-contract.yaml'
+            '.docs/auditoria/ae-admision-mi-openui-20261120/closure-packet.yaml'
+        )
+    }
+)
+
+function Normalize-DeliveryRemoteIdentity {
+    param([string]$Url)
+    $value = ([string]$Url).Trim()
+    if (-not $value) { return '' }
+    $value = $value -replace '\\', '/'
+    $value = $value -replace '^[A-Za-z][A-Za-z0-9+.-]*://', ''
+    $value = $value -replace '^[^/]+@', ''
+    $value = $value -replace '[?#].*$', ''
+    $value = $value -replace '^([^/]+):', '$1/'
+    $value = $value -replace '/+$', ''
+    $value = $value -replace '(?i)\.git$', ''
+    $value = $value.ToLowerInvariant()
+    $azure = [regex]::Match($value, '^(?:ssh\.dev\.azure\.com|vs-ssh\.visualstudio\.com)/v3/([^/]+)/([^/]+)/([^/]+)$')
+    if ($azure.Success) { return 'dev.azure.com/' + $azure.Groups[1].Value + '/' + $azure.Groups[2].Value + '/_git/' + $azure.Groups[3].Value }
+    $legacyAzure = [regex]::Match($value, '^([^/.]+)\.visualstudio\.com/([^/]+)/_git/([^/]+)$')
+    if ($legacyAzure.Success) { return 'dev.azure.com/' + $legacyAzure.Groups[1].Value + '/' + $legacyAzure.Groups[2].Value + '/_git/' + $legacyAzure.Groups[3].Value }
+    return $value
+}
+
+function Invoke-NamedToolsGuard {
+    param([string]$Repo, [string]$Base, [System.Collections.ArrayList]$Blockers, [System.Collections.ArrayList]$Infra)
+    $message = 'tool nombrada a mano o código de dominio: declarala con mcp_tool en el manifiesto de su CLI (bots-herramientas CT-CLI-V1)'
+    function Read-GuardGit {
+        param([string[]]$GitArguments)
+        $telemetry.git_processes++
+        $result = Invoke-ContentScanProcess -FileName 'git' -Arguments (@('-C',$Repo) + $GitArguments) -StdinText $null -TimeoutSeconds $GitTimeoutSeconds -WorkingDirectory $Repo
+        if ($result.ExitCode -ne 0 -or $result.TimedOut) { throw 'git inventory unavailable' }
+        return [string]$result.OutputText
+    }
+    function Get-CLIToolNames {
+        param($Document)
+        foreach ($tool in @($Document.tools)) {
+            $hasCLI = $null -ne $tool.PSObject.Properties['cli']
+            if ($null -ne $tool.PSObject.Properties['variants']) {
+                foreach ($variant in @($tool.variants)) {
+                    if ($null -ne $variant -and $null -ne $variant.PSObject.Properties['cli']) { $hasCLI = $true }
+                }
+            }
+            if ($hasCLI) { [string]$tool.name }
+        }
+    }
+    try {
+        if (-not $Base) { $Base = 'origin/main' }
+        $configPath = 'config/codemode-named-tools.v0.json'
+        $listPath = 'infra/git/tools-nombradas-transicion.txt'
+        $allowed = @(Get-Content -LiteralPath (Join-Path $Repo $listPath) -ErrorAction Stop | Where-Object { $_.Trim() } | ForEach-Object { $_.Trim() })
+        $baseFiles = @( (Read-GuardGit @('ls-tree','-r','--name-only',$Base,'--','internal/',$listPath)) -split "`r?`n" | Where-Object { $_ })
+        if ($baseFiles -contains $listPath) {
+            $baseAllowed = @((Read-GuardGit @('show',($Base + ':' + $listPath))) -split "`r?`n" | Where-Object { $_.Trim() } | ForEach-Object { $_.Trim() })
+        } else {
+            # Bootstrap only: the existing base config is the transition ceiling.
+            $baseConfig = (Read-GuardGit @('show',($Base + ':' + $configPath))) | ConvertFrom-Json -ErrorAction Stop
+            $baseAllowed = @(Get-CLIToolNames $baseConfig)
+        }
+        foreach ($name in $allowed) {
+            if ($baseAllowed -cnotcontains $name) { [void]$Blockers.Add($message + ' (transición ampliada: ' + $name + ')') }
+        }
+        $config = Get-Content -LiteralPath (Join-Path $Repo $configPath) -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        $headConfig = (Read-GuardGit @('show',('HEAD:' + $configPath))) | ConvertFrom-Json -ErrorAction Stop
+        foreach ($name in @(@((Get-CLIToolNames $config); (Get-CLIToolNames $headConfig)) | Sort-Object -Unique)) {
+            if ($allowed -cnotcontains $name -or $baseAllowed -cnotcontains $name) { [void]$Blockers.Add($message + ' (' + $name + ')') }
+        }
+        $headList = Read-GuardGit @('diff','--no-ext-diff','--unified=0',$Base,'HEAD','--',$listPath)
+        foreach ($line in ($headList -split "`r?`n")) {
+            if ($line.StartsWith('+') -and -not $line.StartsWith('+++')) {
+                $name = $line.Substring(1).Trim()
+                if ($name -and $baseAllowed -cnotcontains $name) { [void]$Blockers.Add($message + ' (transición ampliada en HEAD: ' + $name + ')') }
+            }
+        }
+        $baseDirs = @{}
+        foreach ($file in $baseFiles) {
+            $dir = $file
+            while ($dir.Contains('/')) { $dir = $dir.Substring(0,$dir.LastIndexOf('/')); $baseDirs[$dir] = $true }
+        }
+        $diff = Read-GuardGit @('diff','--no-ext-diff','--no-renames','--unified=0',$Base,'HEAD','--','internal/','core/')
+        $diff += "`n" + (Read-GuardGit @('diff','--no-ext-diff','--no-renames','--unified=0',$Base,'--','internal/','core/'))
+        $path = ''
+        $cliComparison = '(?i)(\bcli(?:name)?\s*(?:[!=]={1,2}|-eq|-ne)\s*["''`][a-z][a-z0-9_-]*["''`]|["''`][a-z][a-z0-9_-]*["''`]\s*(?:[!=]={1,2}|-eq|-ne)\s*(?:\w+\.)?cli\b|\bEqualFold\s*\([^,]*\bcli\s*,\s*["''`][a-z][a-z0-9_-]*["''`])'
+        foreach ($line in ($diff -split "`r?`n")) {
+            if ($line -match '^\+\+\+ b/(.+)$') {
+                $path = $Matches[1]
+                if ($path -match '(^|/)(tests?|testdata)(/|$)|_test\.[^/]+$') { $path = ''; continue }
+                if ($path.StartsWith('internal/')) {
+                    $dir = $path.Substring(0,$path.LastIndexOf('/'))
+                    if (-not $baseDirs.ContainsKey($dir)) { [void]$Blockers.Add($message + ' (directorio nuevo: ' + $dir + ')') }
+                }
+            } elseif ($path -and $line.StartsWith('+') -and $line -match $cliComparison) {
+                [void]$Blockers.Add($message + ' (comparación CLI: ' + $path + ')')
+            }
+        }
+    } catch {
+        [void]$Infra.Add('named tools guard: configuration/base inventory unavailable')
+    }
+}
+
+function Invoke-RegisteredNamedToolsGuard {
+    param([string]$Repo, [string]$Base, [System.Collections.ArrayList]$Blockers, [System.Collections.ArrayList]$Infra)
+    function Read-NamedToolsSelectorGit {
+        param([string[]]$Arguments)
+        $telemetry.git_processes++
+        return Invoke-ContentScanProcess -FileName 'git' -Arguments (@('-C', $Repo, '--no-replace-objects') + $Arguments) -StdinText $null -TimeoutSeconds $GitTimeoutSeconds -WorkingDirectory $Repo
+    }
+    try {
+        $marker = 'config/codemode-named-tools.v0.json'
+        $list = 'infra/git/tools-nombradas-transicion.txt'
+        $needsGuard = $false
+        $remotes = Read-NamedToolsSelectorGit @('remote')
+        if ($remotes.ExitCode -ne 0) { throw 'remote inventory' }
+        if (($remotes.OutputText -split "`r?`n") -ccontains 'origin') {
+            foreach ($urlArgs in @(@('remote', 'get-url', '--all', 'origin'), @('remote', 'get-url', '--all', '--push', 'origin'))) {
+                $urls = Read-NamedToolsSelectorGit $urlArgs
+                if ($urls.ExitCode -ne 0 -or -not $urls.OutputText.Trim()) { throw 'remote URL inventory' }
+                foreach ($url in ($urls.OutputText -split "`r?`n")) {
+                    $identity = Normalize-DeliveryRemoteIdentity $url
+                    if ($identity -and @($canonicalDeliveryCatalog | Where-Object { $_.ContainsKey('named_tools') -and $_.identity -ceq $identity }).Count -gt 0) {
+                        $needsGuard = $true
+                    }
+                }
+            }
+        }
+        if (-not $Base) {
+            $tracking = 'refs/remotes/origin/main'
+            $local = Read-NamedToolsSelectorGit @('show-ref', '--verify', '--quiet', $tracking)
+            if ($local.ExitCode -eq 0) { $Base = $tracking }
+            elseif ($local.ExitCode -ne 1) { throw 'tracking ref inventory' }
+        }
+        if ($Base) {
+            $tree = Read-NamedToolsSelectorGit @('ls-tree', '--full-tree', $Base, '--', $marker)
+            if ($tree.ExitCode -ne 0) { throw 'base tree inventory' }
+            if ($tree.OutputText) { $needsGuard = $true }
+        }
+        if ($needsGuard) {
+            if (-not $Base) { throw 'missing local or fetched base' }
+            $headPolicy = Read-NamedToolsSelectorGit @('ls-tree', '--full-tree', 'HEAD', '--', $marker, $list)
+            if ($headPolicy.ExitCode -ne 0 -or @(($headPolicy.OutputText -split "`r?`n") -cmatch '^100(?:644|755) blob ').Count -ne 2) {
+                throw 'missing or invalid policy in HEAD'
+            }
+            Invoke-NamedToolsGuard -Repo $Repo -Base $Base -Blockers $Blockers -Infra $Infra
+        }
+    } catch {
+        [void]$Infra.Add('named tools guard: configuration/base inventory unavailable')
+    }
+}
+
 # Solo mode is an intentionally small, local-only escape hatch for this kernel
 # bootstrap. It must not load ae-pre-push, fetch, inspect contracts, or require
 # traceability evidence; the critical checks are bounded and fail closed.
 if ($CollaborationMode -eq 'solo') {
     $soloStart = [System.Diagnostics.Stopwatch]::GetTimestamp()
     $soloBlockers = New-Object System.Collections.ArrayList
+    $soloConfigErrors = New-Object System.Collections.ArrayList
     $soloWarnings = New-Object System.Collections.ArrayList
     $soloInfra = New-Object System.Collections.ArrayList
     function Invoke-SoloGit {
@@ -282,14 +574,15 @@ if ($CollaborationMode -eq 'solo') {
             if ($line.Length -ge 4 -and $line.Substring(0,2) -eq '??') { $line.Substring(3).Trim().Trim('"') }
         } | Where-Object { $_ })
     }
-    Invoke-OutgoingContentScan -Repo $repo -BaseSha $soloBaseSha -HeadSha $head -RangeLabel $soloBase -FirstPush $false -PendingInventoryOk ($status.ExitCode -eq 0) -UntrackedPaths $soloUntracked -Blockers $soloBlockers -Infra $soloInfra -ConfigErrors $soloBlockers -Warnings $soloWarnings
+    Invoke-OutgoingContentScan -Repo $repo -BaseSha $soloBaseSha -HeadSha $head -RangeLabel $soloBase -FirstPush $false -PendingInventoryOk ($status.ExitCode -eq 0) -UntrackedPaths $soloUntracked -Blockers $soloBlockers -Infra $soloInfra -ConfigErrors $soloConfigErrors -Warnings $soloWarnings
+    Invoke-RegisteredNamedToolsGuard -Repo $repo -Base $soloBaseSha -Blockers $soloBlockers -Infra $soloInfra
     $elapsedTicks = [System.Diagnostics.Stopwatch]::GetTimestamp() - [int64]$soloStart
     $duration = [int][Math]::Max(0,[Math]::Round(($elapsedTicks * 1000.0) / [System.Diagnostics.Stopwatch]::Frequency))
     $scannerMs = [int]$script:scannerDurationMs
     $infraMs = [int][Math]::Max(0, $duration - $scannerMs)
     if ($infraMs -ge 5000) { Add-Solo $soloInfra 'solo guard exceeded hard 5 second budget' }
-    $code = if ($soloInfra.Count -gt 0) { 2 } elseif ($soloBlockers.Count -gt 0) { 1 } else { 0 }
-    $report = [ordered]@{ schema='ae-pre-push-report/v2'; mode='solo'; collaboration_mode='solo'; verdict=if ($code -eq 0) {'Approved'} else {'Blocked'}; exit_code=$code; code_name=if ($code -eq 0) {'success'} elseif ($code -eq 1) {'validation_failure'} else {'infrastructure_error'}; branch=$branch; base=$soloBase; head=$head; fetched=$false; blockers=@($soloBlockers); configuration_errors=@(); infrastructure_errors=@($soloInfra); warnings=@($soloWarnings); changed_paths=@($paths); session_contract_bypassed=$true; traceability_bypassed=$true; telemetry=[ordered]@{git_processes=[int]$telemetry.git_processes; duration_ms=$duration; infrastructure_duration_ms=$infraMs; scanner_duration_ms=$scannerMs; infrastructure_budget_ms=5000; git_timeout_seconds=[int]$GitTimeoutSeconds; scanner_timeout_seconds=[int]$ScannerTimeoutSeconds} }
+    $code = if ($soloConfigErrors.Count -gt 0) { 3 } elseif ($soloInfra.Count -gt 0) { 2 } elseif ($soloBlockers.Count -gt 0) { 1 } else { 0 }
+    $report = [ordered]@{ schema='ae-pre-push-report/v2'; mode='solo'; collaboration_mode='solo'; verdict=if ($code -eq 0) {'Approved'} else {'Blocked'}; exit_code=$code; code_name=if ($code -eq 0) {'success'} elseif ($code -eq 1) {'validation_failure'} elseif ($code -eq 2) {'infrastructure_error'} else {'configuration_error'}; branch=$branch; base=$soloBase; head=$head; fetched=$false; blockers=@($soloBlockers); configuration_errors=@($soloConfigErrors); infrastructure_errors=@($soloInfra); warnings=@($soloWarnings); changed_paths=@($paths); session_contract_bypassed=$true; traceability_bypassed=$true; telemetry=[ordered]@{git_processes=[int]$telemetry.git_processes; duration_ms=$duration; infrastructure_duration_ms=$infraMs; scanner_duration_ms=$scannerMs; infrastructure_budget_ms=5000; git_timeout_seconds=[int]$GitTimeoutSeconds; scanner_timeout_seconds=[int]$ScannerTimeoutSeconds} }
     if ($Json) { $report | ConvertTo-Json -Depth 8 } else { Write-Output ('Solo pre-push guard: ' + $report.verdict + ' (' + $report.code_name + ')') }
     exit $code
 }
@@ -440,11 +733,14 @@ function Get-GuardHash {
 }
 
 function Get-GitBlobHashes {
-    param([string[]]$RelativePaths)
+    param([string[]]$RelativePaths,[switch]$RepositoryRelative)
     $normalized = @($RelativePaths | ForEach-Object {
         $value = ([string]$_).Replace('\','/').TrimStart('/')
-        if ($value -match '^skills/') { $value = $value.Substring(7) }
-        'skills/' + $value
+        if ($RepositoryRelative) { $value }
+        else {
+            if ($value -match '^skills/') { $value = $value.Substring(7) }
+            'skills/' + $value
+        }
     })
     $result = @{}
     if ($normalized.Count -eq 0) { return $result }
@@ -482,26 +778,17 @@ function Get-GitFileHashForRepositoryPath {
     return ''
 }
 
-function Get-CanonicalDeliveryRemote {
-    param([string]$Product)
-    switch ($Product) {
-        'ae-kernel' { return 'github.com/fgpaz/ae-kernel' }
-        'claude-skills' { return 'github.com/fgpaz/claude-skills' }
-        default { return '' }
+function Get-DeliveryRemoteUrls {
+    param([string]$RemoteName, [System.Collections.ArrayList]$Errors)
+    $fetch = Invoke-Git @('remote', 'get-url', '--all', $RemoteName)
+    $push = Invoke-Git @('remote', 'get-url', '--all', '--push', $RemoteName)
+    $fetchUrls = @($fetch.Output | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+    $pushUrls = @($push.Output | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+    if ($fetch.ExitCode -ne 0 -or $fetchUrls.Count -ne 1) { Add-Item $Errors 'delivery remote fetch URL could not be resolved unambiguously' }
+    if ($push.ExitCode -ne 0 -or $pushUrls.Count -ne 1) { Add-Item $Errors 'delivery remote push URL could not be resolved unambiguously' }
+    if ($fetch.ExitCode -eq 0 -and $fetchUrls.Count -eq 1 -and $push.ExitCode -eq 0 -and $pushUrls.Count -eq 1) {
+        return @{ fetch = $fetchUrls[0]; push = $pushUrls[0] }
     }
-}
-
-function Normalize-DeliveryRemoteIdentity {
-    param([string]$Url)
-    $value = ([string]$Url).Trim()
-    if (-not $value) { return '' }
-    $value = $value -replace '^[A-Za-z][A-Za-z0-9+.-]*://', ''
-    $value = $value -replace '^[^/]+@', ''
-    $value = $value -replace '[?#].*$', ''
-    $value = $value -replace '^([^/]+):', '$1/'
-    $value = $value -replace '/+$', ''
-    $value = $value -replace '(?i)\.git$', ''
-    return $value.ToLowerInvariant()
 }
 
 function Sanitize-DeliveryRemoteIdentity {
@@ -535,26 +822,67 @@ function Test-AeDeliveryPathHasReparsePoint {
 }
 
 function Test-DeliveryRemoteIdentity {
-    param([string]$RemoteName, [string]$Product, [System.Collections.ArrayList]$Errors)
-    $expected = Get-CanonicalDeliveryRemote $Product
-    if (-not $expected) { Add-Item $Errors 'delivery remote identity is unavailable for this product'; return '' }
-    $expectedNormalized = Normalize-DeliveryRemoteIdentity $expected
-    $fetch = Invoke-Git @('remote', 'get-url', '--all', $RemoteName)
-    $push = Invoke-Git @('remote', 'get-url', '--all', '--push', $RemoteName)
-    $fetchUrls = @($fetch.Output | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
-    $pushUrls = @($push.Output | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
-    $fetchIdentityValid = ($fetch.ExitCode -eq 0 -and $fetchUrls.Count -gt 0 -and @($fetchUrls | Where-Object { (Normalize-DeliveryRemoteIdentity $_) -ne $expectedNormalized }).Count -eq 0)
-    $pushIdentityValid = ($push.ExitCode -eq 0 -and $pushUrls.Count -gt 0 -and @($pushUrls | Where-Object { (Normalize-DeliveryRemoteIdentity $_) -ne $expectedNormalized }).Count -eq 0)
-    if ($fetch.ExitCode -eq 0 -and -not $fetchIdentityValid -and @($fetchUrls | Where-Object { (Normalize-DeliveryRemoteIdentity $_) -ne $expectedNormalized }).Count -gt 0) {
-        Add-Item $Errors ('delivery remote fetch URL does not match canonical repository identity for ' + $Product)
+    param([string]$RemoteName, [string]$Product, [string]$Repository, [System.Collections.ArrayList]$Errors)
+    $expectedRepository = ([string]$Repository).Trim().ToLowerInvariant()
+    $records = @($canonicalDeliveryCatalog | Where-Object { $_.product -eq $Product })
+    if ($records.Count -ne 1) { Add-Item $Errors 'delivery remote identity is unavailable for the declared product'; return '<unresolved>' }
+    $expectedIdentity = $records[0].identity
+    if ($records[0].repository -cne $expectedRepository) {
+        Add-Item $Errors 'delivery contract repository does not match its canonical product identity'
+        return '<unresolved>'
     }
-    if ($fetch.ExitCode -ne 0 -or $fetchUrls.Count -ne 1) { Add-Item $Errors 'delivery remote fetch URL could not be resolved unambiguously' }
-    if (-not $pushIdentityValid -and @($pushUrls | Where-Object { (Normalize-DeliveryRemoteIdentity $_) -ne $expectedNormalized }).Count -gt 0) {
-        Add-Item $Errors ('delivery remote push URL does not match canonical repository identity for ' + $Product)
+    $urls = Get-DeliveryRemoteUrls $RemoteName $Errors
+    if (-not $urls) { return '<unresolved>' }
+    $fetchIdentity = Normalize-DeliveryRemoteIdentity $urls.fetch
+    $pushIdentity = Normalize-DeliveryRemoteIdentity $urls.push
+    if (-not $fetchIdentity -or -not $pushIdentity) { Add-Item $Errors 'delivery remote identity could not be normalized'; return '<unresolved>' }
+    if ($fetchIdentity -cne $expectedIdentity) { Add-Item $Errors 'delivery remote fetch URL does not match the canonical repository identity' }
+    if ($pushIdentity -cne $expectedIdentity) { Add-Item $Errors 'delivery remote push URL does not match the canonical repository identity' }
+    if ($fetchIdentity -cne $expectedIdentity -or $pushIdentity -cne $expectedIdentity) { return '<unresolved>' }
+    return $expectedIdentity
+}
+
+function Get-DeliveryGitBytes {
+    param([string[]]$Arguments)
+    $telemetry.git_processes++
+    return Invoke-ContentScanProcess -FileName 'git' -Arguments (@('-C', $repo, '--no-replace-objects') + $Arguments) -StdinText $null -TimeoutSeconds $GitTimeoutSeconds -WorkingDirectory $repo -CaptureBytes
+}
+
+function Test-InitialDeliveryInventory {
+    param([string[]]$Paths)
+    $allowed = [System.Collections.Generic.HashSet[string]]::new([string[]]$Paths, [StringComparer]::Ordinal)
+    # Match the PR exactly; include individual merge-parent diffs to catch
+    # transient paths in outgoing commits even when absent from the PR diff.
+    $shallow = Invoke-Git @('rev-parse', '--is-shallow-repository')
+    $replacements = Invoke-Git @('replace', '-l')
+    $grafts = Invoke-Git @('rev-parse', '--git-path', 'info/grafts')
+    $graftPath = if ($grafts.ExitCode -eq 0 -and @($grafts.Output).Count -eq 1) { [string]$grafts.Output[0] } else { '' }
+    if ($graftPath -and -not [IO.Path]::IsPathRooted($graftPath)) { $graftPath = Join-Path $repo $graftPath }
+    if ($shallow.ExitCode -ne 0 -or (Join-Output $shallow.Output) -cne 'false' -or
+        $replacements.ExitCode -ne 0 -or @($replacements.Output).Count -ne 0 -or
+        -not $graftPath -or (Test-Path -LiteralPath $graftPath)) {
+        Add-Item $infraErrors 'initial delivery requires complete, unmodified Git history'
+        return
     }
-    if ($push.ExitCode -ne 0 -or $pushUrls.Count -ne 1) { Add-Item $Errors 'delivery remote push URL could not be resolved unambiguously' }
-    if ($fetchIdentityValid -and $fetchUrls.Count -eq 1 -and $pushIdentityValid -and $pushUrls.Count -eq 1) { return Sanitize-DeliveryRemoteIdentity ([string]$fetchUrls[0]) }
-    return '<unresolved>'
+    $diffFlags = @('--name-only', '--no-renames', '--ignore-submodules=none', '--no-ext-diff', '-z')
+    $pr = Get-DeliveryGitBytes (@('diff') + $diffFlags + @($base, $head, '--'))
+    $history = Get-DeliveryGitBytes (@('log', '--full-history', '--diff-merges=separate', '--root', '--format=') + $diffFlags + @(($base + '..' + $head), '--'))
+    $status = Get-DeliveryGitBytes @('-c', 'core.fsmonitor=false', 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none')
+    $index = Invoke-Git @('ls-files', '-v')
+    if ($pr.ExitCode -ne 0 -or $history.ExitCode -ne 0 -or $status.ExitCode -ne 0 -or $index.ExitCode -ne 0) {
+        Add-Item $infraErrors 'initial delivery path or worktree inventory could not be read'
+        return
+    }
+    if (($null -ne $status.OutputBytes -and @($status.OutputBytes).Count -gt 0) -or @($index.Output -cmatch '^(?:S|[a-z]) ').Count -gt 0) {
+        Add-Item $blockers 'initial delivery requires a clean index and worktree without hidden index entries'
+    }
+    try {
+        $utf8 = [System.Text.UTF8Encoding]::new($false,$true)
+        $prPaths = @($utf8.GetString([byte[]]@($pr.OutputBytes)).Split([char]0, [StringSplitOptions]::RemoveEmptyEntries))
+        $historyPaths = @($utf8.GetString([byte[]]@($history.OutputBytes)).Split([char]0, [StringSplitOptions]::RemoveEmptyEntries))
+        if (-not $allowed.SetEquals([string[]]$prPaths)) { Add-Item $blockers 'initial delivery PR paths do not match the registered literal inventory' }
+        if (-not $allowed.IsSupersetOf([string[]]$historyPaths)) { Add-Item $blockers 'initial delivery outgoing history contains paths outside the registered literal inventory' }
+    } catch { Add-Item $infraErrors 'initial delivery path inventory is not valid UTF-8' }
 }
 
 function Unquote {
@@ -1451,6 +1779,7 @@ $base = ''
 $baseIsAncestor = $null
 $fetchResult = $null
 $remoteIdentity = ''
+$deliveryRemote = $Remote
 $remoteRefInventory = @()
 $remoteZeroRefs = $false
 $remoteObservedAt = ''
@@ -1462,80 +1791,182 @@ if ($rootResult.ExitCode -eq 0) { $repo = ([string]$rootResult.Output[0]).Trim()
 elseif (-not [string]::IsNullOrWhiteSpace($script:GuardRepositoryRoot)) { $repo = $script:GuardRepositoryRoot }
 else { Add-Item $infraErrors 'not inside a git repository' }
 
-# .ae.yaml is the executable delivery authority when present. Legacy repositories
-# without this file retain the historical guard path; a present contract is never
-# advisory and is validated before branch/remote policy is evaluated.
-$deliveryContractPath = Join-Path $repo '.ae.yaml'
+# A present base path (including an invalid one) never falls back to HEAD.
+$deliveryContractOrigin = ''
+$deliveryContractSha256 = ''
+$deliveryContractCommit = ''
+$admission = $null
+$initialDelivery = $false
+$admissionUrls = $null
+$fetchedDeliveryBase = ''
 $deliveryModule = Join-Path $PSScriptRoot 'KernelDeliveryContract.psm1'
-if (Test-Path -LiteralPath $deliveryContractPath -PathType Leaf) {
-    try {
-        if (-not (Test-Path -LiteralPath $deliveryModule -PathType Leaf)) { throw 'KernelDeliveryContract.psm1 is missing' }
-        Import-Module -Name $deliveryModule -Force -ErrorAction Stop
-        $deliveryContract = Read-AeDeliveryContract -Path $deliveryContractPath -RepositoryRoot $repo
-        if (-not $deliveryContract.Valid) {
-            foreach ($deliveryError in @($deliveryContract.Errors)) { Add-Item $configErrors $deliveryError }
-        } else {
-            $deliveryContractActive = $true
-            if ($deliveryContract.Product -ne 'ae-kernel') { Add-Item $configErrors 'Kernel delivery contract product must be exactly ae-kernel' }
-            if ($deliveryContract.Repository -ne 'ae-kernel') { Add-Item $configErrors 'Kernel delivery contract repository must be exactly ae-kernel' }
-            if ($deliveryContract.SourceRoot -ne 'skills') { Add-Item $configErrors 'Kernel delivery contract source_root must be exactly skills/' }
-        }
-    } catch { Add-Item $configErrors ('delivery contract could not be loaded: ' + $_.Exception.Message) }
-}
-if ($deliveryContractActive) {
-    $remoteIdentity = Test-DeliveryRemoteIdentity -RemoteName $Remote -Product $deliveryContract.Product -Errors $configErrors
-    foreach ($mirror in @($deliveryContract.DistributionMirrors)) {
-        $mirrorName = if ($mirror.PSObject.Properties.Name -contains 'name') { [string]$mirror.name } else { '<unnamed>' }
-        Add-Item $blockers ('publication distribution mirror identity_unverified: ' + $mirrorName)
-    }
-} else {
-    $legacyFetch = Invoke-Git @('remote', 'get-url', '--all', $Remote)
-    $legacyPush = Invoke-Git @('remote', 'get-url', '--all', '--push', $Remote)
-    $legacyUrls = @($legacyFetch.Output + $legacyPush.Output | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
-    foreach ($knownProduct in @('ae-kernel','claude-skills')) {
-        if (@($legacyUrls | Where-Object { (Normalize-DeliveryRemoteIdentity $_) -eq (Get-CanonicalDeliveryRemote $knownProduct) }).Count -gt 0) {
-            Add-Item $configErrors 'canonical delivery repository requires .ae.yaml; removing the contract cannot select the legacy path'
-            break
-        }
-    }
-}
-
 $branchResult = Invoke-Git @('branch', '--show-current')
-if ($branchResult.ExitCode -eq 0) { $actualBranch = ([string]$branchResult.Output[0]).Trim() }
+if ($branchResult.ExitCode -eq 0 -and @($branchResult.Output).Count -eq 1) { $actualBranch = ([string]$branchResult.Output[0]).Trim() }
 $headResult = Invoke-Git @('rev-parse', 'HEAD')
 if ($headResult.ExitCode -eq 0) { $head = ([string]$headResult.Output[0]).Trim() }
 else { Add-Item $infraErrors 'HEAD is not resolvable' }
 
 if ($FirstPush) {
-    if ($deliveryContractActive) { Add-Item $configErrors 'FirstPush cannot override an active .ae.yaml delivery contract' }
+    if (Test-Path -LiteralPath (Join-Path $repo '.ae.yaml') -PathType Leaf) { Add-Item $configErrors 'FirstPush cannot override an active .ae.yaml delivery contract' }
     if ($actualBranch -ne 'main') { Add-Item $configErrors 'FirstPush requires current branch exactly main' }
-    if ($Remote -ne 'origin') { Add-Item $configErrors 'FirstPush requires Remote exactly origin' }
-    if ($BaseRef -ne 'origin/main') { Add-Item $configErrors 'FirstPush retains BaseRef origin/main as the target identity' }
+    if ($Remote -cne 'origin') { Add-Item $configErrors 'FirstPush requires Remote exactly origin' }
+    if ($BaseRef -cne 'origin/main') { Add-Item $configErrors 'FirstPush retains BaseRef origin/main as the target identity' }
     if ($NoFetch -or $DryRun) { Add-Item $warnings 'NoFetch/DryRun does not suppress FirstPush remote observation or hard gates' }
-} else {
-    if ($deliveryContractActive) {
-        if ($deliveryContract.Remote -ne $Remote) { Add-Item $configErrors ('delivery contract remote mismatch: ' + $deliveryContract.Remote + ' != ' + $Remote) }
-        $expectedContractBase = $deliveryContract.Remote + '/' + $deliveryContract.Base
-        if ($BaseRef -ne $expectedContractBase) { Add-Item $configErrors ('delivery contract requires BaseRef exactly ' + $expectedContractBase) }
-        if ($deliveryContract.Mode -eq 'mainline' -and $actualBranch -ne 'main') { Add-Item $configErrors 'mainline delivery requires current branch exactly main' }
-        if ($deliveryContract.Mode -eq 'pull_request' -and [string]::IsNullOrWhiteSpace($actualBranch)) { Add-Item $configErrors 'pull_request delivery requires a checked-out branch; detached HEAD is forbidden' }
-        if ($deliveryContract.Mode -eq 'pull_request' -and @('main','master') -contains $actualBranch) { Add-Item $configErrors 'pull_request delivery forbids direct publication from protected main/master' }
-    } else {
-        if (@('main','master') -notcontains $actualBranch) { Add-Item $configErrors 'ordinary mode requires current branch exactly main or master' }
-        if ($Remote -ne 'origin') { Add-Item $configErrors 'ordinary mode requires Remote exactly origin' }
-        $expectedProtectedBase = if (@('main','master') -contains $actualBranch) { 'origin/' + $actualBranch } else { '' }
-        if (-not $expectedProtectedBase -or $BaseRef -ne $expectedProtectedBase) { Add-Item $configErrors ('ordinary mode requires BaseRef exactly origin/' + $actualBranch) }
+    if ($Remote -notmatch '^-') {
+        $legacyFetch = Invoke-Git @('remote', 'get-url', '--all', $Remote)
+        $legacyPush = Invoke-Git @('remote', 'get-url', '--all', '--push', $Remote)
+        $legacyUrls = @($legacyFetch.Output + $legacyPush.Output | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+        foreach ($entry in $canonicalDeliveryCatalog) {
+            if (@($legacyUrls | Where-Object { (Normalize-DeliveryRemoteIdentity $_) -ceq $entry.identity }).Count -gt 0) {
+                Add-Item $configErrors 'canonical delivery repository requires .ae.yaml; removing the contract cannot select the legacy path'
+                break
+            }
+        }
     }
-    $fetchRef = $BaseRef
-    if ($BaseRef -match '^([^/]+)/(.+)$' -and $Matches[1] -eq $Remote) { $fetchRef = $Matches[2] }
-    $fetchResult = Invoke-Git @('fetch', '--no-tags', $Remote, $fetchRef)
-    if ($fetchResult.ExitCode -ne 0) { Add-Item $infraErrors (Join-Output $fetchResult.Output) }
-    if ($NoFetch -or $DryRun) { Add-Item $warnings 'NoFetch/DryRun is diagnostic-only; mandatory fetch still executed' }
-    $baseResult = Invoke-Git @('rev-parse', $BaseRef)
-    if ($baseResult.ExitCode -eq 0) {
-        $base = ([string]$baseResult.Output[0]).Trim()
-        if ($base -notmatch '^[0-9a-fA-F]{40}$') { Add-Item $infraErrors ('base_sha is not a valid full commit SHA: ' + $base) }
-    } else { Add-Item $infraErrors ('base ref not found: ' + $BaseRef) }
+} else {
+    $remoteArgumentValid = ($Remote -match '^[A-Za-z0-9._-]+$' -and $Remote -notmatch '^-')
+    $baseRefArgumentValid = ($BaseRef -match '^[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+$' -and $BaseRef -notmatch '/-')
+    if (-not $remoteArgumentValid) { Add-Item $configErrors 'Remote is malformed or begins with a dash' }
+    if (-not $baseRefArgumentValid) { Add-Item $configErrors 'BaseRef is malformed' }
+    if ($remoteArgumentValid -and $baseRefArgumentValid) {
+        $fetchRef = $BaseRef
+        if ($BaseRef -match '^([^/]+)/(.+)$' -and $Matches[1] -ceq $Remote) { $fetchRef = $Matches[2] }
+        $initialRecords = @($canonicalDeliveryCatalog | Where-Object { $_.ContainsKey('base_sha') })
+        if ($Remote -ceq 'origin' -and $initialRecords.Count -gt 0) {
+            $admissionUrls = Get-DeliveryRemoteUrls $Remote (New-Object System.Collections.ArrayList)
+            if ($admissionUrls) {
+                $identity = Normalize-DeliveryRemoteIdentity $admissionUrls.fetch
+                $matchesForBase = @($initialRecords | Where-Object { $_.base_ref -ceq $BaseRef -and $_.identity -ceq $identity })
+                if ($matchesForBase.Count -eq 1) {
+                    $admission = $matchesForBase[0]
+                    $fetchRef = 'refs/heads/' + $fetchRef
+                }
+            }
+        }
+        $fetchResult = Invoke-Git @('fetch', '--no-tags', $Remote, $fetchRef)
+        if ($fetchResult.ExitCode -ne 0) { Add-Item $infraErrors (Join-Output $fetchResult.Output) }
+        elseif ($admission) {
+            # One explicit remote branch was requested; a tracking ref alone
+            # cannot distinguish this fetch from stale or shadowed state.
+            $observation = Invoke-Git @('rev-parse', '--verify', 'FETCH_HEAD')
+            if ($observation.ExitCode -eq 0 -and @($observation.Output).Count -eq 1) { $fetchedDeliveryBase = [string]$observation.Output[0] }
+        }
+        if ($NoFetch -or $DryRun) { Add-Item $warnings 'NoFetch/DryRun is diagnostic-only; mandatory fetch still executed' }
+        $baseResult = Invoke-Git @('rev-parse', $BaseRef)
+        if ($baseResult.ExitCode -eq 0) {
+            $base = ([string]$baseResult.Output[0]).Trim()
+            if ($base -notmatch '^[0-9a-fA-F]{40}$') { Add-Item $infraErrors ('base_sha is not a valid full commit SHA: ' + $base) }
+        } else { Add-Item $infraErrors ('base ref not found: ' + $BaseRef) }
+    }
+
+    if ($admission -and ($fetchedDeliveryBase -cnotmatch '^[0-9a-f]{40}$' -or $base -cne $fetchedDeliveryBase)) {
+        Add-Item $infraErrors 'initial delivery BaseRef does not resolve to the object obtained by fetch'
+    } elseif ($base -match '^[0-9a-fA-F]{40}$') {
+        $tree = Invoke-Git @('--no-replace-objects', 'ls-tree', '--full-tree', $base, '--', '.ae.yaml')
+        if ($tree.ExitCode -ne 0) {
+            Add-Item $infraErrors 'delivery contract remote-base tree could not be read'
+        } else {
+            $entries = @($tree.Output | Where-Object { ([string]$_).Trim() })
+            if ($entries.Count -gt 0) {
+                $deliveryContractOrigin = 'remote_base'
+                $deliveryContractPath = $BaseRef + ':.ae.yaml'
+                $deliveryContractCommit = $base
+            } elseif ($admission) {
+                $observedUrls = Get-DeliveryRemoteUrls $Remote $configErrors
+                if (-not $observedUrls -or $observedUrls.fetch -cne $admission.fetch_url -or $observedUrls.push -cne $admission.push_url -or
+                    $observedUrls.fetch -cne $admissionUrls.fetch -or $observedUrls.push -cne $admissionUrls.push) {
+                    Add-Item $configErrors 'initial delivery requires the exact registered fetch and push URLs'
+                } elseif ($base -cne $admission.base_sha) {
+                    Add-Item $configErrors 'initial delivery fetched base does not match the registered base_sha'
+                } elseif ($head -cnotmatch '^[0-9a-f]{40}$') {
+                    Add-Item $infraErrors 'initial delivery HEAD is not resolvable'
+                } else {
+                    $initialDelivery = $true
+                    $deliveryContractOrigin = 'registered_initial_head'
+                    $deliveryContractCommit = $head
+                    $deliveryContractPath = 'HEAD:.ae.yaml'
+                    $headTree = Invoke-Git @('--no-replace-objects', 'ls-tree', '--full-tree', $head, '--', '.ae.yaml')
+                    $entries = @($headTree.Output)
+                    if ($headTree.ExitCode -ne 0) { Add-Item $infraErrors 'initial delivery HEAD tree could not be read'; $entries = @() }
+                }
+            }
+            if ($deliveryContractOrigin) {
+                if ($entries.Count -ne 1) {
+                    Add-Item $configErrors 'delivery contract path is missing or ambiguous at the selected commit'
+                } elseif ($entries[0] -match '^120000\s+blob\s') {
+                    Add-Item $configErrors 'delivery contract path is a symlink'
+                } elseif ($entries[0] -cnotmatch '^100(?:644|755) blob ([0-9a-f]{40})\t\.ae\.yaml$') {
+                    Add-Item $configErrors 'delivery contract path is not a regular file'
+                } else {
+                    $blob = Get-DeliveryGitBytes @('cat-file', 'blob', ($deliveryContractCommit + ':.ae.yaml'))
+                    if ($blob.ExitCode -ne 0) {
+                        Add-Item $infraErrors 'delivery contract blob could not be read'
+                    } else {
+                        try {
+                            $sha = [System.Security.Cryptography.SHA256]::Create()
+                            try { $deliveryContractSha256 = [BitConverter]::ToString($sha.ComputeHash([byte[]]@($blob.OutputBytes))).Replace('-', '').ToLowerInvariant() }
+                            finally { $sha.Dispose() }
+                            $telemetry.hash_calls++
+                            if ($initialDelivery -and $deliveryContractSha256 -cne $admission.contract_sha256) { throw 'initial delivery HEAD blob does not match the registered contract_sha256' }
+                            $baseContractText = ([System.Text.UTF8Encoding]::new($false,$true)).GetString([byte[]]$blob.OutputBytes)
+                            if ($baseContractText.Length -gt 0 -and $baseContractText[0] -eq [char]0xFEFF) { $baseContractText = $baseContractText.Substring(1) }
+                            if (-not (Test-Path -LiteralPath $deliveryModule -PathType Leaf)) { throw 'KernelDeliveryContract.psm1 is missing' }
+                            Import-Module -Name $deliveryModule -Force -ErrorAction Stop
+                            $deliveryContract = Read-AeDeliveryContract -Path $deliveryContractPath -RepositoryRoot $repo -Content $baseContractText
+                            if (-not $deliveryContract.Valid) {
+                                foreach ($deliveryError in @($deliveryContract.Errors)) { Add-Item $configErrors $deliveryError }
+                            } else {
+                                $deliveryContractActive = $true
+                                $remoteIdentity = Test-DeliveryRemoteIdentity -RemoteName $Remote -Product $deliveryContract.Product -Repository $deliveryContract.Repository -Errors $configErrors
+                                foreach ($mirror in @($deliveryContract.DistributionMirrors)) {
+                                    $mirrorName = if ($mirror.PSObject.Properties.Name -contains 'name') { [string]$mirror.name } else { '<unnamed>' }
+                                    Add-Item $blockers ('publication distribution mirror identity_unverified: ' + $mirrorName)
+                                }
+                            }
+                        } catch {
+                            if ($initialDelivery -and $deliveryContractSha256 -cne $admission.contract_sha256) {
+                                Add-Item $configErrors 'initial delivery HEAD blob does not match the registered contract_sha256'
+                            } else { Add-Item $configErrors 'delivery contract blob is invalid or could not be parsed' }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (-not $deliveryContractOrigin -and -not $admission) {
+        if ($remoteArgumentValid) {
+            $urls = Get-DeliveryRemoteUrls $Remote (New-Object System.Collections.ArrayList)
+            $known = $urls -and @($canonicalDeliveryCatalog | Where-Object {
+                $_.identity -ceq (Normalize-DeliveryRemoteIdentity $urls.fetch) -and $_.identity -ceq (Normalize-DeliveryRemoteIdentity $urls.push)
+            }).Count -gt 0
+            if ($known) { Add-Item $configErrors 'canonical delivery repository requires .ae.yaml; removing the contract cannot select the legacy path' }
+            else { Add-Item $configErrors 'delivery contract is missing at the remote base and fetch/push URLs do not match a known canonical repository identity' }
+        }
+        if (@('main','master') -cnotcontains $actualBranch) { Add-Item $configErrors 'ordinary mode requires current branch exactly main or master' }
+        if ($Remote -cne 'origin') { Add-Item $configErrors 'ordinary mode requires Remote exactly origin' }
+        $expectedProtectedBase = if (@('main','master') -ccontains $actualBranch) { 'origin/' + $actualBranch } else { '' }
+        if (-not $expectedProtectedBase -or $BaseRef -cne $expectedProtectedBase) { Add-Item $configErrors ('ordinary mode requires BaseRef exactly origin/' + $actualBranch) }
+    } elseif ($deliveryContractActive) {
+        if ($deliveryContract.Remote -cne $Remote) { Add-Item $configErrors ('delivery contract remote mismatch: ' + $deliveryContract.Remote + ' != ' + $Remote) }
+        $expectedContractBase = $deliveryContract.Remote + '/' + $deliveryContract.Base
+        if ($BaseRef -cne $expectedContractBase) { Add-Item $configErrors ('delivery contract requires BaseRef exactly ' + $expectedContractBase) }
+        if ($deliveryContract.Mode -ceq 'mainline' -and $actualBranch -cne 'main') { Add-Item $configErrors 'mainline delivery requires current branch exactly main' }
+        if ($deliveryContract.Mode -ceq 'pull_request' -and [string]::IsNullOrWhiteSpace($actualBranch)) { Add-Item $configErrors 'pull_request delivery requires a checked-out branch; detached HEAD is forbidden' }
+        if ($deliveryContract.Mode -ceq 'pull_request' -and @('main','master') -ccontains $actualBranch) { Add-Item $configErrors 'pull_request delivery forbids direct publication from protected main/master' }
+        if ($initialDelivery) {
+            if ($deliveryContract.Product -cne $admission.product -or $deliveryContract.SourceProduct -cne $admission.product -or
+                $deliveryContract.Repository -cne $admission.repository -or $remoteIdentity -cne $admission.identity) {
+                Add-Item $configErrors 'initial delivery contract does not match the registered source, product and repository identity'
+            }
+            if ($deliveryContract.Mode -cne 'pull_request' -or $deliveryContract.Branch -cne 'current' -or
+                $actualBranch -in @('main', 'master', $deliveryContract.Base) -or
+                @($deliveryContract.DistributionMirrors).Count -ne 0 -or @($deliveryContract.InstallationTargets).Count -ne 0) {
+                Add-Item $configErrors 'initial delivery requires pull_request/current from a non-protected branch and no destinations'
+            }
+            Test-InitialDeliveryInventory $admission.paths
+        }
+    }
 }
 if ($head -and $head -notmatch '^[0-9a-fA-F]{40}$') { Add-Item $infraErrors ('HEAD is not a valid full commit SHA: ' + $head) }
 if (-not $FirstPush -and $base -and $head) {
@@ -1593,6 +2024,7 @@ foreach ($path in $untracked) {
     if ($path -match $sensitivePathPattern) { Add-Item $blockers ('untracked sensitive path is not push-safe: ' + $path) }
 }
 Invoke-OutgoingContentScan -Repo $repo -BaseSha $base -HeadSha $head -RangeLabel $BaseRef -FirstPush ([bool]$FirstPush) -PendingInventoryOk ($porcelain.ExitCode -eq 0) -UntrackedPaths $untracked -Blockers $blockers -Infra $infraErrors -ConfigErrors $configErrors -Warnings $warnings
+Invoke-RegisteredNamedToolsGuard -Repo $repo -Base $base -Blockers $blockers -Infra $infraErrors
 $acceptedEvidenceCommits = @($head | Where-Object { $_ })
 if ($head) {
     $parentResult = Invoke-Git @('rev-parse', 'HEAD^')
@@ -1612,8 +2044,13 @@ if ($head) {
 $acceptedEvidenceCommits = @($acceptedEvidenceCommits | Where-Object { $_ } | Sort-Object -Unique)
 if ($guardV2Loaded -and ($guardV2Commands -contains 'Get-AeGuardFingerprint')) {
     try {
-        $fingerprintInputs = @($SessionContract) + @($TraceabilityEvidence)
-        $guardV2Fingerprint = Get-AeGuardFingerprint -PolicyVersion 'ae-pre-push/v2' -GateId 'hard-gates' -Command 'Invoke-PrePushGuard.ps1' -Arguments @('-BaseRef', $BaseRef, '-Remote', $Remote) -InputPath $fingerprintInputs -BasePath $repo
+        # Diagnostic only: this digest does not certify mutable working state
+        # or scanner/evidence results. No cache lookup can bypass a hard gate.
+        $fingerprintInputs = @($PSCommandPath, $deliveryModule, $SessionContract, $SingleClosurePacket, $SessionAuthorizations, $PartialPublicationPacket) + @($TraceabilityEvidence)
+        $fingerprintArguments = @($BaseRef, $Remote, $actualBranch, $head, $base, $fetchedDeliveryBase, $remoteIdentity,
+            $deliveryContractOrigin, $deliveryContractSha256, $IssueKey, $LinearUrl, $WaiverReason, [string][bool]$FirstPush) + @($ExpectedScope)
+        if ($admissionUrls) { $fingerprintArguments += @($admissionUrls.fetch, $admissionUrls.push) }
+        $guardV2Fingerprint = Get-AeGuardFingerprint -PolicyVersion 'ae-pre-push/v2' -GateId 'hard-gates' -Command 'Invoke-PrePushGuard.ps1' -Arguments $fingerprintArguments -InputPath $fingerprintInputs -BasePath $repo
     } catch { $guardV2Reason = 'fingerprint_failed'; $guardV2Loaded = $false; $guardV2Mode = 'fallback' }
 }
 $worktreeInventory = Invoke-Git @('worktree', 'list', '--porcelain')
@@ -1679,7 +2116,9 @@ $significant = $allChanged.Count -gt 0
 $partialBoundary = $null
 $partialPublicationAuthorizedExplicitIncomplete = $false
 $partialSourceV0 = Get-PartialPublicationSourceV0
-if (-not [string]::IsNullOrWhiteSpace($PartialPublicationPacket)) {
+if ($initialDelivery -and -not [string]::IsNullOrWhiteSpace($PartialPublicationPacket)) {
+    Add-Item $configErrors 'initial delivery does not allow partial publication'
+} elseif (-not [string]::IsNullOrWhiteSpace($PartialPublicationPacket)) {
     if (-not (Test-RepoRelativePath $PartialPublicationPacket) -or $PartialPublicationPacket -match '(?i)^\.docs/raw/') {
         Add-Item $configErrors 'partial publication packet must be repo-relative and outside .docs/raw'
     } else {
@@ -1869,13 +2308,16 @@ $skillPaths = @()
 $sourceRoot = Join-Path $repo 'skills'
 if ($deliveryContractActive) {
     $sourceRoot = $deliveryContract.SourcePath
-    $sourcePrefix = $deliveryContract.SourceRoot.TrimEnd('/', '\') + '/'
+    $sourcePrefix = ([string]$deliveryContract.SourceRoot).Replace('\','/').Trim('/')
+    if ($sourcePrefix -eq '.') { $sourcePrefix = '' }
+    if ($sourcePrefix) { $sourcePrefix += '/' }
     $skillPaths = @($allChanged | Where-Object { ([string]$_).Replace('\','/').StartsWith($sourcePrefix, [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { ([string]$_).Replace('\','/').Substring($sourcePrefix.Length) } | Where-Object { $_ } | Sort-Object -Unique)
     if ($skillPaths.Count -gt 0) {
-        $sourceCommitHashes = Get-GitBlobHashes $skillPaths
+        $sourceCommitPaths = @($skillPaths | ForEach-Object { $sourcePrefix + [string]$_ })
+        $sourceCommitHashes = Get-GitBlobHashes $sourceCommitPaths -RepositoryRelative
         foreach ($relative in $skillPaths) {
             $source = Join-Path $sourceRoot $relative
-            $sourceCommitKey = $deliveryContract.SourceRoot.TrimEnd('/', '\') + '/' + $relative
+            $sourceCommitKey = $sourcePrefix + $relative
             $sourceDeletedAtHead = $deletedFromHead.Contains($sourceCommitKey)
             $sourceCommitHash = if ($sourceCommitHashes.ContainsKey($sourceCommitKey)) { [string]$sourceCommitHashes[$sourceCommitKey] } else { '' }
             if (-not $sourceCommitHash) {
@@ -1921,7 +2363,7 @@ if ($deliveryContractActive) {
         }
     }
     $skillPaths = @($skillPaths | Sort-Object -Unique)
-} else {
+} elseif (-not $admission) {
     # Legacy repositories retain the previous two-target parity contract until they
     # adopt .ae.yaml. This compatibility branch is intentionally not used by the
     # Kernel contract and therefore cannot turn installation into publication.
@@ -2063,7 +2505,7 @@ $report = [ordered]@{
     observed_at = $remoteObservedAt
     first_push_authorization = if ($FirstPush -and $contract) { [ordered]@{ authorized=$contract.FirstPushAuthorized; authorized_by=$contract.FirstPushAuthorizedBy; authorized_at=$contract.FirstPushAuthorizedAt } } else { $null }
     post_push_verification_handoff = if ($FirstPush -and $contract) { [ordered]@{ owner=$contract.FirstPushHandoffOwner; command=$contract.FirstPushHandoffCommand; expected_ref=$contract.FirstPushExpectedRef; expected_sha=$contract.FirstPushExpectedSha; approved_head=$head; unexpected_refs=$contract.FirstPushUnexpectedRefs; toctou_race_owner=$contract.FirstPushRaceOwner; rule='refs/heads/main must equal approved_head and no unexpected refs may exist' } } else { $null }
-    delivery_contract = if ($deliveryContract) { [ordered]@{ path=$deliveryContract.Path; schema=$deliveryContract.Schema; product=$deliveryContract.Product; repository=$deliveryContract.Repository; mode=$deliveryContract.Mode; remote=$deliveryContract.Remote; base=$deliveryContract.Base; branch=$deliveryContract.Branch; source_root=$deliveryContract.SourceRoot + '/'; source_product=$deliveryContract.SourceProduct; same_product_only=$deliveryContract.SameProductOnly; publication_stage=$deliveryContract.PublicationStage; mirror_policy=$deliveryContract.MirrorPolicy; distribution_mirrors=@($deliveryContract.DistributionMirrors | ForEach-Object { ConvertTo-DeliveryDestinationReport $_ }); installation_stage=$deliveryContract.InstallationStage; target_policy=$deliveryContract.TargetPolicy; installation_targets=@($deliveryContract.InstallationTargets | ForEach-Object { ConvertTo-DeliveryDestinationReport $_ }) } } else { $null }
+    delivery_contract = if ($deliveryContract) { [ordered]@{ path=$deliveryContract.Path; origin=$deliveryContractOrigin; commit=$deliveryContractCommit; sha256=$deliveryContractSha256; schema=$deliveryContract.Schema; product=$deliveryContract.Product; repository=$deliveryContract.Repository; mode=$deliveryContract.Mode; remote=$deliveryContract.Remote; base=$deliveryContract.Base; branch=$deliveryContract.Branch; source_root=$deliveryContract.SourceRoot + '/'; source_product=$deliveryContract.SourceProduct; same_product_only=$deliveryContract.SameProductOnly; publication_stage=$deliveryContract.PublicationStage; mirror_policy=$deliveryContract.MirrorPolicy; distribution_mirrors=@($deliveryContract.DistributionMirrors | ForEach-Object { ConvertTo-DeliveryDestinationReport $_ }); installation_stage=$deliveryContract.InstallationStage; target_policy=$deliveryContract.TargetPolicy; installation_targets=@($deliveryContract.InstallationTargets | ForEach-Object { ConvertTo-DeliveryDestinationReport $_ }) } } else { $null }
     publication = if ($deliveryContractActive) { [ordered]@{ stage='publication'; source_root=$deliveryContract.SourceRoot + '/'; source_paths=@($skillPaths); distribution_mirrors_checked=[int]@($deliveryContract.DistributionMirrors).Count; installation_evaluated=$false; installation_status='not_evaluated' } } else { $null }
     installation = if ($deliveryContractActive) { [ordered]@{ stage='installation'; status='not_evaluated'; control='infra/git/Test-KernelInstallation.ps1'; reason='installation is a separate control and is never claimed by publication' } } else { $null }
     origin_main_ancestor_of_head = $baseIsAncestor
@@ -2102,6 +2544,7 @@ $report = [ordered]@{
 if ($Json) { $report | ConvertTo-Json -Depth 12 }
 else {
     Write-Output ('Pre-push guard: ' + $verdict + ' (' + (Get-ExitCodeName $code) + ')')
+    if ($deliveryContractOrigin) { Write-Output ('DELIVERY CONTRACT: ' + $deliveryContractOrigin) }
     foreach ($item in $blockers) { Write-Output ('BLOCKED: ' + $item) }
     foreach ($item in $configErrors) { Write-Output ('CONFIGURATION: ' + $item) }
     foreach ($item in $warnings) { Write-Output ('WARNING: ' + $item) }
