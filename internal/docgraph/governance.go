@@ -899,7 +899,7 @@ func invalidKernelV2AuthorityBindingSlots(policy map[string]any) []string {
 		invalid = append(invalid, "authority.model")
 	}
 	for _, layer := range []string{"kernel", "team", "repository", "person", "session"} {
-		if !validKernelV2AuthorityEntity(authority[layer]) {
+		if !validKernelV2AuthorityEntity(authority[layer], layer == "kernel") {
 			invalid = append(invalid, "authority."+layer+".id")
 		}
 	}
@@ -920,12 +920,15 @@ func validKernelV2AuthorityModel(value any) bool {
 	return true
 }
 
-func validKernelV2AuthorityEntity(value any) bool {
+func validKernelV2AuthorityEntity(value any, allowSource bool) bool {
 	entity, ok := value.(map[string]any)
-	if !ok || len(entity) != 1 {
+	if !ok || !validKernelV2RepoPolicyString(entity["id"]) {
 		return false
 	}
-	return validKernelV2RepoPolicyString(entity["id"])
+	if source, present := entity["source"]; present {
+		return allowSource && len(entity) == 2 && validKernelV2RepoPolicyString(source)
+	}
+	return len(entity) == 1
 }
 
 func invalidKernelV2AuthorityAllowlist(value any) []string {
