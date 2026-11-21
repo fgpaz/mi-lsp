@@ -1,0 +1,8 @@
+schema: ae-verdict/v1
+type: verification
+generated_at: "2026-11-21T02:17:55+00:00"
+base_sha: 52c12fbc2a3bc0d1a444551d090a30a0bcb219e3
+head_sha: f13a7636bb577039867ad12dcb6750c586658bf0
+sha256: 4faf654963aee58687dc5b758b32571da6f9c09c7ecf47c7de65d0c61a8b0b59
+verdict: PASS
+scope: Go focused/full tests, vet, clean CLI build, real kernel-source acceptance and team-source refusal, and published guard projection readback pass. This is implementation evidence, not artifact certification.

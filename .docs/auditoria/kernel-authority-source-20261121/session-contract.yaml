@@ -1,0 +1,27 @@
+schema: ae-session-contract/v2
+repository:
+  branch: release-authority-source-20261121
+  base_ref: origin/main
+  base_sha: 52c12fbc2a3bc0d1a444551d090a30a0bcb219e3
+anchors:
+  - CT-GOVERNANCE-AE-KERNEL-V2.repo-policy-slots
+scope:
+  allowed_paths:
+    - .ae-pre-push-projection.json
+    - .docs/auditoria/kernel-authority-source-20261121/session-contract.yaml
+    - .docs/auditoria/kernel-authority-source-20261121/verification.yaml
+    - .docs/wiki/07_technical/contracts/CT-GOVERNANCE-AE-KERNEL-V2.md
+    - infra/git/Invoke-PrePushGuard.ps1
+    - infra/git/KernelDeliveryContract.psm1
+    - internal/docgraph/governance.go
+    - internal/docgraph/wiki_contract_governance_test.go
+  forbidden_paths:
+    - .ae.yaml
+    - .docs/ae/**
+    - .docs/raw/**
+    - .gitleaks.toml
+ae_budget_gate:
+  worker_decision: none
+  why_no_worker: One repository writer and a bounded verification wave for this change.
+evidence_paths:
+  - .docs/auditoria/kernel-authority-source-20261121/verification.yaml
