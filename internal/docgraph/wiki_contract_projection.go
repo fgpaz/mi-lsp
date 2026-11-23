@@ -251,7 +251,15 @@ func encodeWikiContractProjection(profile model.DocsReadProfile, g *WikiContract
 }
 
 func inspectWikiContractProjection(root string, status model.GovernanceStatus, g *WikiContractGovernance, autoSync bool) model.GovernanceStatus {
-	profile := buildWikiContractReadProfile(g, status.HumanDoc)
+	setupSource := ResolveSetupWikiSource(root)
+	sourceDoc := status.HumanDoc
+	if setupSource.External {
+		sourceDoc = WorkspacePathForSource(setupSource.Root, setupSource.GovernanceFile)
+	}
+	profile := buildWikiContractReadProfile(g, sourceDoc)
+	if setupSource.External {
+		profile.Governance.Projection.Output = WorkspacePathForSource(root, setupSource.ProjectionFile)
+	}
 	status.ProjectionDoc = profile.Governance.Projection.Output
 	status.Profile = ""
 	status.EffectiveBase = ""
@@ -272,7 +280,27 @@ func inspectWikiContractProjection(root string, status model.GovernanceStatus, g
 	if err == nil {
 		rendered, err = encodeWikiContractProjection(profile, g, content)
 	}
+	if setupSource.External && err == nil {
+		var declared struct {
+			Projection model.GovernanceProjection `yaml:"projection"`
+		}
+		if yaml.Unmarshal([]byte(wikiContractProjectionYAML(content)), &declared) != nil ||
+			(declared.Projection.Output != "" && (!safeSetupRelativePath(declared.Projection.Output) ||
+				filepath.Clean(filepath.FromSlash(declared.Projection.Output)) != filepath.Clean(filepath.FromSlash(status.ProjectionDoc)))) {
+			status.ReasonCode = "project_source_projection_conflict"
+			status.Issues = []string{status.ReasonCode}
+			status.Sync, status.Blocked = "invalid", true
+			status.Summary = "The project and governance declare different projection outputs."
+			return status
+		}
+		return compareProjectProjection(root, setupSource, status, rendered, autoSync)
+	}
 	if err != nil {
+		if setupSource.External {
+			status.Blocked = true
+			status.Sync = "invalid"
+			status.ReasonCode = "project_source_governance_invalid"
+		}
 		status.Warnings = append(status.Warnings, fmt.Sprintf("read-model projection render failed: %v", err))
 	} else if safe, ok := safeProjectionOutput(root, status.ProjectionDoc, tryResolvedCanons(root)); !ok {
 		status.Warnings = append(status.Warnings, "read-model projection output is unsafe or inside a read-only canon root")

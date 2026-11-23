@@ -113,8 +113,25 @@ func declaredProfilePath(root, profilePath, path string) string {
 		return path
 	}
 	base := filepath.Dir(filepath.Dir(profilePath))
+	external := false
+	if hasProjectSource() {
+		if source := ResolveSetupWikiSource(root); source.External {
+			external = true
+			base = source.Root
+			if base == "" {
+				return ""
+			}
+		}
+	}
 	relBase, err := filepath.Rel(root, base)
 	if err != nil {
+		if external {
+			rebased := filepath.ToSlash(filepath.Join(base, filepath.FromSlash(path)))
+			if strings.HasSuffix(filepath.ToSlash(path), "/") {
+				rebased += "/"
+			}
+			return rebased
+		}
 		return path
 	}
 	basePath := filepath.ToSlash(relBase)

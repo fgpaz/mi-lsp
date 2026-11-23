@@ -147,6 +147,11 @@ func ProfilePath(root string) string {
 }
 
 func DiscoverProfilePath(root string) string {
+	if hasProjectSource() {
+		if source := ResolveSetupWikiSource(root); source.External {
+			return source.ProjectionFile
+		}
+	}
 	defaultPath := ProfilePath(root)
 	if pathExists(defaultPath) {
 		return defaultPath
@@ -306,6 +311,14 @@ func IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx context.Context, root st
 // IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings indexes docs and returns bindings.
 func IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx context.Context, root string, matcher *workspace.IgnoreMatcher, progress ProgressFunc, prior *PriorDocSnapshot) ([]model.DocRecord, []model.DocEdge, []model.DocMention, []model.DocSourceBlock, []model.DocSourceRecord, []model.DocArtifactBinding, []string, error) {
 	collectStarted := time.Now()
+	if hasProjectSource() && ResolveSetupWikiSource(root).External {
+		status := inspectGovernance(root, false, true)
+		// Rebuilding must be allowed when only the index is stale.
+		if status.Blocked && (status.ReasonCode != "workspace_index_stale" || status.AECanon.Blocking) {
+			reason := firstNonEmptySetupReason(status.ReasonCode, "project_source_governance_invalid")
+			return nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("project source blocks indexing: %s", reason)
+		}
+	}
 	profile, _, warnings := LoadProfile(root)
 	if err := reportProgress(ctx, progress, Progress{Stage: "docs.collect", Force: true}); err != nil {
 		return nil, nil, nil, nil, nil, nil, warnings, err

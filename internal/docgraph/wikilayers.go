@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
@@ -116,14 +114,12 @@ func enrichWikiProductLayers(root string, status *model.GovernanceStatus) {
 }
 
 func wikiLayersDoctor(root string) (*model.WikiLayersDoctor, []string) {
-	policyPath := filepath.Join(root, kernelV2CanonicalRepoPolicyPath)
-	content, err := os.ReadFile(policyPath)
+	policy, err := readRepoPolicy(root, kernelV2CanonicalRepoPolicyPath)
+	if err == errProjectPolicyInvalid {
+		return nil, []string{"wiki_layers: repo-policy.yaml is not valid YAML"}
+	}
 	if err != nil {
 		return nil, nil
-	}
-	var policy map[string]any
-	if err := yaml.Unmarshal(content, &policy); err != nil {
-		return nil, []string{"wiki_layers: repo-policy.yaml is not valid YAML"}
 	}
 	kind := validateWikiRepoKind(policy)
 	policyExceptions, policyExceptionWarnings := validateWikiExceptions(policy["exceptions"])
