@@ -14,11 +14,15 @@ import (
 // machine-local project configuration. Root is populated when the configured
 // path can be resolved, even if its checkout is currently missing.
 type SetupWikiSource struct {
-	Configured bool
-	State      string
-	ReasonCode string
-	Source     string
-	Root       string
+	Configured     bool
+	State          string
+	ReasonCode     string
+	Source         string
+	Root           string
+	External       bool
+	GovernanceFile string
+	ProjectionFile string
+	RepoPolicy     map[string]any
 }
 
 // ResolveSetupWikiSource resolves exactly the wiki selected by Setup v1/v2.
@@ -28,6 +32,9 @@ func ResolveSetupWikiSource(projectRoot string) SetupWikiSource {
 	root, err := filepath.Abs(projectRoot)
 	if err != nil {
 		return SetupWikiSource{Configured: true, State: "pending", ReasonCode: "invalid_workspace"}
+	}
+	if view, present := os.LookupEnv(ProjectSourceEnv); present {
+		return resolveProjectSource(root, view)
 	}
 	shared, exists, err := readSetupConfig(filepath.Join(root, ".sandinas", "project.yaml"))
 	if !exists {
@@ -256,6 +263,9 @@ func ResolveDocumentPath(workspaceRoot, documentPath string) string {
 func setupWikiGovernanceDocument(workspaceRoot string, source SetupWikiSource) (path, displayPath, sourceKind, reasonCode string) {
 	if source.State != "resolved" || strings.TrimSpace(source.Root) == "" {
 		return "", "", "", firstNonEmptySetupReason(source.ReasonCode, "setup_wiki_source_unavailable")
+	}
+	if source.External {
+		return source.GovernanceFile, WorkspacePathForSource(workspaceRoot, source.GovernanceFile), "project_source", ""
 	}
 	for _, candidate := range []struct {
 		name       string

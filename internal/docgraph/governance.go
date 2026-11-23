@@ -390,6 +390,10 @@ func isKnowledgeWikiProjection(profile model.DocsReadProfile, source string) boo
 }
 
 func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
+	return inspectGovernance(root, autoSync, false)
+}
+
+func inspectGovernance(root string, autoSync, initializeProject bool) model.GovernanceStatus {
 	setupSource := ResolveSetupWikiSource(root)
 	if setupSource.Configured && setupSource.State != "resolved" {
 		reason := firstNonEmptySetupReason(setupSource.ReasonCode, "setup_wiki_source_unavailable")
@@ -402,8 +406,8 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 			Summary:    "Governance is pending because the configured Setup wiki source is unavailable; the legacy wiki is not used.",
 		}
 	}
-	status := inspectGovernanceCore(root, autoSync)
-	if setupSource.Configured {
+	status := inspectGovernanceCore(root, (!setupSource.External && autoSync) || (setupSource.External && initializeProject))
+	if setupSource.Configured && status.State == "" {
 		status.State = "resolved"
 	}
 	enrichWikiProductLayers(root, &status)
@@ -495,7 +499,20 @@ func inspectGovernanceCore(root string, autoSync bool) model.GovernanceStatus {
 	if source.Version == 0 {
 		source.Version = 1
 	}
-	if strings.TrimSpace(source.Projection.Output) == "" {
+	setupSource := ResolveSetupWikiSource(root)
+	if setupSource.External {
+		expectedOutput := WorkspacePathForSource(root, setupSource.ProjectionFile)
+		if declared := strings.TrimSpace(source.Projection.Output); declared != "" &&
+			(!safeSetupRelativePath(declared) || filepath.Clean(filepath.FromSlash(declared)) != filepath.Clean(filepath.FromSlash(expectedOutput))) {
+			status.Sync = "invalid"
+			status.Blocked = true
+			status.ReasonCode = "project_source_projection_conflict"
+			status.Issues = []string{status.ReasonCode}
+			status.Summary = "The project and governance declare different projection outputs."
+			return status
+		}
+		source.Projection.Output = expectedOutput
+	} else if strings.TrimSpace(source.Projection.Output) == "" {
 		source.Projection.Output = defaultProjectionRelPath
 	}
 	if safeOutput, ok := safeProjectionOutput(root, source.Projection.Output, canons); ok {
@@ -528,7 +545,11 @@ func inspectGovernanceCore(root string, autoSync bool) model.GovernanceStatus {
 		return status
 	}
 
-	profile := buildDocsReadProfileFromGovernance(source, resolved, status.HumanDoc)
+	projectionSourceDoc := status.HumanDoc
+	if setupSource.External {
+		projectionSourceDoc = WorkspacePathForSource(setupSource.Root, docPath)
+	}
+	profile := buildDocsReadProfileFromGovernance(source, resolved, projectionSourceDoc)
 	rendered, err := encodeDocsReadProfile(profile)
 	if err != nil {
 		status.Sync = "invalid"
@@ -540,6 +561,9 @@ func inspectGovernanceCore(root string, autoSync bool) model.GovernanceStatus {
 		return status
 	}
 
+	if setupSource.External {
+		return compareProjectProjection(root, setupSource, status, rendered, autoSync)
+	}
 	projectionAbs := absFromDeclared(root, status.ProjectionDoc)
 	if abs, err := filepath.Abs(projectionAbs); err == nil {
 		projectionAbs = abs
@@ -770,26 +794,18 @@ func inspectKernelV2AECanon(root string, config model.GovernanceAECanon) model.A
 		}
 	}
 
-	policyPath, err := safeRegularFileWithin(root, filepath.FromSlash(repoPolicy))
+	policy, err := readRepoPolicy(root, repoPolicy)
 	switch {
 	case errors.Is(err, errSafeFileMissing):
 		status.MissingModules = append(status.MissingModules, repoPolicy)
+	case errors.Is(err, errProjectPolicyInvalid):
+		status.MissingModules = append(status.MissingModules, repoPolicy+"#invalid_yaml")
 	case err != nil:
 		status.MissingModules = append(status.MissingModules, repoPolicy+"#unsafe_path")
 		unsafeSource = true
 	default:
-		policyContent, readErr := os.ReadFile(policyPath)
-		if readErr != nil {
-			status.MissingModules = append(status.MissingModules, repoPolicy)
-		} else {
-			var policy map[string]any
-			if err := yaml.Unmarshal(policyContent, &policy); err != nil {
-				status.MissingModules = append(status.MissingModules, repoPolicy+"#invalid_yaml")
-			} else {
-				for _, slot := range invalidKernelV2RepoPolicySlots(policy) {
-					status.MissingModules = append(status.MissingModules, repoPolicy+"#"+slot)
-				}
-			}
+		for _, slot := range invalidKernelV2RepoPolicySlots(policy) {
+			status.MissingModules = append(status.MissingModules, repoPolicy+"#"+slot)
 		}
 	}
 	if unsafeSource {

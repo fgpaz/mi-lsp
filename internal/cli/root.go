@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/fgpaz/mi-lsp/internal/daemon"
+	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/output"
@@ -246,7 +247,9 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 	ctx, cancel := context.WithTimeout(cmd.Context(), timeoutForRequest(request))
 	defer cancel()
 
-	useDaemon := !s.noDaemon && shouldUseDaemon(operation, preferDaemon)
+	// Resolved project paths belong to this launcher process, not to a shared daemon.
+	_, projectSource := os.LookupEnv(docgraph.ProjectSourceEnv)
+	useDaemon := !s.noDaemon && !projectSource && shouldUseDaemon(operation, preferDaemon)
 
 	// Only heavy daemon-backed queries should auto-start the daemon.
 	if useDaemon && !s.noAutoDaemon && shouldAutoStartDaemon(operation) {
