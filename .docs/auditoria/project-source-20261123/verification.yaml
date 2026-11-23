@@ -1,0 +1,8 @@
+schema: ae-verdict/v1
+type: verification
+generated_at: "2026-11-23T19:36:58+00:00"
+base_sha: 4a8669a08ffa811f99b4e6f28654c37f90af4e93
+head_sha: 5c6721a1b2b53f84ce597c488f32ac493b30d471
+sha256: cbf7905dab98b266110c0c14cb63a54dde588fd849cb90d654ade97c06129ed3
+verdict: PASS
+scope: Go test and vet, native governance and index with project source, legacy behavior, no rewrite on stale sources, and cross-workspace denial pass.

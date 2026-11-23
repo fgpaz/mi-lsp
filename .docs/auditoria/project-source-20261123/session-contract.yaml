@@ -1,0 +1,30 @@
+schema: ae-session-contract/v2
+repository:
+  branch: project-source-20261123
+  base_ref: origin/main
+  base_sha: 4a8669a08ffa811f99b4e6f28654c37f90af4e93
+anchors:
+  - CT-GOVERNANCE-AE-KERNEL-V2.repo-policy-slots
+scope:
+  allowed_paths:
+    - .docs/auditoria/project-source-20261123/session-contract.yaml
+    - .docs/auditoria/project-source-20261123/verification.yaml
+    - .docs/wiki/07_technical/TECH-DOCUMENTARY-GOVERNANCE.md
+    - internal/cli/root.go
+    - internal/docgraph/canonical_navigation.go
+    - internal/docgraph/docgraph.go
+    - internal/docgraph/governance.go
+    - internal/docgraph/project_source.go
+    - internal/docgraph/setup_wiki.go
+    - internal/docgraph/wiki_contract_projection.go
+    - internal/docgraph/wikilayers.go
+  forbidden_paths:
+    - .ae.yaml
+    - .docs/ae/**
+    - .docs/raw/**
+    - .gitleaks.toml
+ae_budget_gate:
+  worker_decision: none
+  why_no_worker: One repository writer and a bounded verification wave for this change.
+evidence_paths:
+  - .docs/auditoria/project-source-20261123/verification.yaml
