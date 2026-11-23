@@ -270,10 +270,15 @@ func inspectWikiContractProjection(root string, status model.GovernanceStatus, g
 		status.Blocked = true
 	}
 	status.Sync = "stale"
-	status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
-	if status.IndexSync == "stale" {
-		status.Issues = append(status.Issues, "workspace index is stale relative to governance sources; rerun mi-lsp index")
-		status.Blocked = true
+	// An external projection may be initialized during an explicit index even
+	// when a legacy index predates the external wiki. Its freshness is checked
+	// once in compareProjectProjection, after initialization.
+	if !setupSource.External {
+		status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
+		if status.IndexSync == "stale" {
+			status.Issues = append(status.Issues, "workspace index is stale relative to governance sources; rerun mi-lsp index")
+			status.Blocked = true
+		}
 	}
 	content, err := os.ReadFile(absFromDeclared(root, status.HumanDoc))
 	var rendered []byte

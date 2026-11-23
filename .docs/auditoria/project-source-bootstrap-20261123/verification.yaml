@@ -1,0 +1,8 @@
+schema: ae-verdict/v1
+type: verification
+generated_at: "2026-11-23T19:43:49+00:00"
+base_sha: 9a5883d6582072cb28dde1c4bb316bcabd45f62f
+head_sha: 2a54c08e351378941c2b9e7a93f29882f2eacf57
+sha256: c3b97228b81755e353000a416c11c1ae91681b98e0b3f39aadc5ae95a956a5a4
+verdict: PASS
+scope: Native migration from an older index, clean bootstrap, stale projection rejection, legacy and canonical source validation passed.
