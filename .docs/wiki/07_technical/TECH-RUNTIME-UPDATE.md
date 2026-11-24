@@ -101,6 +101,7 @@ Un host de build que corre mi-lsp sobre checkouts limpios no debe actualizarse s
 
 - **Por proceso**, sin tocar a nadie más: `MI_LSP_STATE_LOCATION=machine MI_LSP_AUTO_UPDATE=0 mi-lsp nav intent "..."`. En un job de CI, las dos variables van en el `env` de ese paso.
 - **Por usuario de build**: exportar las dos variables en el entorno de ese usuario (su perfil de shell o el `Environment=` de su unidad), nunca en un perfil global del sistema. En lugar de `MI_LSP_AUTO_UPDATE=0`, ese usuario puede tener `~/.mi-lsp/update/pin.json` con `{"schema":"mi-lsp-update-pin/v1","pinned":true}`.
+- **Versión mínima**: la receta exige la primera versión publicada que incluya #144. Un binario anterior ignora `MI_LSP_STATE_LOCATION` sin aviso y sigue escribiendo `<root>/.mi-lsp/`. Para saber si la versión instalada la soporta: `MI_LSP_STATE_LOCATION=invalido mi-lsp version`; si sale con rc≠0, la soporta (un valor desconocido falla antes de cualquier comando), y si sale con rc=0, no. El pin y `MI_LSP_AUTO_UPDATE=0` también bloquean el `mi-lsp update` manual, así que el orden es instalar esa versión, verificarla y recién después fijar el pin o la variable.
 - **Rollback**: quitar las variables (o borrar ese `pin.json`). mi-lsp vuelve a `<root>/.mi-lsp/` y al canal latest. El estado de máquina queda en `<directorio de caché del usuario>/mi-lsp/workspaces/` (en Linux, `~/.cache/mi-lsp/workspaces/`); se puede borrar a mano porque nada lo comparte con el modo repo.
 
 ## Fuente y promoción
