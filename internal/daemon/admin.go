@@ -17,6 +17,7 @@ import (
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/service"
+	"github.com/fgpaz/mi-lsp/internal/statedir"
 	"github.com/fgpaz/mi-lsp/internal/telemetry"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
@@ -458,7 +459,7 @@ func summarizeWorkspaces(runtimes []model.WorkerStatus, accesses []model.AccessE
 
 func (a *AdminServer) readLogTail(tail int) (string, []map[string]any, string, error) {
 	state := a.stateFn()
-	path := filepath.Join(state.RepoRoot, ".mi-lsp", "daemon.log")
+	path := filepath.Join(statedir.Dir(state.RepoRoot), "daemon.log")
 	lines, truncated, err := ReadLogTailFile(path, tail, 1<<20)
 	if err != nil {
 		if os.IsNotExist(err) {

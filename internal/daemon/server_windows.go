@@ -13,6 +13,7 @@ import (
 
 	"github.com/Microsoft/go-winio"
 	"github.com/fgpaz/mi-lsp/internal/processutil"
+	"github.com/fgpaz/mi-lsp/internal/statedir"
 )
 
 func defaultEndpoint() string {
@@ -49,7 +50,7 @@ func daemonServeCommand(repoRoot string, maxWorkers int, idleTimeout time.Durati
 	command := processutil.Command(commandName, args...)
 	processutil.ConfigureDetachedCommand(command)
 	command.Dir = repoRoot
-	logDir := filepath.Join(repoRoot, ".mi-lsp")
+	logDir := statedir.Dir(repoRoot)
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		return nil, err
 	}

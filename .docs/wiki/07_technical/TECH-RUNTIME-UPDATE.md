@@ -95,6 +95,14 @@ La consulta --check sólo lee estado existente y version en disco. Cache vencida
 
 MI_LSP_CHANNEL=pinned o ~/.mi-lsp/update/pin.json con schema mi-lsp-update-pin/v1 y pinned=true explicitan pin. MI_LSP_AUTO_UPDATE=0 deshabilita; channel y auto exponen la decisión. Las rutas de mis-entornos %USERPROFILE%/bin y ~/.local/bin NO implican pin. No hay escritura del pin desde una consulta.
 
+### Hosts de build
+
+Un host de build que corre mi-lsp sobre checkouts limpios no debe actualizarse solo ni escribir en el repositorio. No hay flag propio: se combinan `MI_LSP_AUTO_UPDATE=0` (o el pin de arriba) con `MI_LSP_STATE_LOCATION=machine` (RF-WKS-007-B04). Con esa política, `MaybeStartAutomatic` retorna con motivo `disabled` o `pinned` antes de lanzar el hijo actualizador: no hay red ni se crea `~/.mi-lsp/update`.
+
+- **Por proceso**, sin tocar a nadie más: `MI_LSP_STATE_LOCATION=machine MI_LSP_AUTO_UPDATE=0 mi-lsp nav intent "..."`. En un job de CI, las dos variables van en el `env` de ese paso.
+- **Por usuario de build**: exportar las dos variables en el entorno de ese usuario (su perfil de shell o el `Environment=` de su unidad), nunca en un perfil global del sistema. En lugar de `MI_LSP_AUTO_UPDATE=0`, ese usuario puede tener `~/.mi-lsp/update/pin.json` con `{"schema":"mi-lsp-update-pin/v1","pinned":true}`.
+- **Rollback**: quitar las variables (o borrar ese `pin.json`). mi-lsp vuelve a `<root>/.mi-lsp/` y al canal latest. El estado de máquina queda en `<directorio de caché del usuario>/mi-lsp/workspaces/` (en Linux, `~/.cache/mi-lsp/workspaces/`); se puede borrar a mano porque nada lo comparte con el modo repo.
+
 ## Fuente y promoción
 
 Metadata: https://api.github.com/repos/fgpaz/mi-lsp/releases/latest. Assets: https://github.com/fgpaz/mi-lsp/releases/download/ con redirecciones HTTPS acotadas a infraestructura de assets de GitHub. No credenciales ni origen configurable externo. RID win/linux/darwin y x64/arm64; ZIP Windows, tar.gz Unix. Checksums: mi-lsp_<version>_checksums.txt, nombre exacto y SHA-256 obligatorio. Se preserva el basename oficial del archivo para validar su wrapper. Los seis paquetes públicos 0.15.6 tienen un directorio envolvente igual al basename sin extensión; no se asume CLI en raíz.

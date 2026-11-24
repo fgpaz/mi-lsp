@@ -14,6 +14,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/statedir"
 )
 
 var (
@@ -73,6 +74,9 @@ type pinnedWorkspaceRoot struct {
 	rootInfo  os.FileInfo
 	state     *os.Root
 	stateInfo os.FileInfo
+	// stateDir is the absolute machine-local state directory; empty means the
+	// repo-local .mi-lsp child of root.
+	stateDir string
 }
 
 type metadataRepairHooks struct {
@@ -460,7 +464,10 @@ func openPinnedWorkspaceRoot(path string) (*pinnedWorkspaceRoot, error) {
 		return nil, ErrWorkspaceMetadataRootChanged
 	}
 	pinned := &pinnedWorkspaceRoot{path: path, root: root, rootInfo: opened}
-	stateInfo, err := root.Lstat(".mi-lsp")
+	if statedir.Machine() {
+		pinned.stateDir = statedir.Dir(path)
+	}
+	stateInfo, err := pinned.lstatState()
 	if errors.Is(err, os.ErrNotExist) {
 		return pinned, nil
 	}
@@ -468,13 +475,13 @@ func openPinnedWorkspaceRoot(path string) (*pinnedWorkspaceRoot, error) {
 		_ = root.Close()
 		return nil, ErrWorkspaceMetadataUnsafe
 	}
-	state, err := root.OpenRoot(".mi-lsp")
+	state, err := pinned.openState()
 	if err != nil {
 		_ = root.Close()
 		return nil, ErrWorkspaceMetadataUnsafe
 	}
 	stateOpened, stateOpenErr := state.Stat(".")
-	stateAfter, stateStatErr := root.Lstat(".mi-lsp")
+	stateAfter, stateStatErr := pinned.lstatState()
 	if stateOpenErr != nil || stateStatErr != nil || stateAfter.Mode()&os.ModeSymlink != 0 ||
 		!stateAfter.IsDir() || !os.SameFile(stateInfo, stateOpened) || !os.SameFile(stateAfter, stateOpened) {
 		_ = state.Close()
@@ -484,6 +491,20 @@ func openPinnedWorkspaceRoot(path string) (*pinnedWorkspaceRoot, error) {
 	pinned.state = state
 	pinned.stateInfo = stateOpened
 	return pinned, nil
+}
+
+func (pinned *pinnedWorkspaceRoot) lstatState() (os.FileInfo, error) {
+	if pinned.stateDir != "" {
+		return os.Lstat(pinned.stateDir)
+	}
+	return pinned.root.Lstat(".mi-lsp")
+}
+
+func (pinned *pinnedWorkspaceRoot) openState() (*os.Root, error) {
+	if pinned.stateDir != "" {
+		return os.OpenRoot(pinned.stateDir)
+	}
+	return pinned.root.OpenRoot(".mi-lsp")
 }
 
 func (pinned *pinnedWorkspaceRoot) Close() error {
@@ -501,7 +522,7 @@ func (pinned *pinnedWorkspaceRoot) verifyDescriptor() error {
 	}
 	if pinned.state != nil {
 		stateInfo, err := pinned.state.Stat(".")
-		currentState, stateErr := pinned.root.Lstat(".mi-lsp")
+		currentState, stateErr := pinned.lstatState()
 		if err != nil || stateErr != nil || currentState.Mode()&os.ModeSymlink != 0 ||
 			!currentState.IsDir() || !os.SameFile(stateInfo, pinned.stateInfo) || !os.SameFile(currentState, pinned.stateInfo) {
 			return ErrWorkspaceMetadataRootChanged
@@ -795,6 +816,9 @@ func metadataTempName() (string, error) {
 }
 
 func workspaceProjectRecoveryPath(pinned *pinnedWorkspaceRoot) string {
+	if pinned.stateDir != "" {
+		return filepath.Join(displayRecoveryPath(pinned.stateDir), "project.toml")
+	}
 	selected := displayRecoveryPath(pinned.path)
 	if err := pinned.verifyPath(); err != nil {
 		return "original pinned workspace object opened at " + selected + " (path identity changed); .mi-lsp/project.toml"

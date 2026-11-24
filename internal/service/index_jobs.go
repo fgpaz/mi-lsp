@@ -13,6 +13,7 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/processutil"
+	"github.com/fgpaz/mi-lsp/internal/statedir"
 	"github.com/fgpaz/mi-lsp/internal/store"
 )
 
@@ -538,7 +539,7 @@ func startDetachedIndexJobProcessWithPolicy(registration model.WorkspaceRegistra
 	if err != nil {
 		return 0, err
 	}
-	logDir := filepath.Join(registration.Root, ".mi-lsp", "index-jobs")
+	logDir := filepath.Join(statedir.Dir(registration.Root), "index-jobs")
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		return 0, err
 	}

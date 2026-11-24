@@ -22,7 +22,31 @@ const (
 	WorkspaceMetaDocIdentitySnapshotVersion = "doc_identity_snapshot_version"
 	WorkspaceMetaIndexedAt                  = "indexed_at"
 	WorkspaceMetaTotalFiles                 = "total_files"
+	// WorkspaceMetaIndexedGitHead is the Git HEAD a full index was built from.
+	// Only the machine state location records it (RF-WKS-007-B04).
+	WorkspaceMetaIndexedGitHead = "indexed_git_head"
 )
+
+// ReadIndexedGitHead returns the recorded indexed Git HEAD, or "" when the
+// database or the record is absent. It opens the database immutable, without
+// locks, so it never blocks an index job that is initializing or publishing
+// it; a read that races a publication returns an error or the prior value.
+func ReadIndexedGitHead(ctx context.Context, root string) (string, error) {
+	path := WorkspaceDBPath(root)
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", err
+	}
+	db, err := OpenReadOnlyExisting(root, path)
+	if err != nil {
+		return "", err
+	}
+	defer db.Close()
+	head, _, err := WorkspaceMetaValue(ctx, db, WorkspaceMetaIndexedGitHead)
+	return head, err
+}
 
 func stampDocIdentitySnapshotTx(ctx context.Context, tx *sql.Tx) error {
 	return UpsertWorkspaceMeta(ctx, tx, WorkspaceMetaDocIdentitySnapshotVersion, docidentity.ExtractionVersion)

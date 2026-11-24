@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -332,4 +333,14 @@ func saveAutoRegisterProjectFile(root string, project model.ProjectFile) error {
 
 func gitHasHead(root string) bool {
 	return processutil.Command("git", "-C", root, "rev-parse", "--verify", "--quiet", "HEAD").Run() == nil
+}
+
+// GitHead returns the commit checked out at root, or "" when root is not a Git
+// work tree with a commit. It only reads.
+func GitHead(ctx context.Context, root string) string {
+	out, err := processutil.CommandContext(ctx, "git", "-C", root, "rev-parse", "--verify", "--quiet", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }

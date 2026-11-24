@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/fgpaz/mi-lsp/internal/statedir"
 )
 
 type LogTailLine struct {
@@ -34,15 +36,15 @@ func ResolveDaemonLogPath(fallbackRepoRoot string) string {
 		}
 	}
 	if len(roots) == 0 {
-		return filepath.Join(".mi-lsp", "daemon.log")
+		return filepath.Join(statedir.Dir("."), "daemon.log")
 	}
 	for _, root := range roots {
-		path := filepath.Join(root, ".mi-lsp", "daemon.log")
+		path := filepath.Join(statedir.Dir(root), "daemon.log")
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {
 			return path
 		}
 	}
-	return filepath.Join(roots[0], ".mi-lsp", "daemon.log")
+	return filepath.Join(statedir.Dir(roots[0]), "daemon.log")
 }
 
 func ReadLogTailFile(path string, tail int, maxBytes int64) ([]LogTailLine, bool, error) {

@@ -17,6 +17,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/statedir"
 )
 
 const registryDirName = ".mi-lsp"
@@ -1103,8 +1104,10 @@ func binaryShadowingLookupCommand() string {
 	return "which -a mi-lsp"
 }
 
+// WorkspaceStateDir is the per-workspace state directory; statedir owns the
+// location (repo-local by default, machine-local with MI_LSP_STATE_LOCATION).
 func WorkspaceStateDir(root string) string {
-	return filepath.Join(root, registryDirName)
+	return statedir.Dir(root)
 }
 
 func ProjectConfigPath(root string) string {

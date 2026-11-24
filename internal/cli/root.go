@@ -20,6 +20,7 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/output"
 	"github.com/fgpaz/mi-lsp/internal/service"
+	"github.com/fgpaz/mi-lsp/internal/statedir"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/telemetry"
 	"github.com/fgpaz/mi-lsp/internal/worker"
@@ -112,6 +113,14 @@ func NewRootCommand() *cobra.Command {
 			return cmd.Help()
 		},
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if err := statedir.Validate(); err != nil {
+				return err
+			}
+			if statedir.Machine() {
+				// A running daemon resolves state with its own environment;
+				// machine-located state belongs to this process (RF-WKS-007-B04).
+				state.noDaemon = true
+			}
 			state.formatExplicit = flagChanged(cmd, "format")
 			switch state.format {
 			case "agent", "compact", "json", "text", "toon", "yaml":

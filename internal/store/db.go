@@ -2,17 +2,16 @@ package store
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/fgpaz/mi-lsp/internal/statedir"
 )
 
 const driverName = "sqlite"
@@ -23,11 +22,11 @@ const (
 )
 
 func WorkspaceDBPath(root string) string {
-	return filepath.Join(root, ".mi-lsp", "index.db")
+	return filepath.Join(statedir.Dir(root), "index.db")
 }
 
 func Open(root string) (*sql.DB, error) {
-	stateDir := filepath.Join(root, ".mi-lsp")
+	stateDir := statedir.Dir(root)
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		return nil, err
 	}
@@ -69,7 +68,7 @@ func OpenExistingForScopedRefresh(root string) (*sql.DB, error) {
 // OpenReadOnly preserves the established read-only pool for index consumers.
 // Probe uses OpenReadOnlyExisting below so it can remain strictly non-mutating.
 func OpenReadOnly(root string) (*sql.DB, error) {
-	stateDir := filepath.Join(root, ".mi-lsp")
+	stateDir := statedir.Dir(root)
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		return nil, err
 	}
@@ -136,23 +135,7 @@ func OpenReadOnlyExistingWithWAL(root string, dbPath string) (*sql.DB, error) {
 // OperationalWorkspaceStateDir is the machine-local state root for the
 // hybrid state model. It is intentionally not created by this helper.
 func OperationalWorkspaceStateDir(root string) string {
-	cache, err := os.UserCacheDir()
-	if err != nil || strings.TrimSpace(cache) == "" {
-		return ""
-	}
-	absolute, err := filepath.Abs(root)
-	if err != nil {
-		absolute = filepath.Clean(root)
-	}
-	if evaluated, evalErr := filepath.EvalSymlinks(absolute); evalErr == nil {
-		absolute = evaluated
-	}
-	key := filepath.Clean(absolute)
-	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
-		key = strings.ToLower(key)
-	}
-	hash := sha256.Sum256([]byte(key))
-	return filepath.Join(cache, "mi-lsp", "workspaces", hex.EncodeToString(hash[:]))
+	return statedir.MachineDir(root)
 }
 
 func OperationalWorkspaceDBPath(root string) string {
