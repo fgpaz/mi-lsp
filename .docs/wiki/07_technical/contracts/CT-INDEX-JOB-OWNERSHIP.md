@@ -144,7 +144,7 @@ Enlaces relacionados: [[RF-IDX-004]] · [[TP-IDX-OWNERSHIP]] · [[RF-IDX-001]] �
   - **type**: readiness
   - **name**: catalog-generation-snapshot
   - **source**: active_catalog_generation_id OR atomic ReplaceCatalog metadata indexed_at + total_files
-  - **rule**: WorkspaceCatalogReady accepts an active versioned catalog pointer or the complete metadata pair written by replaceCatalogTx (including total_files=0); schema-only and partial metadata are not ready, and readiness never inspects row counts. Without either signal nav.find returns index_not_ready; a workspace DB open/read failure returns the existing workspace_db_open_failed error. A transient unregistered root is readable only when a real catalog publication is ready.
+  - **rule**: WorkspaceCatalogReady accepts an active versioned catalog pointer or the complete metadata pair written by replaceCatalogTx (including total_files=0); schema-only and partial metadata are not ready, and readiness never inspects row counts. Without either signal nav.find returns index_not_ready; a workspace DB open/read failure returns the existing workspace_db_open_failed error, or workspace_db_busy when its cause is lock contention that outlived busy_timeout (RF-IDX-001 criterion 13). A transient unregistered root is readable only when a real catalog publication is ready.
 
 ### 4. Watcher y lock interproceso
 

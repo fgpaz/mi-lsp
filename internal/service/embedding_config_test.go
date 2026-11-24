@@ -35,6 +35,10 @@ func TestResolveWikiEmbeddingConfigUsesUserProviderAndEnvironmentPrecedence(t *t
 
 func TestResolveWikiEmbeddingConfigFallsBackToProject(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	// Host embedding variables override the project block; empty means absent.
+	for _, name := range []string{"MI_LSP_EMBEDDINGS_BASE_URL", "MI_LSP_EMBEDDINGS_MODEL", "MI_LSP_EMBEDDINGS_API_KEY", "OPENAI_API_KEY"} {
+		t.Setenv(name, "")
+	}
 	cfg, active, err := resolveWikiEmbeddingConfig(&model.EmbeddingsBlock{BaseURL: "http://project/v1", Model: "project-model", Dim: 768})
 	if err != nil || !active {
 		t.Fatalf("resolve: active=%v err=%v", active, err)

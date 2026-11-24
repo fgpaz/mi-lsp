@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -50,7 +51,8 @@ func (a *App) autoRegisterWorkspace(ctx context.Context, request model.CommandRe
 	var indexErr error
 	for attempt := 0; attempt < autoRegisterIndexAttempts; attempt++ {
 		envelope, indexErr = a.indexStart(ctx, indexRequest)
-		if indexErr == nil || indexErr.Error() != workspaceDBOpenErrorCode {
+		var openErr *workspaceDBOpenError
+		if !errors.As(indexErr, &openErr) {
 			break
 		}
 		select {

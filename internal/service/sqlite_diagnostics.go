@@ -13,6 +13,10 @@ import (
 
 const workspaceDBOpenErrorCode = "workspace_db_open_failed"
 
+// workspaceDBBusyErrorCode separates lock contention that outlived the busy
+// timeout from a real open failure (missing path, permissions, corruption).
+const workspaceDBBusyErrorCode = "workspace_db_busy"
+
 // errWorktreeIndexAbsent is returned when a read-only open would have to create
 // an index inside a linked worktree. Worktrees never get an index of their own.
 var errWorktreeIndexAbsent = errors.New("worktree_index_absent")
@@ -40,6 +44,9 @@ type workspaceDBOpenError struct {
 }
 
 func (e *workspaceDBOpenError) Error() string {
+	if e != nil && store.IsLockedError(e.cause) {
+		return workspaceDBBusyErrorCode
+	}
 	return workspaceDBOpenErrorCode
 }
 

@@ -118,7 +118,7 @@ func readWorkspaceMetaSnapshot(ctx context.Context, root string, keys []string) 
 		}
 		return "unavailable", err
 	}
-	db, err := sql.Open(driverName, path+"?_pragma=query_only(ON)&_pragma=foreign_keys(ON)")
+	db, err := sql.Open(driverName, path+"?"+busyTimeoutPragma+"&_pragma=query_only(ON)&_pragma=foreign_keys(ON)")
 	if err != nil {
 		return "unavailable", err
 	}
