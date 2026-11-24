@@ -16,6 +16,13 @@ import (
 
 const driverName = "sqlite"
 
+// busyTimeoutPragma is part of every workspace DB DSN that can take a lock.
+// The driver runs DSN pragmas on each new pool connection, busy_timeout before
+// any other, so no connection meets a concurrent opener (a WAL conversion, a
+// checkpoint on last close, a recovery) without waiting first. A db.Exec only
+// configures the one connection that happens to run it.
+const busyTimeoutPragma = "_pragma=busy_timeout(5000)"
+
 const (
 	sqliteRetryAttempts = 4
 	sqliteRetryDelay    = 25 * time.Millisecond
@@ -30,7 +37,7 @@ func Open(root string) (*sql.DB, error) {
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open(driverName, WorkspaceDBPath(root))
+	db, err := sql.Open(driverName, WorkspaceDBPath(root)+"?"+busyTimeoutPragma)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +62,7 @@ func OpenExistingForScopedRefresh(root string) (*sql.DB, error) {
 	} else if info.IsDir() {
 		return nil, fmt.Errorf("workspace database path is a directory: %s", path)
 	}
-	dsn := "file:" + filepath.ToSlash(path) + "?mode=rw&_pragma=foreign_keys(ON)"
+	dsn := "file:" + filepath.ToSlash(path) + "?mode=rw&" + busyTimeoutPragma + "&_pragma=foreign_keys(ON)"
 	db, err := sql.Open(driverName, dsn)
 	if err != nil {
 		return nil, err
@@ -72,7 +79,7 @@ func OpenReadOnly(root string) (*sql.DB, error) {
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		return nil, err
 	}
-	dsn := WorkspaceDBPath(root) + "?_pragma=query_only(ON)&_pragma=foreign_keys(ON)"
+	dsn := WorkspaceDBPath(root) + "?" + busyTimeoutPragma + "&_pragma=query_only(ON)&_pragma=foreign_keys(ON)"
 	db, err := sql.Open(driverName, dsn)
 	if err != nil {
 		return nil, err
@@ -122,7 +129,7 @@ func OpenReadOnlyExistingWithWAL(root string, dbPath string) (*sql.DB, error) {
 	} else if info.IsDir() {
 		return nil, fmt.Errorf("read-only database path is a directory: %s", dbPath)
 	}
-	dsn := "file:" + filepath.ToSlash(dbPath) + "?mode=ro&_pragma=foreign_keys(ON)"
+	dsn := "file:" + filepath.ToSlash(dbPath) + "?mode=ro&" + busyTimeoutPragma + "&_pragma=foreign_keys(ON)"
 	db, err := sql.Open(driverName, dsn)
 	if err != nil {
 		return nil, err
@@ -181,10 +188,12 @@ func Reset(root string) error {
 	return nil
 }
 
+// configureWorkspaceDB applies the remaining pragmas through the pool, as
+// before. busy_timeout is not here: it comes from the DSN, so it is already set
+// on every connection when journal_mode=WAL runs.
 func configureWorkspaceDB(db *sql.DB) error {
 	for _, pragma := range []string{
 		"PRAGMA journal_mode=WAL",
-		"PRAGMA busy_timeout=5000",
 		"PRAGMA synchronous=NORMAL",
 		"PRAGMA foreign_keys=ON",
 		"PRAGMA cache_size=-40000",  // ~40MB cache

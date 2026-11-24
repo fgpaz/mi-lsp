@@ -36,6 +36,10 @@ links:
     role: behavior
   - path: internal/store/schema.go
     role: behavior
+  - path: internal/store/db.go
+    role: behavior
+  - path: internal/service/sqlite_diagnostics.go
+    role: behavior
 ---
 
 ## Propósito
@@ -158,6 +162,7 @@ CLI `mi-lsp`, con operaciones y selectores detallados en el comportamiento del r
 - **Código**: `IDX_WORKSPACE_NOT_FOUND`; **Causa**: workspace no resoluble; **Trigger**: alias/path inválido; **Respuesta esperada**: abortar sin crear índice
 - **Código**: `IDX_WALK_FAILED`; **Causa**: fallo de exploracion; **Trigger**: error de lectura en repo; **Respuesta esperada**: abortar con mensaje y contexto
 - **Código**: `IDX_DB_WRITE_FAILED`; **Causa**: fallo SQLite; **Trigger**: error de apertura o escritura; **Respuesta esperada**: abortar con error sin ocultar causa
+- **Código**: `workspace_db_open_failed` / `workspace_db_busy`; **Causa**: el servicio no pudo abrir `index.db`; **Trigger**: `workspace_db_busy` cuando la causa es contención de locks que superó `busy_timeout` (`SQLITE_BUSY`/`database is locked`); `workspace_db_open_failed` para el resto (ruta, permisos, corrupción, esquema); **Respuesta esperada**: el job o la operación fallan con ese código, sin roots ni texto del driver; el arranque del índice desde la primera consulta reintenta brevemente ambos
 
 ## Criterios de aceptación (numerados)
 
@@ -173,6 +178,7 @@ CLI `mi-lsp`, con operaciones y selectores detallados en el comportamiento del r
 10. `--no-embeddings` es opt-in (`false` por default) para `index` e `index start`; omite solo la fase de embeddings de esa operación/job, incluido el preflight dinámico de timeout, sin resolver configuración, proveedor ni credenciales de embeddings. Conserva los documentos, la memoria, la `GraphGeneration` documental y los vectores existentes; informa `wiki embeddings skipped by operation policy; existing embeddings were left unchanged`. Esta política es independiente de `--go-offline`.
 11. `index start` persiste `no_embeddings` en el job y expone `no_embeddings` y `embeddings_outcome` en la respuesta/status; el runner detached reenvía la política persistida a `index run-job` para validarla antes de trabajar.
 12. Si un job activo tiene una política `no_embeddings` distinta de la solicitada, `index.start` responde `index_job_policy_mismatch` y conserva el job activo sin agregar jobs ni generaciones. El default permanece `false`; estos criterios no amplían ni alteran el alcance/evidencia histórica de `TC-IDX-029`.
+13. Toda conexión de un pool sobre `index.db` que pueda tomar locks (escritura, lectura read-only de hasta 8 conexiones, refresh acotado y lectura con WAL) nace con `busy_timeout=5000` desde el DSN, antes de `journal_mode=WAL` y de cualquier otra operación; los demás pragmas conservan su valor final y los límites de conexiones no cambian. El job lanzado por la primera consulta no falla con `SQLITE_BUSY` por el checkpoint de cierre o la recuperación del WAL de quien lo lanzó, y una contención que supera el timeout se informa como `workspace_db_busy`, no como `workspace_db_open_failed`.
 
 ### 8. Trazabilidad de pruebas
 - Manual con evidencia acotada: `TP-IDX / TC-IDX-029` (RF-IDX-001-GO-OFFLINE); FINAL_VERIFY1 FAIL histórico, RECHECK1 PASS policy / PARTIAL global, sin aceptación completa.
@@ -188,6 +194,7 @@ CLI `mi-lsp`, con operaciones y selectores detallados en el comportamiento del r
 - Positivo: `TP-IDX / TC-IDX-030` (Criterio 10)
 - Positivo: `TP-IDX / TC-IDX-031` (Criterio 11)
 - Negativo: `TP-IDX / TC-IDX-032` (Criterio 12)
+- Positivo/negativo: `TP-IDX / TC-IDX-033` (Criterio 13)
 
 ```yaml
 harness_protocol: SDD-HARNESS-v1

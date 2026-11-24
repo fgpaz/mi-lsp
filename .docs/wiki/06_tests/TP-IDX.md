@@ -14,6 +14,10 @@ links:
     role: test
   - path: internal/service/index_no_embeddings_contract_preflight_test.go
     role: test
+  - path: internal/store/db_contention_test.go
+    role: test
+  - path: internal/service/sqlite_diagnostics_test.go
+    role: test
 ---
 
 ## Alcance
@@ -93,6 +97,8 @@ RF-IDX-001, RF-IDX-002, RF-IDX-003. Se conserva el inventario de escenarios, lí
   - RF-IDX-001 — Criterio 11. Disposición: automated. Evidencia esperada: `TestIndexStartNoEmbeddingsContractPreflightPersistsPolicyAndRejectsMismatch`, `TestIndexNoEmbeddingsContractPreflightDetachedRunJobPropagation` y `TestIndexNoEmbeddingsContractPreflightDetachedRunJobFlag` en los paths declarados. No se ejecutaron en este cierre.
 - **Caso**: TC-IDX-032; **Tipo**: negativo; **RF**: RF-IDX-001; **Descripción**: la política `no_embeddings` incompatible rechaza el start sin alterar el job activo ni crear jobs/generaciones adicionales
   - RF-IDX-001 — Criterio 12. Disposición: automated. Evidencia esperada: aserciones de `TestIndexStartNoEmbeddingsContractPreflightPersistsPolicyAndRejectsMismatch` en `internal/service/index_no_embeddings_contract_preflight_test.go`. No se ejecutaron en este cierre.
+- **Caso**: TC-IDX-033; **Tipo**: positivo/negativo; **RF**: RF-IDX-001; **Descripción**: cada conexión de los pools sobre `index.db` tiene `busy_timeout=5000`; el job lanzado por la primera consulta abre sin `SQLITE_BUSY`; la contención se informa como `workspace_db_busy` y la falla real de apertura como `workspace_db_open_failed`
+  - RF-IDX-001 — Criterio 13. Disposición: automated. Evidencia esperada: `TestWorkspaceDBEveryPoolConnectionHasBusyTimeout` y `TestWorkspaceDBJobOpenWaitsForFirstQuery` en `internal/store/db_contention_test.go`; `TestWorkspaceDBOpenErrorSeparatesBusyFromOpenFailure` en `internal/service/sqlite_diagnostics_test.go`.
 
 #### TC-IDX-029 — Go offline por job
   - RF-IDX-001 — Criterio 6. Disposición: manual_evidence_pending. Evidencia esperada: el resultado, snapshot y oráculo definidos en este caso; conservar cualquier omisión o estado pendiente. No acredita una ejecución de esta migración.
@@ -217,6 +223,15 @@ RF-IDX-001, RF-IDX-002, RF-IDX-003. Se conserva el inventario de escenarios, lí
 - **verification_mode**: automated
 - **expected**: el mismatch devuelve `index_job_policy_mismatch` y no cambia el job activo ni agrega jobs/generaciones.
 - **execution_note**: Se referencian aserciones existentes del corte; no fueron ejecutados en esta reparación documental.
+
+#### TC-IDX-033 — busy_timeout en cada conexión de `index.db`
+
+- **requirement_id**: RF-IDX-001
+- **case_id**: TC-IDX-033
+- **acceptance_criterion**: 13
+- **verification_mode**: automated
+- **expected**: los pools `Open`, `OpenReadOnly` (8 conexiones), `OpenExistingForScopedRefresh` y `OpenReadOnlyExistingWithWAL` devuelven `PRAGMA busy_timeout=5000` en cada conexión, con `journal_mode=wal`, `synchronous=1`, `foreign_keys=1`, `cache_size=-40000` y `mmap_size=30000000`. En 150 rondas de primera consulta (index.start cierra su escritor y abre el pool read-only con 4 consultas mientras el job abre para escribir), cero aperturas o consultas fallan; en la base previa (c38148a) fallaban 150 de 150 aperturas del job con `SQLITE_BUSY`. Un error con causa `database is locked` se informa `workspace_db_busy`; abrir sobre un directorio en lugar de `index.db` se informa `workspace_db_open_failed`; ninguno expone roots ni texto del driver.
+- **execution_note**: Ejecutado en el corte milsp-sqlite-pragmas-20261124 contra la base y el arreglo (3 corridas de cada lado).
 
 ```yaml
 harness_protocol: SDD-HARNESS-v1

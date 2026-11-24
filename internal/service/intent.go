@@ -2213,7 +2213,7 @@ func sanitizeIntentError(err error) string {
 
 	var dbErr *workspaceDBOpenError
 	if errors.As(err, &dbErr) {
-		return workspaceDBOpenErrorCode
+		return dbErr.Error()
 	}
 
 	var graphErr *model.GraphQueryError

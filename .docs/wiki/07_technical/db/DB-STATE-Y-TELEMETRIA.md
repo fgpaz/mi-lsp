@@ -166,7 +166,7 @@ Campos recomendados:
 - `/api/metrics` y `admin export --summary` derivan `request_count`, `success_count`, `error_count`, `error_rate`, `truncation_rate`, `p50_latency_ms`, `p95_latency_ms`, `backpressure_count`, `hint_count` y breakdowns por `route`, `client_name`, `hint_code` y `failure_stage`
 - `admin export --summary` puede derivar `recommendations` desde agregados sanitizados y usage-doctor actions; no agrega columnas obligatorias nuevas y no persiste recomendaciones por fila
 - Los SLOs de memoria/proceso no se calculan desde `access_events`: salen de `daemon_process`, `runtime_snapshots` y `watchers` en status/admin
-- `index.db` repo-local debe inicializarse con `PRAGMA journal_mode=WAL` y `PRAGMA busy_timeout`
+- `index.db` repo-local debe inicializarse con `PRAGMA journal_mode=WAL` y `PRAGMA busy_timeout`; `busy_timeout` va en el DSN para que cada conexión del pool lo tenga antes de cualquier lock
 - `daemon.db` debe abrirse con una conexion SQLite serializada (`SetMaxOpenConns(1)`), `busy_timeout`, `synchronous=NORMAL`, WAL y retry/backoff breve en escrituras para proteger escrituras append-heavy y exports concurrentes.
 - la escritura catalog/docs/file-symbols debe quedar serializada por workspace para que watcher e index manual no peleen la misma DB
 - Nota: columnas agregadas via migration idempotente (`ALTER TABLE ... ADD COLUMN`); rows existentes quedan con DEFAULT 0 o `NULL` según el schema de origen
