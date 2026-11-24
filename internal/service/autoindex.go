@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/statedir"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
@@ -25,7 +26,7 @@ import (
 // When the catalog is missing, unreadable or schema-broken, `nav find` answers
 // from text and starts ONE detached full index job in the background. The job
 // is deduplicated by the index job ownership table, rate-limited through
-// <root>/.mi-lsp/autoindex.last after a failure, and runs with low priority,
+// <state dir>/autoindex.last after a failure, and runs with low priority,
 // GOMAXPROCS=2 and a wall-clock timeout. It never touches the workspace
 // registry.
 //
@@ -213,7 +214,7 @@ type autoIndexMarker struct {
 }
 
 func autoIndexMarkerPath(root string) string {
-	return filepath.Join(root, ".mi-lsp", autoIndexMarkerName)
+	return filepath.Join(statedir.Dir(root), autoIndexMarkerName)
 }
 
 func readAutoIndexMarker(root string) (autoIndexMarker, bool) {
@@ -229,7 +230,7 @@ func readAutoIndexMarker(root string) (autoIndexMarker, bool) {
 }
 
 func writeAutoIndexMarker(root string, status string, at time.Time) {
-	if err := os.MkdirAll(filepath.Join(root, ".mi-lsp"), 0o755); err != nil {
+	if err := os.MkdirAll(statedir.Dir(root), 0o755); err != nil {
 		return
 	}
 	data, err := json.Marshal(autoIndexMarker{At: at.UTC(), Status: status})
@@ -322,11 +323,11 @@ func jitteredDelay(base time.Duration) time.Duration {
 	return base + time.Duration(rand.Int63n(int64(base)))
 }
 
-// acquireQuarantineLock takes <root>/.mi-lsp/quarantine.lock with O_EXCL. A
+// acquireQuarantineLock takes <state dir>/quarantine.lock with O_EXCL. A
 // lock older than quarantineLockStale is considered abandoned. It never blocks:
 // ok=false means another process holds it.
 func acquireQuarantineLock(root string) (release func(), ok bool) {
-	path := filepath.Join(root, ".mi-lsp", quarantineLockName)
+	path := filepath.Join(statedir.Dir(root), quarantineLockName)
 	for attempt := 0; attempt < 2; attempt++ {
 		file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 		if err == nil {
@@ -398,7 +399,7 @@ var quarantineSuffixes = []string{"", "-wal", "-shm"}
 
 // quarantineWorkspaceDB renames index.db (and its -wal/-shm companions) to
 // index.db.corrupt-<unixts> and keeps only the maxQuarantinedDBs newest
-// quarantines. It only touches files inside <root>/.mi-lsp/.
+// quarantines. It only touches files inside the workspace state dir.
 func quarantineWorkspaceDB(root string, now time.Time) error {
 	dbPath := store.WorkspaceDBPath(root)
 	if _, err := os.Stat(dbPath); err != nil {

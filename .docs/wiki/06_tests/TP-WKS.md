@@ -20,6 +20,10 @@ links:
   code:
   - path: internal/workspace/autoregister_test.go
     role: test
+  - path: internal/statedir/statedir_test.go
+    role: test
+  - path: internal/cli/state_location_test.go
+    role: test
 ---
 
 ## Alcance
@@ -588,6 +592,34 @@ Los casos `TC-WKS-048..060` se definen únicamente en estos bloques TOON; las fi
   - **assert_git_commit**: coincide con git -C <ruta> rev-parse HEAD
   - **assert_generations**: null o valores del store bajo <ruta>/.mi-lsp; generation_reasons tipados si falta DB; nunca valores del main salvo que el path sea el main
   - **assert_omitted_control**: mi-lsp nav git-frontier desde cwd del linked sin --workspace resuelve alias del main cuando está registrado
+
+#### TC-WKS-069
+  - RF-WKS-007 — Criterio 6. Disposición: automated. Evidencia esperada: los tests nombrados pasan con HOME y caché temporales, raíz del repo de solo lectura y sin daemon, autoindex ni actualización.
+
+- **Marcador estable**: TC-WKS-069
+- **Comprobación prevista**:
+  - go test -count=1 ./internal/statedir ./internal/cli -run 'TestDirDefaultsToRepoLocal|TestValidateRejectsUnknownValueWithoutRepoFallback|TestMachineDirIsolatesReposAndWorktrees|TestMachineStateLocation|TestInvalidStateLocationFailsBeforeAnyCommand'
+- **Evidencia referenciada**:
+  - internal/statedir/statedir_test.go
+  - internal/cli/state_location_test.go
+- **case_id**: TC-WKS-069
+- **case_type**: positive
+- **requirement_id**: RF-WKS-007
+- **verification_mode**: automated
+- **test_bindings**:
+  - **file**: internal/cli/state_location_test.go
+  - **test**: TestMachineStateLocationLeavesCleanRepoUntouched, TestMachineStateLocationReportsIndexFromAnotherRevision, TestInvalidStateLocationFailsBeforeAnyCommand
+  - **file**: internal/statedir/statedir_test.go
+  - **test**: TestDirDefaultsToRepoLocal, TestValidateRejectsUnknownValueWithoutRepoFallback, TestMachineDirIsolatesReposAndWorktrees
+- **expected**:
+  - **default_location**: root-dot-mi-lsp-unchanged
+  - **machine_init_nav_intent_nav_find**: answers-from-machine-state
+  - **git_status_ignored_untracked**: empty
+  - **repo_dot_mi_lsp**: absent
+  - **two_repos_and_linked_worktree**: distinct-state-dirs-outside-each-root
+  - **same_head**: no-index_stale_revision
+  - **new_commit_same_path**: index_stale_revision-with-indexed-and-current-sha
+  - **invalid_value**: explicit-error-before-any-command
 
 ```yaml
 harness_protocol: SDD-HARNESS-v1

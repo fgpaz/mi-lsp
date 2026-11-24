@@ -13,7 +13,7 @@ Las entidades, estados e identidades se detallan a continuación.
 ### Propósito
 
 `mi-lsp` modela estado operativo local, no un dominio de negocio tradicional.
-La base vigente distingue workspaces `single` de workspaces `container`, persiste ownership por repo/entrypoint y sostiene un grafo documental repo-local. La evolucion graph-native agrega identidad durable, generations inmutables, adjacency con evidencia y extensiones derivativas, sin reemplazar la autoridad wiki ni requerir servicios externos.
+La base vigente distingue workspaces `single` de workspaces `container`, persiste ownership por repo/entrypoint y sostiene un grafo documental repo-local. Toda persistencia `<repo>/.mi-lsp/...` de las tablas siguientes se resuelve con `internal/statedir`: con `MI_LSP_STATE_LOCATION=machine` vive en `<directorio de caché del usuario>/mi-lsp/workspaces/<sha256 de la raíz física>`, incluido `project.toml` (RF-WKS-007-B04). La evolucion graph-native agrega identidad durable, generations inmutables, adjacency con evidencia y extensiones derivativas, sin reemplazar la autoridad wiki ni requerir servicios externos.
 
 ### Entidades canónicas
 
@@ -34,7 +34,7 @@ La base vigente distingue workspaces `single` de workspaces `container`, persist
 - **Entidad**: DocsReadProfile; **Tipo**: Operativa local; **Owner**: Maintainer de wiki; **Persistencia**: `<repo>/.docs/wiki/_mi-lsp/read-model.toml`; **Descripción**: Perfil opcional que clasifica familias, paths y fallback documental
 - **Entidad**: DocsOwnerHint; **Tipo**: Operativa local; **Owner**: Maintainer de wiki; **Persistencia**: `<repo>/.docs/wiki/00_governance.md` -> `read-model.toml`; **Descripción**: Hint opcional repo-especifico para ownership documental de capabilities nuevas
 - **Entidad**: DocsGovernanceProfile; **Tipo**: Operativa derivada; **Owner**: CLI/Core; **Persistencia**: `<repo>/.docs/wiki/_mi-lsp/read-model.toml`; **Descripción**: Proyección ejecutable de la gobernanza humana: perfil efectivo, base, overlays y cadenas
-- **Entidad**: WorkspaceMeta; **Tipo**: Derivada; **Owner**: Indexer; **Persistencia**: `<repo>/.mi-lsp/index.db`; **Descripción**: Totales, defaults, schema y punteros activos del índice
+- **Entidad**: WorkspaceMeta; **Tipo**: Derivada; **Owner**: Indexer; **Persistencia**: `<repo>/.mi-lsp/index.db`; **Descripción**: Totales, defaults, schema y punteros activos del índice; en modo `machine`, `indexed_git_head` con el HEAD del último índice completo (RF-WKS-007-B04)
 - **Entidad**: GraphGeneration; **Tipo**: Derivada inmutable; **Owner**: Graph Kernel; **Persistencia**: `<repo>/.mi-lsp/index.db`; **Descripción**: Snapshot sellado por source/config/backend digests, con estado staged/active/retired/invalid
 - **Entidad**: GraphNode; **Tipo**: Derivada; **Owner**: Graph Kernel; **Persistencia**: `<repo>/.mi-lsp/index.db`; **Descripción**: Nodo tipado con `node_id` local, `NodeKey` BLOB(32), identity fields, owner, generation, provenance y cross-RID
 - **Entidad**: GraphEdge; **Tipo**: Derivada; **Owner**: Graph Kernel; **Persistencia**: `<repo>/.mi-lsp/index.db`; **Descripción**: Relacion dirigida y tipada entre NodeKeys existentes en la misma generation

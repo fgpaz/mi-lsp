@@ -85,7 +85,7 @@ func (a *App) registerWorkspace(ctx context.Context, request model.CommandReques
 	if !noIndex {
 		// Check if index already exists to use incremental mode
 		var mode indexer.IndexMode = indexer.IndexModeFull
-		indexPath := filepath.Join(registration.Root, ".mi-lsp", "index.db")
+		indexPath := store.WorkspaceDBPath(registration.Root)
 		if _, err := os.Stat(indexPath); err == nil {
 			// Index exists and we have git; use incremental
 			gitDir := filepath.Join(registration.Root, ".git")

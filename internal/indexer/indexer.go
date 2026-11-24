@@ -2,6 +2,7 @@ package indexer
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/reentry"
+	"github.com/fgpaz/mi-lsp/internal/statedir"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
@@ -68,6 +70,15 @@ func IndexWorkspaceWithGraphProgressForJob(ctx context.Context, root string, cle
 
 func indexWorkspaceWithGraphProgress(ctx context.Context, root string, clean bool, generationID string, progress ProgressFunc, graphOptions GraphIndexOptions, publication *IndexJobPublication) (Result, error) {
 	started := time.Now()
+	// RF-WKS-007-B04: machine-local state outlives checkouts and no watcher
+	// follows them, so a full index records the HEAD it starts from; nav reads
+	// compare it. Captured before reading files, so a HEAD that moves during
+	// indexing is reported rather than hidden.
+	recordRevision := statedir.Machine()
+	revision := ""
+	if recordRevision {
+		revision = workspace.GitHead(ctx, root)
+	}
 	projectFile, files, symbols, warnings, matcher, err := buildCatalog(ctx, root, progress)
 	if err != nil {
 		return Result{}, err
@@ -162,15 +173,24 @@ func indexWorkspaceWithGraphProgress(ctx context.Context, root string, clean boo
 			}
 		}
 		if publication != nil {
-			return store.ReplaceWorkspaceIndexForJobWithReferenceSnapshot(ctx, db, publication.JobID, generationID, projectFile, files, symbols, docs, docEdges, docMentions, sourceBlocks, sourceRecords, bindings, snapshot, publication.Fence, jobGraph)
+			if err := store.ReplaceWorkspaceIndexForJobWithReferenceSnapshot(ctx, db, publication.JobID, generationID, projectFile, files, symbols, docs, docEdges, docMentions, sourceBlocks, sourceRecords, bindings, snapshot, publication.Fence, jobGraph); err != nil {
+				return err
+			}
+			recordIndexedRevision(ctx, db, recordRevision, revision)
+			return nil
 		}
 		if err := store.ReplaceWorkspaceIndexWithReferenceSnapshot(ctx, db, generationID, projectFile, files, symbols, docs, docEdges, docMentions, sourceBlocks, sourceRecords, bindings, snapshot); err != nil {
 			return err
 		}
+		graphState, graphGenerationID := store.GraphRuntimeFresh, generationID
 		if !publishGraph {
-			return store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeStale, "")
+			graphState, graphGenerationID = store.GraphRuntimeStale, ""
 		}
-		return store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeFresh, generationID)
+		if err := store.SetGraphRuntimeState(ctx, db, graphState, graphGenerationID); err != nil {
+			return err
+		}
+		recordIndexedRevision(ctx, db, recordRevision, revision)
+		return nil
 	}); err != nil {
 		return Result{}, err
 	}
@@ -182,6 +202,15 @@ func indexWorkspaceWithGraphProgress(ctx context.Context, root string, clean boo
 		result.GraphBackendManifest = graphGeneration.BackendManifestDigest.String()
 	}
 	return result, nil
+}
+
+// recordIndexedRevision stores the HEAD a published full index was built from.
+// It runs after publication and is best-effort: a failed write keeps the
+// previous record, which reads then report as stale.
+func recordIndexedRevision(ctx context.Context, db *sql.DB, record bool, revision string) {
+	if record {
+		_ = store.UpsertWorkspaceMeta(ctx, db, store.WorkspaceMetaIndexedGitHead, revision)
+	}
 }
 
 func IndexWorkspaceCatalogOnly(ctx context.Context, root string, clean bool) (Result, error) {

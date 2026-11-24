@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/fgpaz/mi-lsp/internal/statedir"
 )
 
 const (
@@ -1296,7 +1298,7 @@ func CancelIndexJob(ctx context.Context, db *sql.DB, jobID string, force bool) (
 			return IndexJob{}, removeErr
 		}
 		if !removed {
-			lockInfo := readIndexLockInfo(filepath.Join(job.WorkspaceRoot, ".mi-lsp", "index.lock"))
+			lockInfo := readIndexLockInfo(filepath.Join(statedir.Dir(job.WorkspaceRoot), "index.lock"))
 			if lockInfo.OwnerToken == "" {
 				if _, removeErr := RemoveWorkspaceIndexLockForPID(job.WorkspaceRoot, job.PID); removeErr != nil {
 					return IndexJob{}, removeErr

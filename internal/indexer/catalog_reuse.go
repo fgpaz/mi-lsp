@@ -10,6 +10,7 @@ import (
 	"sort"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/statedir"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
@@ -39,7 +40,7 @@ type catalogReuse struct {
 }
 
 func readCatalogStamps(root string) catalogStamps {
-	f, err := os.Open(filepath.Join(root, ".mi-lsp", catalogStampName))
+	f, err := os.Open(filepath.Join(statedir.Dir(root), catalogStampName))
 	if err != nil {
 		return catalogStamps{}
 	}
@@ -199,7 +200,7 @@ func catalogDiskChanges(ctx context.Context, root string) ([]string, []string, e
 // A failed cache write cannot invalidate a successfully extracted catalog. Each
 // stamp carries its content hash, so a concurrent/failed publication only misses.
 func writeCatalogStamps(root string, stamps catalogStamps) error {
-	dir := filepath.Join(root, ".mi-lsp")
+	dir := statedir.Dir(root)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}

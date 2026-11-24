@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/statedir"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
@@ -55,7 +56,7 @@ func ProbeWorkspace(ctx context.Context, options model.ProbeOptions) (model.Prob
 	report.Warnings = append(report.Warnings, resolution.Warnings...)
 
 	portablePath := workspace.ProjectConfigPath(identity.DisplayRoot)
-	legacyDBPath := store.WorkspaceDBPath(identity.DisplayRoot)
+	legacyDBPath := filepath.Join(statedir.RepoDir(identity.DisplayRoot), "index.db")
 	operationalDBPath := store.OperationalWorkspaceDBPath(identity.CanonicalRoot)
 	report.State.PortablePath = portablePath
 	report.State.LegacyPath = legacyDBPath

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/fgpaz/mi-lsp/internal/statedir"
 )
 
 type IndexLockInfo struct {
@@ -49,7 +51,7 @@ func WithWorkspaceIndexLockOwned(root string, operation string, ownerToken strin
 // If the lock cannot be acquired within the timeout, it returns ErrLockTimeout.
 // This is used for auto-index operations that should degrade gracefully.
 func AcquireWithTimeout(root string, operation string, duration time.Duration, fn func() error) error {
-	lockDir := filepath.Join(root, ".mi-lsp")
+	lockDir := statedir.Dir(root)
 	if err := os.MkdirAll(lockDir, 0o755); err != nil {
 		return err
 	}
@@ -113,7 +115,7 @@ func removeWorkspaceIndexLockForPIDAndOwner(root string, pid int, ownerToken str
 	if pid <= 0 {
 		return false, nil
 	}
-	lockPath := filepath.Join(root, ".mi-lsp", "index.lock")
+	lockPath := filepath.Join(statedir.Dir(root), "index.lock")
 	info := readIndexLockInfo(lockPath)
 	if info.PID != pid || (ownerToken != "" && info.OwnerToken != ownerToken) {
 		return false, nil
@@ -125,7 +127,7 @@ func removeWorkspaceIndexLockForPIDAndOwner(root string, pid int, ownerToken str
 }
 
 func withWorkspaceIndexLock(root string, operation string, ownerToken string, fn func() error, allowStaleCleanup bool) error {
-	lockDir := filepath.Join(root, ".mi-lsp")
+	lockDir := statedir.Dir(root)
 	if err := os.MkdirAll(lockDir, 0o755); err != nil {
 		return err
 	}

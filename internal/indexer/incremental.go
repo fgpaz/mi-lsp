@@ -290,7 +290,7 @@ func incrementalIndexWithGraphProgressAndChanges(ctx context.Context, workspaceR
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	indexPath := filepath.Join(workspaceRoot, ".mi-lsp", "index.db")
+	indexPath := store.WorkspaceDBPath(workspaceRoot)
 	if _, err := os.Stat(indexPath); err != nil {
 		return Result{}, fmt.Errorf("index.db not found; fallback to full index")
 	}
@@ -736,7 +736,7 @@ func publishIncrementalDocsForPublication(ctx context.Context, db *sql.DB, gener
 // hardened implementation above.
 func legacyIncrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, generationID string, progress ProgressFunc, graphOptions GraphIndexOptions, publication *IndexJobPublication) (Result, error) {
 	started := time.Now()
-	indexPath := filepath.Join(workspaceRoot, ".mi-lsp", "index.db")
+	indexPath := store.WorkspaceDBPath(workspaceRoot)
 	if _, err := os.Stat(indexPath); err != nil {
 		return Result{}, fmt.Errorf("index.db not found; fallback to full index")
 	}

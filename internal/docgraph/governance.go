@@ -15,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/statedir"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
@@ -394,6 +395,11 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 }
 
 func inspectGovernance(root string, autoSync, initializeProject bool) model.GovernanceStatus {
+	if statedir.Machine() {
+		// Machine-located state never writes under the workspace: drift is
+		// reported, not synced (RF-WKS-007-B04).
+		autoSync, initializeProject = false, false
+	}
 	setupSource := ResolveSetupWikiSource(root)
 	if setupSource.Configured && setupSource.State != "resolved" {
 		reason := firstNonEmptySetupReason(setupSource.ReasonCode, "setup_wiki_source_unavailable")
@@ -1727,7 +1733,7 @@ func indexSyncState(root string) string {
 }
 
 func inspectIndexSync(root string) (string, *model.GovernanceIndexSyncDetails) {
-	indexPath := filepath.Join(root, ".mi-lsp", "index.db")
+	indexPath := filepath.Join(statedir.Dir(root), "index.db")
 	details := &model.GovernanceIndexSyncDetails{
 		IndexPath: displayPath(root, indexPath),
 	}

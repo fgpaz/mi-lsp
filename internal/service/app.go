@@ -233,6 +233,9 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 	for _, warning := range resolutionWarnings {
 		envelope.Warnings = appendStringIfMissing(envelope.Warnings, warning)
 	}
+	if warning := indexRevisionWarning(ctx, request); warning != "" {
+		envelope.Warnings = appendStringIfMissing(envelope.Warnings, warning)
+	}
 	serviceMS := time.Since(started).Milliseconds()
 	if serviceMS < 1 {
 		serviceMS = 1

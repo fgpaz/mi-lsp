@@ -28,6 +28,10 @@ links:
     role: behavior
   - path: internal/workspace/metadata_repair.go
     role: behavior
+  - path: internal/statedir/statedir.go
+    role: behavior
+  - path: internal/service/index_revision.go
+    role: behavior
 ---
 
 ## Propósito
@@ -84,8 +88,11 @@ La respuesta para agentes identifica en su primera línea el workspace seleccion
 - **Marcador estable**: RF-WKS-007-B04
 - **Comprobación prevista**:
   - go run ./cmd/mi-lsp nav wiki validate-source --workspace . --format toon --no-daemon
+  - go test -count=1 ./internal/statedir ./internal/cli
 - **Evidencia referenciada**:
   - .docs/wiki/05_requirements/RF-WKS-007.md
+  - internal/statedir/statedir_test.go
+  - internal/cli/state_location_test.go
 - **state**:
   - **portable**:
     - **location**: repo-local
@@ -104,8 +111,28 @@ La respuesta para agentes identifica en su primera línea el workspace seleccion
     - **automatic_move**: forbidden
     - **automatic_delete**: forbidden
     - **migration_status**: explicit
+- **state_location**:
+  - **env**: MI_LSP_STATE_LOCATION
+  - **default**: repo
+  - **repo**: per-workspace-state-under-root-dot-mi-lsp
+  - **machine**: all-per-workspace-state-including-project-toml-under-user-cache-dir
+  - **machine_path**: user-cache-dir/mi-lsp/workspaces/sha256-of-physical-root
+  - **invalid_value**: explicit-error-before-any-command-never-repo-fallback
+  - **cache_dir_unavailable**: explicit-error-nothing-written
+  - **daemon**: not-used-in-machine
+  - **governance_autosync**: off-in-machine-drift-reported
+  - **legacy_repo_state**: unused-unwritten-unmoved-in-machine
+  - **indexed_revision**: machine-full-index-records-git-head
+  - **stale_revision_warning**: index_stale_revision-with-both-shas-no-reindex
+  - **out_of_scope**:
+    - kotlin-module-exports-read-only-inputs
+    - explicit-user-writes-edit-plan-apply-rename
 
 La configuración que debe viajar con el repositorio permanece repo-local. El estado operativo se resuelve a una ruta local de la máquina y no se incorpora a la configuración portable. El estado legacy se conserva durante esta ola; cualquier compatibilidad o migración se informa explícitamente y no mueve ni borra archivos automáticamente. Un worktree y su parent, aun cuando compartan `git_common_dir`, conservan roots canónicos y operational paths distintos.
+
+`MI_LSP_STATE_LOCATION` elige dónde vive el estado por workspace. Sin la variable, o con `repo`, nada cambia: `<root>/.mi-lsp/`. Con `machine`, todo el estado por workspace (project.toml, index.db con sus -wal/-shm, index.lock, catalog-stamps, autoindex.last, quarantine.lock, index-jobs/*.log y daemon.log) va a `<directorio de caché del usuario>/mi-lsp/workspaces/<sha256 de la raíz física>` y nada se escribe bajo el repositorio. `internal/statedir` es la única fuente de esa ruta. La raíz física se evalúa con symlinks y con el casing de la plataforma, así que dos repos, o un worktree y su parent, nunca comparten directorio. Un valor desconocido es un error explícito antes de cualquier comando y nunca cae en `repo`; sin directorio de caché (`XDG_CACHE_HOME` o `HOME`) también es error y no se escribe nada. En `machine` el CLI no usa daemon, porque cada daemon resuelve el estado con su propio entorno y versión, y la autosincronización de gobierno no escribe `read-model.toml` ni inicializa la proyección: el drift se reporta. Un `.mi-lsp/` existente no se usa, no se escribe ni se mueve en `machine` (`probe` lo informa como `legacy_present`); quitar la variable lo vuelve a usar tal cual.
+
+Ese estado sobrevive a checkouts y a `git clean`, y ningún watcher los sigue. Por eso, en `machine` cada índice completo graba en `workspace_meta.indexed_git_head` el HEAD capturado antes de leer archivos, y una lectura `nav.*` que encuentra otro HEAD agrega el warning `index_stale_revision` con los dos SHA. La lectura no reindexa: queda de solo lectura y predecible. `mi-lsp index --clean` reconstruye en el HEAD actual; un incremental que no reconstruye deja el aviso. Límite conocido (follow-up): reindexar solo, con reuse de stamps, cuando cambia el HEAD. Los exportes Kotlin por módulo (`<module>/.mi-lsp/kotlin-main-v1.json` y `.authority.json`) son entradas que escribe el exportador del usuario y que mi-lsp solo lee; quedan fuera de esta opción, igual que las escrituras que el usuario pide de forma explícita (edit-plan apply, rename). La receta para hosts de build está en TECH-RUNTIME-UPDATE, sección Política.
 
 ### [RF-WKS-007-B05] Probe
 
@@ -386,7 +413,7 @@ Los aliases heredados que apunten a la misma raíz física siguen siendo válido
 3. Cuando el `caller_cwd` omitido está dentro de un linked worktree, la resolución compara `git dir` y `git common dir` como rutas absolutas, canónicas y normalizadas. Si el root principal está registrado, devuelve ese alias y no crea ni indexa un alias para el linked worktree. Un **path explícito** a un linked worktree no registrado en operaciones read-only conserva la raíz física del target (Git, frontier y generaciones del store existente de ese root) sin auto-registro ni fallback al main. Las operaciones mutantes con path explícito siguen resolviendo al main registrado cuando corresponda. Si el main no está registrado, no inicia indexación ni crea nada dentro del worktree; las respuestas de docs, wiki y grafo devuelven `partial=true` con `reason=worktree_base_unregistered` (ver RF-QRY-001). `MI_LSP_AUTOREGISTER=force` opta explícitamente por registrar el linked worktree como raíz física independiente.
 4. Las operaciones que requieren workspace (`nav.*`, `index.*`, `info`, `workspace.status`) ejecutan un único camino compartido por CLI y daemon (`App.Execute`, `internal/service/auto_register.go` y `internal/workspace/autoregister.go`), de modo que sirve igual a la CLI y a `mi-mcp`, que la invoca por llamada. [RETIRADO 2026-10-15: `mi-lsp mcp`, el plugin milsp y el hijo persistente de mi-mcp.]
 5. La especificación normativa del auto-registro, incluida la respuesta cuando el repo aún no tiene commits, el alcance del opt-out, linked worktrees, force y GC del registry, está agrupada en el bloque TOON `RF-WKS-007-B08`. Los casos de verificación se definen normativamente en `TP-WKS` (`TC-WKS-048..060`, `TC-WKS-064..066`). El enlace al flag CLI se apoya en evidencia de código; `TC-WKS-049` no declara cobertura E2E de su propagación.
-6. La configuración que debe viajar con el repositorio permanece repo-local. El estado operativo se resuelve a una ruta local de la máquina y no se incorpora a la configuración portable. El estado legacy se conserva durante esta ola; cualquier compatibilidad o migración se informa explícitamente y no mueve ni borra archivos automáticamente. Un worktree y su parent, aun cuando compartan `git_common_dir`, conservan roots canónicos y operational paths distintos.
+6. La configuración que debe viajar con el repositorio permanece repo-local. El estado operativo se resuelve a una ruta local de la máquina y no se incorpora a la configuración portable. El estado legacy se conserva durante esta ola; cualquier compatibilidad o migración se informa explícitamente y no mueve ni borra archivos automáticamente. Un worktree y su parent, aun cuando compartan `git_common_dir`, conservan roots canónicos y operational paths distintos. Con `MI_LSP_STATE_LOCATION=machine` todo el estado por workspace, incluido project.toml, vive fuera del repositorio, un valor inválido falla explícito y, en ese modo, una lectura `nav.*` sobre un índice de otro HEAD lleva `index_stale_revision` con los dos SHA, sin reindexar (bloque `RF-WKS-007-B04`).
 7. `mi-lsp probe` puede ejecutarse sin daemon y sin DB. Si existe una DB, solo puede abrirla en modo SQLite `ro` real; si no existe, debe reportar evidencia ausente sin crear directorios ni archivos. El probe no inicializa schema, no aplica migraciones, no escribe registry, no crea snapshots, no envía telemetría y devuelve `side_effects:false` en salida estructurada.
 8. Los estados son diagnósticos, no instrucciones implícitas de reparación. La salida incluye evidencia mínima, migration status, resolución del workspace y provenance reutilizable de `mi-lsp version` cuando corresponda.
 9. Las pruebas cubren snapshots antes/después de parent, worktree, home y fixtures temporales, alias inexistente y stale, resolución contextual sin selector, casing por plataforma, symlink/junction cuando el host lo permite, DB inexistente y apertura read-only sin WAL/SHM. Toda prueba que observe una mutación del filesystem o registry hace fallar el batch. La única oracle de formato para todos los Go tocados es la orden dinámica y no mutante declarada en `verify`: descubre el conjunto completo desde Git, no usa listas manuales y nunca escribe archivos.
